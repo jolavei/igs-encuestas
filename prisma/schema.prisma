@@ -1,0 +1,257 @@
+// Plataforma encuestas CSAT/NPS — base operacional.
+// Motor actual: PostgreSQL (local + produccion).
+// Esquema PORTABLE: tipos String para "enums" y columnas JSON. Los valores permitidos
+// de los campos de tipo "enum" se validan en la app (zod). Esto permite, si se quiere,
+// correr el mismo esquema en SQLite cambiando provider a "sqlite" + url file:./dev.db.
+// Respuestas en FORMATO LARGO: una fila por respuesta a una pregunta.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Auth (NextAuth + roles). Rol se resuelve server-side, nunca desde el cliente.
+// role: ADMIN | SURVEYOR | CLIENT
+// ----------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          String    @default("SURVEYOR")
+  active        Boolean   @default(true) // false = usuario antiguo desactivado (no puede entrar)
+  companyId     String?
+  company       Company?  @relation(fields: [companyId], references: [id])
+  createdAt     DateTime  @default(now())
+
+  accounts    Account[]
+  sessions    Session[]
+  assignments Assignment[]  @relation("SurveyorAssignments")
+  responses   ResponseSet[] @relation("SurveyorResponses")
+  auditLogs   AuditLog[]
+
+  @@index([companyId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ----------------------------------------------------------------------------
+// Negocio
+// ----------------------------------------------------------------------------
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  kind      String // "hotel" | "aeropuerto" | "clinica" | ...
+  active    Boolean  @default(true) // false = cliente pasado/desactivado (conserva histórico)
+  createdAt DateTime @default(now())
+
+  locations      Location[]
+  users          User[]
+  questionnaires Questionnaire[] @relation("CompanyQuestionnaires")
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  city      String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  qrTokens    QrToken[]
+  responses   ResponseSet[]
+  assignments Assignment[]
+
+  @@index([companyId])
+}
+
+// Contenedor logico. Tiene N versiones (snapshots inmutables).
+// Se puede asignar a VARIAS empresas (mismo cuestionario -> benchmarking cruzado).
+model Questionnaire {
+  id        String   @id @default(cuid())
+  title     String
+  createdAt DateTime @default(now())
+
+  companies   Company[]              @relation("CompanyQuestionnaires")
+  versions    QuestionnaireVersion[]
+  assignments Assignment[]
+  qrTokens    QrToken[]
+}
+
+// Snapshot inmutable. Una vez ACTIVE no se editan sus preguntas: se crea nueva version.
+// status: DRAFT | ACTIVE | ARCHIVED
+model QuestionnaireVersion {
+  id              String        @id @default(cuid())
+  questionnaireId String
+  questionnaire   Questionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  versionNumber   Int
+  status          String        @default("DRAFT")
+  publishedAt     DateTime?
+  createdById     String?
+  createdAt       DateTime      @default(now())
+
+  questions Question[]
+  responses ResponseSet[]
+
+  @@unique([questionnaireId, versionNumber])
+  @@index([questionnaireId, status])
+}
+
+// Pertenecen a una VERSION, no al cuestionario abstracto.
+// type: LIKERT | NPS | SINGLE_CHOICE | MULTI_CHOICE | TEXT | DATETIME | NUMBER
+model Question {
+  id        String               @id @default(cuid())
+  versionId String
+  version   QuestionnaireVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  order     Int
+  type      String
+  text      String
+  required  Boolean              @default(false)
+  // Validacion/config por tipo (JSON como texto): { min, max, step, maxLength, options, multi }
+  config    String?
+  // Para comparar series de tiempo entre versiones aunque cambie el cuestionario.
+  equivalenceKey String?
+  // Mapeo a BigQuery (Dataform): columna de la tabla ancha por cuestionario.
+  bqColumnName   String? // nombre de la columna en BigQuery
+  bqType         String? // tipo de dato BQ: STRING | INT64 | FLOAT64 | NUMERIC | BOOL | DATE | TIMESTAMP
+  bqDescription  String? // detalle / a qué hace referencia
+
+  answers Answer[]
+
+  @@index([versionId])
+  @@index([equivalenceKey])
+}
+
+// Relacion encuestador <-> cuestionario, con plan de trabajo (cuota + comentario).
+// status: ACTIVE | COMPLETED | CANCELLED
+model Assignment {
+  id              String        @id @default(cuid())
+  surveyorId      String
+  surveyor        User          @relation("SurveyorAssignments", fields: [surveyorId], references: [id], onDelete: Cascade)
+  questionnaireId String
+  questionnaire   Questionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  locationId      String?
+  location        Location?     @relation(fields: [locationId], references: [id])
+  quota           Int           @default(0)
+  workPlanComment String?
+  status          String        @default("ACTIVE")
+  createdById     String?
+  createdAt       DateTime      @default(now())
+
+  responses ResponseSet[]
+
+  @@index([surveyorId, status])
+  @@index([questionnaireId])
+}
+
+// Un envio de encuesta (un respondente). Referencia la VERSION con la que se capturo.
+// source: FIELD | QR_PUBLIC
+model ResponseSet {
+  id           String               @id @default(cuid())
+  versionId    String
+  version      QuestionnaireVersion @relation(fields: [versionId], references: [id])
+  locationId   String?
+  location     Location?            @relation(fields: [locationId], references: [id])
+  source       String
+  surveyorId   String?
+  surveyor     User?                @relation("SurveyorResponses", fields: [surveyorId], references: [id])
+  assignmentId String?
+  assignment   Assignment?          @relation(fields: [assignmentId], references: [id])
+  // Trazabilidad de sync a BigQuery (batch). null = pendiente.
+  syncedAt     DateTime?
+  createdAt    DateTime             @default(now())
+
+  answers Answer[]
+
+  @@index([versionId])
+  @@index([locationId])
+  @@index([syncedAt])
+}
+
+// FORMATO LARGO: una fila por respuesta a una pregunta.
+model Answer {
+  id            String      @id @default(cuid())
+  responseSetId String
+  responseSet   ResponseSet @relation(fields: [responseSetId], references: [id], onDelete: Cascade)
+  questionId    String
+  question      Question    @relation(fields: [questionId], references: [id])
+  // Un valor segun tipo: numero (LIKERT/NPS/NUMBER), texto (TEXT/SINGLE_CHOICE),
+  // fecha (DATETIME), json-texto (MULTI_CHOICE -> array de valores).
+  valueNumber   Float?
+  valueText     String?
+  valueDate     DateTime?
+  valueJson     String?
+
+  @@index([responseSetId])
+  @@index([questionId])
+}
+
+// Token QR ESTABLE por sede+cuestionario. Resuelve la version ACTIVE en runtime,
+// asi una nueva version no invalida el QR ya impreso en el hotel.
+model QrToken {
+  id              String        @id @default(cuid())
+  token           String        @unique
+  questionnaireId String
+  questionnaire   Questionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  active          Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+
+  @@index([questionnaireId, locationId])
+}
+
+// Auditoria: quien creo/edito version y quien asigno cuota.
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String
+  entity    String
+  entityId  String
+  metadata  String? // JSON como texto
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+}
