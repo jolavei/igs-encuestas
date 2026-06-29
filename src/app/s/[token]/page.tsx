@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import SurveyRunner from "@/components/SurveyRunner";
+
+export const dynamic = "force-dynamic";
 import type { ClientQuestion } from "@/components/QuestionInput";
 import type { QuestionConfig, QuestionType } from "@/lib/questionTypes";
 import { fromJson } from "@/lib/enums";
