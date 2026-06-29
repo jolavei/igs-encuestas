@@ -1,0 +1,29 @@
+name: Sync Neon -> BigQuery
+
+# Copia las tablas de Neon a BigQuery por batch.
+on:
+  schedule:
+    - cron: "0 */6 * * *" # cada 6 horas
+  workflow_dispatch: {} # permite ejecutarlo a mano desde la pestaña Actions
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Sincronizar a BigQuery
+        run: node scripts/sync-bigquery.mjs
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          BQ_DATASET: raw_postgres
+          BQ_LOCATION: US
