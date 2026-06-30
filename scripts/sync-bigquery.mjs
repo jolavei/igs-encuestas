@@ -98,9 +98,11 @@ async function main() {
     WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
     ORDER BY table_name
   `);
+  // Solo identificadores válidos (defensa anti-inyección, aunque vengan del catálogo).
+  const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
   const tables = tableRows
     .map((r) => r.table_name)
-    .filter((t) => !t.startsWith("_") && !EXCLUDE.has(t));
+    .filter((t) => !t.startsWith("_") && !EXCLUDE.has(t) && SAFE_IDENT.test(t));
 
   // Cliente BigQuery (solo si no es dry-run).
   let dataset = null;
@@ -127,7 +129,9 @@ async function main() {
        WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`,
       [table]
     );
-    const fields = cols.map((c) => ({ name: c.column_name, type: bqType(c.data_type) }));
+    const fields = cols
+      .filter((c) => SAFE_IDENT.test(c.column_name))
+      .map((c) => ({ name: c.column_name, type: bqType(c.data_type) }));
 
     // Datos.
     const { rows } = await pool.query(`SELECT * FROM "${table}"`);

@@ -192,14 +192,17 @@ export function validateAnswers(
 }
 
 // Schema zod del payload de envio.
+// Límites de tamaño (defensa en profundidad: rechaza payloads abusivos antes de tocar la DB).
 export const submitSchema = z.object({
-  answers: z.array(
-    z.object({
-      questionId: z.string(),
-      valueNumber: z.number().nullable().optional(),
-      valueText: z.string().nullable().optional(),
-      valueDate: z.string().nullable().optional(),
-      valueJson: z.unknown().optional(),
-    })
-  ),
+  answers: z
+    .array(
+      z.object({
+        questionId: z.string().max(60),
+        valueNumber: z.number().finite().nullable().optional(),
+        valueText: z.string().max(5000).nullable().optional(),
+        valueDate: z.string().max(40).nullable().optional(),
+        valueJson: z.array(z.string().max(200)).max(100).optional(),
+      })
+    )
+    .max(300), // tope de respuestas por envío
 });

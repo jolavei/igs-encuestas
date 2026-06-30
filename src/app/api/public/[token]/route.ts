@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createResponseSet } from "@/lib/responses";
 import { submitSchema, type QuestionConfig } from "@/lib/questionTypes";
 import { fromJson } from "@/lib/enums";
+import { enforceRateLimit } from "@/lib/rateLimit";
 
 // Resuelve token QR -> version ACTIVE en runtime (QR impreso no caduca al versionar).
 async function resolve(token: string) {
@@ -21,9 +22,12 @@ async function resolve(token: string) {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: { token: string } }
 ) {
+  const limited = enforceRateLimit(req, "public-get", 40, 60_000); // 40/min por IP
+  if (limited) return limited;
+
   const r = await resolve(params.token);
   if (!r) return NextResponse.json({ error: "QR no válido o sin versión activa." }, { status: 404 });
   return NextResponse.json({
@@ -45,6 +49,9 @@ export async function POST(
   req: Request,
   { params }: { params: { token: string } }
 ) {
+  const limited = enforceRateLimit(req, "public-post", 8, 60_000); // 8 envíos/min por IP
+  if (limited) return limited;
+
   const r = await resolve(params.token);
   if (!r) return NextResponse.json({ error: "QR no válido." }, { status: 404 });
 
