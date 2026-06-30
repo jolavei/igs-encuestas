@@ -48,14 +48,18 @@ export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers,
   session: { strategy: "jwt" },
-  pages: { signIn: "/login" },
+  pages: { signIn: "/login", error: "/login" },
   callbacks: {
-    // Bloquea el ingreso de usuarios desactivados.
+    // Lista blanca: solo entran usuarios PRE-REGISTRADOS y activos.
+    // Cualquier otro correo (aunque tenga Google) queda fuera -> "AccessDenied".
     async signIn({ user }) {
       const email = user?.email?.toLowerCase();
       if (!email) return false;
+      // El admin bootstrap siempre puede entrar (aunque aún no tenga registro).
+      if (email === process.env.BOOTSTRAP_ADMIN_EMAIL?.toLowerCase()) return true;
       const dbUser = await prisma.user.findUnique({ where: { email } });
-      if (dbUser && !dbUser.active) return false; // usuario antiguo desactivado
+      if (!dbUser) return false; // no registrado por un admin
+      if (!dbUser.active) return false; // usuario desactivado
       return true;
     },
     async jwt({ token, user }) {
