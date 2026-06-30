@@ -1,6 +1,7 @@
 "use client";
 import { signIn } from "next-auth/react";
 import { useEffect, useState } from "react";
+import { Logo } from "@/components/Logo";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -15,9 +16,9 @@ export default function Login() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-6 p-6">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold">IGS Encuestas</h1>
-        <p className="text-slate-600">Plataforma CSAT / NPS</p>
+      <div className="flex flex-col items-center gap-3 text-center">
+        <Logo variant="full" className="h-16 w-auto" />
+        <p className="text-sm text-slate-500">Plataforma de encuestas CSAT / NPS</p>
       </div>
 
       {error && (

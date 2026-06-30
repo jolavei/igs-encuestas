@@ -1,18 +1,18 @@
 {
-  "name": "IGS Encuestas",
-  "short_name": "IGS",
+  "name": "Aeródromos IGS — Encuestas",
+  "short_name": "IGS Encuestas",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#1d4ed8",
+  "background_color": "#f8fafc",
+  "theme_color": "#003152",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/icon.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icon.png",
       "sizes": "512x512",
       "type": "image/png"
     }

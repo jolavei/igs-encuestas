@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser(["ADMIN"]);
   return (
-    <DashboardShell role={user.role} email={user.email}>
+    <DashboardShell role={user.role} email={user.email} name={user.name}>
       {children}
     </DashboardShell>
   );

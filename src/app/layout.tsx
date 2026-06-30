@@ -4,13 +4,18 @@ import Providers from "./providers";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
-  title: "IGS Encuestas — CSAT / NPS",
+  title: "Aeródromos IGS — Encuestas",
   description: "Plataforma de encuestas y benchmarking de satisfacción.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1d4ed8",
+  themeColor: "#003152",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

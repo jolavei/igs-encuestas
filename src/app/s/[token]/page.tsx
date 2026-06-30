@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import SurveyRunner from "@/components/SurveyRunner";
+import { Logo } from "@/components/Logo";
 
 export const dynamic = "force-dynamic";
 import type { ClientQuestion } from "@/components/QuestionInput";
@@ -48,6 +49,9 @@ export default async function PublicSurvey({
 
   return (
     <main className="mx-auto max-w-lg space-y-4 p-4">
+      <div className="flex justify-center py-2">
+        <Logo variant="full" className="h-12 w-auto" />
+      </div>
       <SurveyRunner
         questions={questions}
         endpoint={`/api/public/${params.token}`}
