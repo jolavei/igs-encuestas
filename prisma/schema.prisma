@@ -243,6 +243,18 @@ model QrToken {
   @@index([questionnaireId, locationId])
 }
 
+// Registro de la última sincronización a BigQuery (lo escribe el script de sync
+// al terminar con éxito; el panel admin muestra la última hora).
+model SyncLog {
+  id       String   @id @default(cuid())
+  target   String   @default("bigquery")
+  tables   Int      @default(0)
+  rows     Int      @default(0)
+  syncedAt DateTime @default(now())
+
+  @@index([syncedAt])
+}
+
 // Auditoria: quien creo/edito version y quien asigno cuota.
 model AuditLog {
   id        String   @id @default(cuid())

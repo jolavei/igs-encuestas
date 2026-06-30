@@ -18,6 +18,7 @@ import pg from "pg";
 import { writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 const {
   DATABASE_URL,
@@ -30,8 +31,9 @@ const {
 
 const dryRun = DRY_RUN === "true";
 
-// Tablas que NO se sincronizan: auth/sesiones (contienen tokens) e internas (prefijo _).
-const EXCLUDE = new Set(["Account", "Session", "VerificationToken"]);
+// Tablas que NO se sincronizan: auth/sesiones (contienen tokens), el log de sync
+// (metadato interno) e internas (prefijo _).
+const EXCLUDE = new Set(["Account", "Session", "VerificationToken", "SyncLog"]);
 
 if (!DATABASE_URL) {
   console.error("Falta DATABASE_URL");
@@ -169,6 +171,19 @@ async function main() {
       console.log(`${table}: ${rows.length} filas cargadas`);
     } finally {
       rmSync(tmpFile, { force: true });
+    }
+  }
+
+  // Registrar la sincronización exitosa (para mostrar la última hora en el panel).
+  if (!dryRun) {
+    try {
+      await pool.query(
+        `INSERT INTO "SyncLog" (id, target, tables, rows, "syncedAt")
+         VALUES ($1, 'bigquery', $2, $3, now())`,
+        [randomUUID(), tables.length, totalRows]
+      );
+    } catch (e) {
+      console.warn("No se pudo registrar SyncLog (¿falta la migración?):", e.message);
     }
   }
 
