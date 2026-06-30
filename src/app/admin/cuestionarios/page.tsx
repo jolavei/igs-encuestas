@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import NewQuestionnaireForm from "@/components/NewQuestionnaireForm";
+import Fab from "@/components/Fab";
 
 export default async function CuestionariosPage() {
   const [companies, questionnaires] = await Promise.all([
@@ -16,23 +17,8 @@ export default async function CuestionariosPage() {
   ]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       <h1 className="text-2xl font-bold">Cuestionarios</h1>
-
-      <div className="card max-w-xl">
-        <h2 className="mb-3 font-semibold">Nuevo cuestionario</h2>
-        {companies.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Crea primero una empresa en{" "}
-            <Link href="/admin/empresas" className="text-brand-600 underline">
-              Empresas
-            </Link>
-            .
-          </p>
-        ) : (
-          <NewQuestionnaireForm companies={companies} />
-        )}
-      </div>
 
       <div className="space-y-3">
         {questionnaires.map((q) => {
@@ -71,7 +57,26 @@ export default async function CuestionariosPage() {
             </Link>
           );
         })}
+        {questionnaires.length === 0 && (
+          <p className="text-slate-400">
+            Aún no hay cuestionarios. Usa el botón + para crear el primero.
+          </p>
+        )}
       </div>
+
+      <Fab title="Nuevo cuestionario">
+        {companies.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Crea primero una empresa en{" "}
+            <Link href="/admin/empresas" className="text-brand-600 underline">
+              Empresas
+            </Link>
+            .
+          </p>
+        ) : (
+          <NewQuestionnaireForm companies={companies} />
+        )}
+      </Fab>
     </div>
   );
 }

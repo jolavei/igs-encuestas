@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import UserRow from "@/components/UserRow";
 import PostForm from "@/components/PostForm";
+import Fab from "@/components/Fab";
 import { getSessionUser } from "@/lib/rbac";
 
 export default async function UsuariosPage() {
@@ -11,40 +12,12 @@ export default async function UsuariosPage() {
   ]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       <h1 className="text-2xl font-bold">Usuarios y roles</h1>
       <p className="text-slate-500">
         Agrega usuarios por correo (mantienen rol y empresa al iniciar sesión). Los
         usuarios desactivados no pueden ingresar pero conservan su historial.
       </p>
-
-      <div className="card max-w-2xl">
-        <h2 className="mb-3 font-semibold">Agregar usuario por correo</h2>
-        <PostForm
-          endpoint="/api/users"
-          submitLabel="Agregar"
-          fields={[
-            { name: "email", label: "Correo", required: true, placeholder: "persona@empresa.cl" },
-            {
-              name: "role",
-              label: "Rol",
-              type: "select",
-              required: true,
-              options: [
-                { value: "SURVEYOR", label: "Encuestador" },
-                { value: "CLIENT", label: "Cliente" },
-                { value: "ADMIN", label: "Administrador" },
-              ],
-            },
-            {
-              name: "companyId",
-              label: "Empresa (solo si es Cliente)",
-              type: "select",
-              options: companies.map((c) => ({ value: c.id, label: c.name })),
-            },
-          ]}
-        />
-      </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
@@ -74,6 +47,33 @@ export default async function UsuariosPage() {
           </tbody>
         </table>
       </div>
+
+      <Fab title="Agregar usuario por correo">
+        <PostForm
+          endpoint="/api/users"
+          submitLabel="Agregar"
+          fields={[
+            { name: "email", label: "Correo", required: true, placeholder: "persona@empresa.cl" },
+            {
+              name: "role",
+              label: "Rol",
+              type: "select",
+              required: true,
+              options: [
+                { value: "SURVEYOR", label: "Encuestador" },
+                { value: "CLIENT", label: "Cliente" },
+                { value: "ADMIN", label: "Administrador" },
+              ],
+            },
+            {
+              name: "companyId",
+              label: "Empresa (solo si es Cliente)",
+              type: "select",
+              options: companies.map((c) => ({ value: c.id, label: c.name })),
+            },
+          ]}
+        />
+      </Fab>
     </div>
   );
 }

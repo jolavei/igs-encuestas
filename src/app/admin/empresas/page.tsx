@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import PostForm from "@/components/PostForm";
 import CompanyActions from "@/components/CompanyActions";
+import Fab from "@/components/Fab";
 
 export default async function EmpresasPage() {
   const companies = await prisma.company.findMany({
@@ -31,53 +32,8 @@ export default async function EmpresasPage() {
   const activeCompanies = companies.filter((c) => c.active);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       <h1 className="text-2xl font-bold">Empresas / Clientes</h1>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="card">
-          <h2 className="mb-3 font-semibold">Nueva empresa</h2>
-          <PostForm
-            endpoint="/api/companies"
-            submitLabel="Crear empresa"
-            fields={[
-              { name: "name", label: "Nombre", required: true },
-              {
-                name: "kind",
-                label: "Tipo",
-                type: "select",
-                required: true,
-                options: [
-                  { value: "hotel", label: "Hotel" },
-                  { value: "aeropuerto", label: "Aeropuerto" },
-                  { value: "clinica", label: "Clínica" },
-                  { value: "otro", label: "Otro" },
-                ],
-              },
-            ]}
-          />
-        </div>
-
-        <div className="card">
-          <h2 className="mb-3 font-semibold">Nueva sede / ubicación</h2>
-          <PostForm
-            endpoint="/api/locations"
-            submitLabel="Crear sede"
-            fields={[
-              {
-                name: "companyId",
-                label: "Empresa",
-                type: "select",
-                required: true,
-                options: activeCompanies.map((c) => ({ value: c.id, label: c.name })),
-              },
-              { name: "name", label: "Nombre sede", required: true },
-              { name: "city", label: "Ciudad" },
-              { name: "address", label: "Dirección" },
-            ]}
-          />
-        </div>
-      </div>
 
       <div className="space-y-3">
         {companies.map((c) => {
@@ -125,7 +81,59 @@ export default async function EmpresasPage() {
             </div>
           );
         })}
+        {companies.length === 0 && (
+          <p className="text-slate-400">
+            Aún no hay empresas. Usa el botón + para crear la primera.
+          </p>
+        )}
       </div>
+
+      <Fab title="Crear">
+        <div className="space-y-5">
+          <div>
+            <h3 className="mb-2 font-semibold">Nueva empresa</h3>
+            <PostForm
+              endpoint="/api/companies"
+              submitLabel="Crear empresa"
+              fields={[
+                { name: "name", label: "Nombre", required: true },
+                {
+                  name: "kind",
+                  label: "Tipo",
+                  type: "select",
+                  required: true,
+                  options: [
+                    { value: "hotel", label: "Hotel" },
+                    { value: "aeropuerto", label: "Aeropuerto" },
+                    { value: "clinica", label: "Clínica" },
+                    { value: "otro", label: "Otro" },
+                  ],
+                },
+              ]}
+            />
+          </div>
+
+          <div className="border-t border-slate-200 pt-4">
+            <h3 className="mb-2 font-semibold">Nueva sede / ubicación</h3>
+            <PostForm
+              endpoint="/api/locations"
+              submitLabel="Crear sede"
+              fields={[
+                {
+                  name: "companyId",
+                  label: "Empresa",
+                  type: "select",
+                  required: true,
+                  options: activeCompanies.map((c) => ({ value: c.id, label: c.name })),
+                },
+                { name: "name", label: "Nombre sede", required: true },
+                { name: "city", label: "Ciudad" },
+                { name: "address", label: "Dirección" },
+              ]}
+            />
+          </div>
+        </div>
+      </Fab>
     </div>
   );
 }
