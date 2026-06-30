@@ -12,6 +12,10 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      // Permite vincular el login de Google a un usuario pre-registrado por email
+      // (admin lo crea en "Usuarios y roles" antes de su primer ingreso). Seguro
+      // porque Google verifica el email.
+      allowDangerousEmailAccountLinking: true,
     })
   );
 }
