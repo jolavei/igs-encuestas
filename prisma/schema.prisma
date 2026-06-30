@@ -129,6 +129,7 @@ model QuestionnaireVersion {
   status          String        @default("DRAFT")
   publishedAt     DateTime?
   createdById     String?
+  note            String? // comentario: qué cambió en esta versión y por qué
   createdAt       DateTime      @default(now())
 
   questions Question[]

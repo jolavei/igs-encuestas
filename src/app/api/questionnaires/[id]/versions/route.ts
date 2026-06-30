@@ -29,6 +29,7 @@ const questionSchema = z.object({
 const schema = z.object({
   questions: z.array(questionSchema).min(1),
   publish: z.boolean().default(false),
+  note: z.string().optional().nullable(),
 });
 
 // Crea una NUEVA version (snapshot inmutable). Editar = nueva version, nunca mutar.
@@ -56,6 +57,7 @@ export async function POST(
         status: parsed.data.publish ? "ACTIVE" : "DRAFT",
         publishedAt: parsed.data.publish ? new Date() : null,
         createdById: user.id,
+        note: parsed.data.note ?? null,
         questions: {
           create: parsed.data.questions.map((q) => {
             // Si hay columna BQ pero no equivalenceKey, derivarla del nombre de columna:

@@ -30,6 +30,9 @@ export type QuestionConfig = {
   maxLength?: number; // TEXT
   options?: Option[]; // SINGLE_CHOICE/MULTI_CHOICE
   multi?: boolean;
+  // DATETIME: esta fecha/hora debe ser POSTERIOR a la de la pregunta con este 'order'
+  // (ej. t2 posterior a t1). Validación cruzada entre preguntas de la misma versión.
+  afterQuestionOrder?: number;
 };
 
 // Forma de un answer crudo que llega desde el form.
@@ -46,6 +49,8 @@ export type QuestionLike = {
   type: QuestionType;
   required: boolean;
   config: QuestionConfig | null;
+  order?: number; // para validación cruzada (afterQuestionOrder)
+  text?: string; // para mensajes de error legibles
 };
 
 export type ValidatedAnswer = {
@@ -138,10 +143,22 @@ export function validateAnswers(
         break;
       }
       case "DATETIME": {
-        const d = new Date(String(a.valueDate));
+        const d = new Date(String(a.valueDate ?? a.valueText));
         if (isNaN(d.getTime())) {
           errors[q.id] = "Fecha inválida.";
           break;
+        }
+        // Validación cruzada: debe ser posterior a otra medición (ej. t2 > t1).
+        if (cfg.afterQuestionOrder != null) {
+          const ref = questions.find((qq) => qq.order === cfg.afterQuestionOrder);
+          const refRaw = ref ? byId.get(ref.id) : undefined;
+          const refDate = refRaw
+            ? new Date(String(refRaw.valueDate ?? refRaw.valueText))
+            : null;
+          if (refDate && !isNaN(refDate.getTime()) && d <= refDate) {
+            errors[q.id] = `Debe ser posterior a "${ref?.text ?? "la medición anterior"}".`;
+            break;
+          }
         }
         out.valueDate = d;
         break;

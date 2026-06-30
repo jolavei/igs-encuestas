@@ -1,11 +1,53 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { QUESTION_TYPE_LABELS, type QuestionType } from "@/lib/questionTypes";
-import QuestionnaireBuilder from "@/components/QuestionnaireBuilder";
+import {
+  QUESTION_TYPE_LABELS,
+  type QuestionType,
+  type QuestionConfig,
+} from "@/lib/questionTypes";
+import { fromJson } from "@/lib/enums";
+import { type BqType } from "@/lib/dataform";
+import QuestionnaireBuilder, { type Draft } from "@/components/QuestionnaireBuilder";
 import QrManager from "@/components/QrManager";
 import DataformPanel from "@/components/DataformPanel";
 import QuestionnaireCompanies from "@/components/QuestionnaireCompanies";
+
+type VersionQuestion = {
+  type: string;
+  text: string;
+  required: boolean;
+  equivalenceKey: string | null;
+  config: string | null;
+  bqColumnName: string | null;
+  bqType: string | null;
+  bqDescription: string | null;
+};
+
+// Convierte las preguntas de una versión en drafts para pre-cargar el builder.
+function toDrafts(questions: VersionQuestion[]): Draft[] {
+  const cfgs = questions.map((qq) => fromJson<QuestionConfig>(qq.config) ?? {});
+  const keys = questions.map(() => randomUUID());
+  return questions.map((qq, i) => {
+    const cfg = cfgs[i];
+    return {
+      key: keys[i],
+      type: qq.type as QuestionType,
+      text: qq.text,
+      required: qq.required,
+      equivalenceKey: qq.equivalenceKey ?? undefined,
+      min: cfg.min,
+      max: cfg.max,
+      maxLength: cfg.maxLength,
+      optionsText: cfg.options?.map((o) => `${o.value}:${o.label}`).join("\n"),
+      afterKey: cfg.afterQuestionOrder ? keys[cfg.afterQuestionOrder - 1] : undefined,
+      bqColumnName: qq.bqColumnName ?? undefined,
+      bqType: (qq.bqType as BqType) ?? undefined,
+      bqDescription: qq.bqDescription ?? undefined,
+    };
+  });
+}
 
 export default async function QuestionnaireDetail({
   params,
@@ -35,6 +77,7 @@ export default async function QuestionnaireDetail({
   if (!q) notFound();
 
   const nextVersion = (q.versions[0]?.versionNumber ?? 0) + 1;
+  const initialDrafts = q.versions[0] ? toDrafts(q.versions[0].questions) : [];
 
   // Sedes de todas las empresas asignadas, etiquetadas con la empresa.
   const qrLocations = q.companies.flatMap((c) =>
@@ -67,7 +110,11 @@ export default async function QuestionnaireDetail({
         assigned={q.companies.map((c) => c.id)}
       />
 
-      <QuestionnaireBuilder questionnaireId={q.id} nextVersion={nextVersion} />
+      <QuestionnaireBuilder
+        questionnaireId={q.id}
+        nextVersion={nextVersion}
+        initialDrafts={initialDrafts}
+      />
 
       <div className="space-y-3">
         <h2 className="font-semibold">Versiones</h2>
@@ -92,6 +139,11 @@ export default async function QuestionnaireDetail({
                 {v.questions.length} preguntas · {v._count.responses} respuestas
               </span>
             </div>
+            {v.note && (
+              <p className="mt-1 rounded bg-slate-50 px-2 py-1 text-sm text-slate-600">
+                📝 {v.note}
+              </p>
+            )}
             <ul className="mt-2 space-y-1 text-sm text-slate-600">
               {v.questions.map((qq) => (
                 <li key={qq.id}>

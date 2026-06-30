@@ -99,12 +99,28 @@ export default function QuestionInput({ q, value, error, onChange }: Props) {
       )}
 
       {q.type === "DATETIME" && (
-        <input
-          className="input"
-          type="datetime-local"
-          value={value.valueText ?? ""}
-          onChange={(e) => set({ valueText: e.target.value, valueDate: e.target.value })}
-        />
+        <div className="flex gap-2">
+          <input
+            className="input"
+            type="datetime-local"
+            step="1"
+            value={value.valueText ?? ""}
+            onChange={(e) => set({ valueText: e.target.value, valueDate: e.target.value })}
+          />
+          <button
+            type="button"
+            className="btn-secondary whitespace-nowrap"
+            title="Usar la hora actual"
+            onClick={() => {
+              const now = new Date();
+              now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+              const v = now.toISOString().slice(0, 19); // YYYY-MM-DDTHH:MM:SS local
+              set({ valueText: v, valueDate: v });
+            }}
+          >
+            Ahora
+          </button>
+        </div>
       )}
 
       {q.type === "SINGLE_CHOICE" && (

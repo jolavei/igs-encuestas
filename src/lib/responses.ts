@@ -34,6 +34,8 @@ export async function createResponseSet(args: Args) {
     type: q.type as QuestionType,
     required: q.required,
     config: fromJson<QuestionConfig>(q.config),
+    order: q.order,
+    text: q.text,
   }));
 
   const { ok, errors, answers } = validateAnswers(qLike, args.raw);

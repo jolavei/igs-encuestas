@@ -8,7 +8,8 @@ import {
 } from "@/lib/questionTypes";
 import { BQ_TYPES, defaultBqType, type BqType } from "@/lib/dataform";
 
-type Draft = {
+export type Draft = {
+  key: string;
   type: QuestionType;
   text: string;
   required: boolean;
@@ -17,6 +18,7 @@ type Draft = {
   max?: number;
   maxLength?: number;
   optionsText?: string; // "valor:Etiqueta" por linea
+  afterKey?: string; // DATETIME: debe ser posterior a esta otra pregunta (por su key)
   // Mapeo a BigQuery (Dataform)
   bqColumnName?: string;
   bqType?: BqType;
@@ -24,8 +26,14 @@ type Draft = {
 };
 
 const TYPES = Object.keys(QUESTION_TYPE_LABELS) as QuestionType[];
+const emptyDraft = (): Draft => ({
+  key: "",
+  type: "NPS",
+  text: "",
+  required: true,
+});
 
-function buildConfig(d: Draft) {
+function buildConfig(d: Draft): Record<string, unknown> {
   switch (d.type) {
     case "LIKERT":
       return { min: d.min ?? 1, max: d.max ?? 5 };
@@ -46,27 +54,30 @@ function buildConfig(d: Draft) {
       return { options, multi: d.type === "MULTI_CHOICE" };
     }
     default:
-      return undefined;
+      return {};
   }
 }
 
 export default function QuestionnaireBuilder({
   questionnaireId,
   nextVersion,
+  initialDrafts = [],
 }: {
   questionnaireId: string;
   nextVersion: number;
+  initialDrafts?: Draft[];
 }) {
   const router = useRouter();
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [d, setD] = useState<Draft>({ type: "NPS", text: "", required: true });
+  const [d, setD] = useState<Draft>(emptyDraft());
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function add() {
     if (!d.text.trim()) return;
-    setDrafts((s) => [...s, d]);
-    setD({ type: "NPS", text: "", required: true });
+    setDrafts((s) => [...s, { ...d, key: crypto.randomUUID() }]);
+    setD(emptyDraft());
   }
 
   async function save(publish: boolean) {
@@ -74,26 +85,38 @@ export default function QuestionnaireBuilder({
     setBusy(true);
     setError(null);
     try {
+      const keyToOrder: Record<string, number> = {};
+      drafts.forEach((q, i) => (keyToOrder[q.key] = i + 1));
+
       const r = await fetch(`/api/questionnaires/${questionnaireId}/versions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           publish,
-          questions: drafts.map((q, i) => ({
-            order: i + 1,
-            type: q.type,
-            text: q.text,
-            required: q.required,
-            equivalenceKey: q.equivalenceKey || null,
-            config: buildConfig(q),
-            bqColumnName: q.bqColumnName || null,
-            bqType: q.bqType || null,
-            bqDescription: q.bqDescription || null,
-          })),
+          note: note || null,
+          questions: drafts.map((q, i) => {
+            const cfg = buildConfig(q);
+            if (q.type === "DATETIME" && q.afterKey && keyToOrder[q.afterKey]) {
+              cfg.afterQuestionOrder = keyToOrder[q.afterKey];
+            }
+            const config = Object.keys(cfg).length ? cfg : null;
+            return {
+              order: i + 1,
+              type: q.type,
+              text: q.text,
+              required: q.required,
+              equivalenceKey: q.equivalenceKey || null,
+              config,
+              bqColumnName: q.bqColumnName || null,
+              bqType: q.bqType || null,
+              bqDescription: q.bqDescription || null,
+            };
+          }),
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error ?? "Error");
       setDrafts([]);
+      setNote("");
       router.refresh();
     } catch (e: any) {
       setError(e.message);
@@ -104,10 +127,23 @@ export default function QuestionnaireBuilder({
 
   const needsOptions = d.type === "SINGLE_CHOICE" || d.type === "MULTI_CHOICE";
   const needsRange = d.type === "LIKERT" || d.type === "NUMBER";
+  // Preguntas DATETIME ya agregadas, candidatas para la validación "posterior a".
+  const datetimeDrafts = drafts.filter((q) => q.type === "DATETIME");
 
   return (
     <div className="card space-y-4">
-      <h2 className="font-semibold">Nueva versión (v{nextVersion})</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">Nueva versión (v{nextVersion})</h2>
+        {initialDrafts.length > 0 && drafts.length === 0 && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setDrafts(initialDrafts)}
+          >
+            Partir desde la v{nextVersion - 1}
+          </button>
+        )}
+      </div>
 
       <div className="space-y-3 rounded-md border border-dashed border-slate-300 p-3">
         <div className="grid gap-3 md:grid-cols-2">
@@ -129,7 +165,7 @@ export default function QuestionnaireBuilder({
             <label className="label">Clave de equivalencia (opcional)</label>
             <input
               className="input"
-              placeholder="ej: nps_general"
+              placeholder="ej: t1_ingreso"
               value={d.equivalenceKey ?? ""}
               onChange={(e) => setD({ ...d, equivalenceKey: e.target.value })}
             />
@@ -180,6 +216,27 @@ export default function QuestionnaireBuilder({
           </div>
         )}
 
+        {d.type === "DATETIME" && datetimeDrafts.length > 0 && (
+          <div>
+            <label className="label">Debe ser posterior a (opcional)</label>
+            <select
+              className="input"
+              value={d.afterKey ?? ""}
+              onChange={(e) => setD({ ...d, afterKey: e.target.value || undefined })}
+            >
+              <option value="">— sin validación —</option>
+              {datetimeDrafts.map((q) => (
+                <option key={q.key} value={q.key}>
+                  {q.text}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-400">
+              Ej: la hora t2 debe ser posterior a t1.
+            </p>
+          </div>
+        )}
+
         {needsOptions && (
           <div>
             <label className="label">Opciones (una por línea, formato valor:Etiqueta)</label>
@@ -212,7 +269,7 @@ export default function QuestionnaireBuilder({
               <label className="label">Nombre de la columna</label>
               <input
                 className="input"
-                placeholder="ej: nps_recomendacion"
+                placeholder="ej: t1_ingreso"
                 value={d.bqColumnName ?? ""}
                 onChange={(e) => setD({ ...d, bqColumnName: e.target.value })}
               />
@@ -236,7 +293,7 @@ export default function QuestionnaireBuilder({
             <label className="label">Detalle (a qué hace referencia)</label>
             <input
               className="input"
-              placeholder="ej: Probabilidad de recomendación (0-10)"
+              placeholder="ej: Hora de ingreso del pasajero"
               value={d.bqDescription ?? ""}
               onChange={(e) => setD({ ...d, bqDescription: e.target.value })}
             />
@@ -251,12 +308,16 @@ export default function QuestionnaireBuilder({
       {drafts.length > 0 && (
         <ol className="list-decimal space-y-1 pl-5 text-sm">
           {drafts.map((q, i) => (
-            <li key={i} className="flex items-center justify-between">
+            <li key={q.key} className="flex items-center justify-between">
               <span>
                 <span className="font-medium">{q.text}</span>{" "}
                 <span className="text-slate-400">
                   ({QUESTION_TYPE_LABELS[q.type]}
-                  {q.required ? ", oblig." : ""})
+                  {q.required ? ", oblig." : ""}
+                  {q.afterKey
+                    ? `, posterior a "${drafts.find((x) => x.key === q.afterKey)?.text ?? "?"}"`
+                    : ""}
+                  )
                 </span>
                 {q.bqColumnName && (
                   <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 font-mono text-xs text-brand-700">
@@ -266,7 +327,7 @@ export default function QuestionnaireBuilder({
               </span>
               <button
                 className="text-red-500"
-                onClick={() => setDrafts((s) => s.filter((_, j) => j !== i))}
+                onClick={() => setDrafts((s) => s.filter((x) => x.key !== q.key))}
               >
                 quitar
               </button>
@@ -274,6 +335,17 @@ export default function QuestionnaireBuilder({
           ))}
         </ol>
       )}
+
+      <div>
+        <label className="label">Comentario del cambio (qué cambió y por qué)</label>
+        <textarea
+          className="input"
+          rows={2}
+          placeholder="ej: Se agregó la medición t3 (salida) y se hizo obligatoria t2."
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
