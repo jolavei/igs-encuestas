@@ -20,7 +20,8 @@ const NAV: Record<Role, NavItem[]> = {
   ADMIN: [
     { href: "/admin", label: "Inicio", icon: "home", exact: true },
     { href: "/admin/cuestionarios", label: "Cuestionarios", icon: "questionnaire" },
-    { href: "/admin/asignaciones", label: "Asignaciones", icon: "assignment" },
+    { href: "/admin/planes", label: "Planes de trabajo", icon: "assignment" },
+    { href: "/admin/levantar", label: "Levantar encuesta", icon: "workplan" },
     { href: "/admin/empresas", label: "Empresas", icon: "company" },
     { href: "/admin/usuarios", label: "Usuarios", icon: "users" },
   ],

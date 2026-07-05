@@ -129,6 +129,7 @@ async function main() {
 
   const npsQ = version.questions.find((q) => q.type === "NPS")!;
   const likertQ = version.questions.find((q) => q.type === "LIKERT")!;
+  const motivoQ = version.questions.find((q) => q.equivalenceKey === "motivo_visita")!;
 
   // --- QR token por sede (de ambas empresas) ---
   for (const loc of [...company.locations, ...company2.locations]) {
@@ -141,17 +142,56 @@ async function main() {
     });
   }
 
-  // --- Asignacion (plan de trabajo) ---
-  await prisma.assignment.create({
+  // --- Plan de trabajo (meta total + sub-metas por segmento = motivo de visita) ---
+  const now = new Date();
+  const in30 = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
+  const plan = await prisma.workPlan.create({
     data: {
-      surveyorId: surveyor.id,
+      companyId: company.id,
       questionnaireId: questionnaire.id,
       locationId: company.locations[0].id,
-      quota: 50,
-      workPlanComment: "Completar 50 encuestas a huéspedes business durante la semana.",
+      windowStart: now,
+      windowEnd: in30,
+      totalTarget: 50,
+      segmentKey: "motivo_visita",
+      segmentLabel: "Motivo de visita",
+      comment: "Completar 50 encuestas este mes, priorizando pasajeros de negocios.",
       createdById: admin.id,
+      surveyors: { connect: [{ id: surveyor.id }] },
+      segments: {
+        create: [
+          { value: "negocios", label: "Negocios", target: 20 },
+          { value: "turismo", label: "Turismo", target: 20 },
+          { value: "evento", label: "Evento", target: 10 },
+        ],
+      },
     },
   });
+
+  // Levantamientos de campo ligados al plan (demo del avance por segmento).
+  for (const s of [
+    { motivo: "negocios", nps: 9, likert: 5 },
+    { motivo: "negocios", nps: 8, likert: 4 },
+    { motivo: "turismo", nps: 7, likert: 4 },
+  ]) {
+    await prisma.responseSet.create({
+      data: {
+        versionId: version.id,
+        locationId: company.locations[0].id,
+        source: "FIELD",
+        surveyorId: surveyor.id,
+        workPlanId: plan.id,
+        segmentValue: s.motivo,
+        answers: {
+          create: [
+            { questionId: npsQ.id, valueNumber: s.nps },
+            { questionId: likertQ.id, valueNumber: s.likert },
+            { questionId: motivoQ.id, valueText: s.motivo },
+          ],
+        },
+      },
+    });
+  }
 
   // --- Respuestas de ejemplo (NPS + CSAT) ---
   const samples = [

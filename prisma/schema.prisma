@@ -33,7 +33,7 @@ model User {
 
   accounts    Account[]
   sessions    Session[]
-  assignments Assignment[]  @relation("SurveyorAssignments")
+  workPlans   WorkPlan[]    @relation("WorkPlanSurveyors")
   responses   ResponseSet[] @relation("SurveyorResponses")
   auditLogs   AuditLog[]
 
@@ -88,6 +88,7 @@ model Company {
   locations      Location[]
   users          User[]
   questionnaires Questionnaire[] @relation("CompanyQuestionnaires")
+  workPlans      WorkPlan[]
 }
 
 model Location {
@@ -101,7 +102,7 @@ model Location {
 
   qrTokens    QrToken[]
   responses   ResponseSet[]
-  assignments Assignment[]
+  workPlans   WorkPlan[]
 
   @@index([companyId])
 }
@@ -115,7 +116,7 @@ model Questionnaire {
 
   companies   Company[]              @relation("CompanyQuestionnaires")
   versions    QuestionnaireVersion[]
-  assignments Assignment[]
+  workPlans   WorkPlan[]
   qrTokens    QrToken[]
 }
 
@@ -164,26 +165,47 @@ model Question {
   @@index([equivalenceKey])
 }
 
-// Relacion encuestador <-> cuestionario, con plan de trabajo (cuota + comentario).
+// Plan de trabajo: meta compartida (empresa + cuestionario + ventana de tiempo).
+// Meta total mínima N (se puede superar) + sub-metas por segmento (aerolínea/destino).
+// Suman a la meta los levantamientos de encuestadores asignados y de admins (no el QR).
 // status: ACTIVE | COMPLETED | CANCELLED
-model Assignment {
+model WorkPlan {
   id              String        @id @default(cuid())
-  surveyorId      String
-  surveyor        User          @relation("SurveyorAssignments", fields: [surveyorId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   questionnaireId String
   questionnaire   Questionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
-  locationId      String?
+  locationId      String? // sede fija (opcional); si null, el encuestador la elige
   location        Location?     @relation(fields: [locationId], references: [id])
-  quota           Int           @default(0)
-  workPlanComment String?
+  windowStart     DateTime
+  windowEnd       DateTime
+  totalTarget     Int           @default(0) // N mínimo total
+  // Segmento = respuesta a la pregunta con este equivalenceKey (ej "aerolinea").
+  segmentKey      String?
+  segmentLabel    String? // "Aerolínea" / "Destino" (para mostrar)
+  comment         String?
   status          String        @default("ACTIVE")
   createdById     String?
   createdAt       DateTime      @default(now())
 
+  segments  WorkPlanSegment[]
+  surveyors User[]            @relation("WorkPlanSurveyors")
   responses ResponseSet[]
 
-  @@index([surveyorId, status])
+  @@index([companyId])
   @@index([questionnaireId])
+}
+
+// Sub-meta por valor del segmento (ej. value="LATAM", target=50).
+model WorkPlanSegment {
+  id         String   @id @default(cuid())
+  workPlanId String
+  workPlan   WorkPlan @relation(fields: [workPlanId], references: [id], onDelete: Cascade)
+  value      String // valor de la opción (coincide con la respuesta)
+  label      String
+  target     Int      @default(0)
+
+  @@index([workPlanId])
 }
 
 // Un envio de encuesta (un respondente). Referencia la VERSION con la que se capturo.
@@ -197,8 +219,9 @@ model ResponseSet {
   source       String
   surveyorId   String?
   surveyor     User?                @relation("SurveyorResponses", fields: [surveyorId], references: [id])
-  assignmentId String?
-  assignment   Assignment?          @relation(fields: [assignmentId], references: [id])
+  workPlanId   String?
+  workPlan     WorkPlan?            @relation(fields: [workPlanId], references: [id])
+  segmentValue String? // valor del segmento (respuesta a la pregunta-segmento del plan)
   // Trazabilidad de sync a BigQuery (batch). null = pendiente.
   syncedAt     DateTime?
   createdAt    DateTime             @default(now())
@@ -207,6 +230,7 @@ model ResponseSet {
 
   @@index([versionId])
   @@index([locationId])
+  @@index([workPlanId])
   @@index([syncedAt])
 }
 

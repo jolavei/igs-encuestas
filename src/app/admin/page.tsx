@@ -123,8 +123,8 @@ export default async function AdminHome() {
         <Link href="/admin/cuestionarios" className="btn">
           Gestionar cuestionarios
         </Link>
-        <Link href="/admin/asignaciones" className="btn-secondary">
-          Asignar encuestadores
+        <Link href="/admin/planes" className="btn-secondary">
+          Planes de trabajo
         </Link>
       </div>
     </div>

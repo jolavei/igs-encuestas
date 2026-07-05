@@ -13,7 +13,9 @@ type Args = {
   source: ResponseSource;
   locationId?: string | null;
   surveyorId?: string | null;
-  assignmentId?: string | null;
+  workPlanId?: string | null;
+  // equivalenceKey de la pregunta que define el segmento (aerolínea/destino) del plan.
+  segmentKey?: string | null;
   raw: RawAnswer[];
 };
 
@@ -41,13 +43,24 @@ export async function createResponseSet(args: Args) {
   const { ok, errors, answers } = validateAnswers(qLike, args.raw);
   if (!ok) return { ok: false as const, status: 422, errors };
 
+  // Segmento: valor de la respuesta a la pregunta marcada por el plan (equivalenceKey).
+  let segmentValue: string | null = null;
+  if (args.segmentKey) {
+    const segQ = questions.find((q) => q.equivalenceKey === args.segmentKey);
+    if (segQ) {
+      const a = answers.find((x) => x.questionId === segQ.id);
+      segmentValue = a?.valueText ?? null;
+    }
+  }
+
   const set = await prisma.responseSet.create({
     data: {
       versionId: args.versionId,
       source: args.source,
       locationId: args.locationId ?? null,
       surveyorId: args.surveyorId ?? null,
-      assignmentId: args.assignmentId ?? null,
+      workPlanId: args.workPlanId ?? null,
+      segmentValue,
       answers: {
         create: answers.map((a) => ({
           questionId: a.questionId,
