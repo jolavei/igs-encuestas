@@ -25,7 +25,8 @@ export type IconName =
   | "company"
   | "users"
   | "workplan"
-  | "dashboard";
+  | "dashboard"
+  | "documents";
 
 export const HomeIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
@@ -113,6 +114,25 @@ export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
+export const DocsIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d="M4 4a2 2 0 0 1 2-2h6l2 2h4a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" />
+  </Svg>
+);
+
+export const FolderIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d="M4 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" />
+  </Svg>
+);
+
+export const FileIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6" />
+  </Svg>
+);
+
 export const LogoutIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -129,4 +149,5 @@ export const NAV_ICONS: Record<IconName, (p: SVGProps<SVGSVGElement>) => JSX.Ele
   users: UsersIcon,
   workplan: WorkplanIcon,
   dashboard: DashboardIcon,
+  documents: DocsIcon,
 };

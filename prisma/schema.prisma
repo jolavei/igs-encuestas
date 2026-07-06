@@ -29,6 +29,8 @@ model User {
   active        Boolean   @default(true) // false = usuario antiguo desactivado (no puede entrar)
   companyId     String?
   company       Company?  @relation(fields: [companyId], references: [id])
+  locationId    String? // si CLIENT: sede específica que puede consultar (documentos)
+  location      Location? @relation("ClientLocation", fields: [locationId], references: [id])
   createdAt     DateTime  @default(now())
 
   accounts    Account[]
@@ -89,6 +91,8 @@ model Company {
   users          User[]
   questionnaires Questionnaire[] @relation("CompanyQuestionnaires")
   workPlans      WorkPlan[]
+  folders        Folder[]
+  documents      Document[]
 }
 
 model Location {
@@ -103,6 +107,9 @@ model Location {
   qrTokens    QrToken[]
   responses   ResponseSet[]
   workPlans   WorkPlan[]
+  clients     User[]        @relation("ClientLocation")
+  folders     Folder[]
+  documents   Document[]
 
   @@index([companyId])
 }
@@ -284,6 +291,50 @@ model SyncLog {
   syncedAt DateTime @default(now())
 
   @@index([syncedAt])
+}
+
+// ----------------------------------------------------------------------------
+// Documentos: repositorio tipo Drive. Admin sube; cliente (por sede) consulta.
+// ----------------------------------------------------------------------------
+
+// Carpeta (anidable). Alcance: empresa + sede opcional.
+model Folder {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  locationId  String?
+  location    Location? @relation(fields: [locationId], references: [id])
+  parentId    String?
+  parent      Folder?  @relation("FolderTree", fields: [parentId], references: [id])
+  children    Folder[] @relation("FolderTree")
+  name        String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  documents Document[]
+
+  @@index([companyId, locationId])
+  @@index([parentId])
+}
+
+// Archivo. El binario vive en Google Cloud Storage (objectPath); descarga por URL firmada.
+model Document {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  locationId   String?
+  location     Location? @relation(fields: [locationId], references: [id])
+  folderId     String?
+  folder       Folder?  @relation(fields: [folderId], references: [id])
+  name         String
+  objectPath   String // ruta del objeto en el bucket de GCS
+  contentType  String
+  size         Int
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  @@index([companyId, locationId])
+  @@index([folderId])
 }
 
 // Auditoria: quien creo/edito version y quien asigno cuota.

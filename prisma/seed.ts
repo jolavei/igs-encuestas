@@ -46,12 +46,29 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: "cliente@demo.cl" },
-    update: { role: "CLIENT", companyId: company.id },
+    update: { role: "CLIENT", companyId: company.id, locationId: company.locations[0].id },
     create: {
       email: "cliente@demo.cl",
       name: "Cliente Demo",
       role: "CLIENT",
       companyId: company.id,
+      locationId: company.locations[0].id,
+    },
+  });
+
+  // --- Carpetas demo (Documentos) ---
+  const carpetaGeneral = await prisma.folder.create({
+    data: { companyId: company.id, locationId: null, name: "Informes generales", createdById: admin.id },
+  });
+  await prisma.folder.create({
+    data: { companyId: company.id, locationId: null, parentId: carpetaGeneral.id, name: "2026", createdById: admin.id },
+  });
+  await prisma.folder.create({
+    data: {
+      companyId: company.id,
+      locationId: company.locations[0].id,
+      name: "Reportes " + company.locations[0].name,
+      createdById: admin.id,
     },
   });
 

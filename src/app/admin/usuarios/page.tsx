@@ -8,7 +8,11 @@ export default async function UsuariosPage() {
   const [me, users, companies] = await Promise.all([
     getSessionUser(),
     prisma.user.findMany({ orderBy: [{ active: "desc" }, { createdAt: "asc" }] }),
-    prisma.company.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    prisma.company.findMany({
+      where: { active: true },
+      include: { locations: { orderBy: { name: "asc" } } },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
@@ -26,6 +30,7 @@ export default async function UsuariosPage() {
               <th className="px-4 py-2">Email</th>
               <th className="px-4 py-2">Rol</th>
               <th className="px-4 py-2">Empresa</th>
+              <th className="px-4 py-2">Sede (cliente)</th>
               <th className="px-4 py-2">Acciones</th>
             </tr>
           </thead>
@@ -38,6 +43,7 @@ export default async function UsuariosPage() {
                   email: u.email,
                   role: u.role,
                   companyId: u.companyId,
+                  locationId: u.locationId,
                   active: u.active,
                 }}
                 companies={companies}

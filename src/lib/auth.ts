@@ -89,11 +89,13 @@ export const authOptions: NextAuthOptions = {
         token.uid = dbUser.id;
         token.role = dbUser.role as Role;
         token.companyId = dbUser.companyId ?? null;
+        token.locationId = dbUser.locationId ?? null;
       } else if (dbUser && !dbUser.active) {
         // Desactivado: revoca rol en sesiones ya emitidas (queda sin acceso a rutas por rol).
         token.uid = dbUser.id;
         token.role = undefined;
         token.companyId = null;
+        token.locationId = null;
       }
       return token;
     },
@@ -102,6 +104,7 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.uid as string;
         session.user.role = token.role as Role;
         session.user.companyId = (token.companyId as string | null) ?? null;
+        session.user.locationId = (token.locationId as string | null) ?? null;
       }
       return session;
     },

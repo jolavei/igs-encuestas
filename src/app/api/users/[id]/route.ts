@@ -7,6 +7,7 @@ import { audit } from "@/lib/audit";
 const schema = z.object({
   role: z.enum(["ADMIN", "SURVEYOR", "CLIENT"]).optional(),
   companyId: z.string().nullable().optional(),
+  locationId: z.string().nullable().optional(),
   active: z.boolean().optional(),
 });
 
@@ -33,6 +34,7 @@ export async function PATCH(
     data: {
       ...(parsed.data.role ? { role: parsed.data.role } : {}),
       ...(parsed.data.companyId !== undefined ? { companyId: parsed.data.companyId } : {}),
+      ...(parsed.data.locationId !== undefined ? { locationId: parsed.data.locationId } : {}),
       ...(parsed.data.active !== undefined ? { active: parsed.data.active } : {}),
     },
   });

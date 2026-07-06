@@ -8,6 +8,7 @@ declare module "next-auth" {
       id: string;
       role: Role;
       companyId: string | null;
+      locationId: string | null;
       name?: string | null;
       email?: string | null;
       image?: string | null;
@@ -20,5 +21,6 @@ declare module "next-auth/jwt" {
     uid?: string;
     role?: Role;
     companyId?: string | null;
+    locationId?: string | null;
   }
 }

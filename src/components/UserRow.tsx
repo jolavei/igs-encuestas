@@ -2,22 +2,32 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-type Company = { id: string; name: string };
+type Company = { id: string; name: string; locations: { id: string; name: string }[] };
 
 export default function UserRow({
   user,
   companies,
   isSelf,
 }: {
-  user: { id: string; email: string; role: string; companyId: string | null; active: boolean };
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    companyId: string | null;
+    locationId: string | null;
+    active: boolean;
+  };
   companies: Company[];
   isSelf: boolean;
 }) {
   const router = useRouter();
   const [role, setRole] = useState(user.role);
   const [companyId, setCompanyId] = useState(user.companyId ?? "");
+  const [locationId, setLocationId] = useState(user.locationId ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const locations = companies.find((c) => c.id === companyId)?.locations ?? [];
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -49,12 +59,7 @@ export default function UserRow({
         {error && <p className="text-xs text-red-600">{error}</p>}
       </td>
       <td className="px-4 py-2">
-        <select
-          className="input"
-          value={role}
-          disabled={!user.active}
-          onChange={(e) => setRole(e.target.value)}
-        >
+        <select className="input" value={role} disabled={!user.active} onChange={(e) => setRole(e.target.value)}>
           <option value="ADMIN">ADMIN</option>
           <option value="SURVEYOR">SURVEYOR</option>
           <option value="CLIENT">CLIENT</option>
@@ -65,7 +70,10 @@ export default function UserRow({
           className="input"
           value={companyId}
           disabled={!user.active}
-          onChange={(e) => setCompanyId(e.target.value)}
+          onChange={(e) => {
+            setCompanyId(e.target.value);
+            setLocationId("");
+          }}
         >
           <option value="">— ninguna —</option>
           {companies.map((c) => (
@@ -76,12 +84,28 @@ export default function UserRow({
         </select>
       </td>
       <td className="px-4 py-2">
+        <select
+          className="input"
+          value={locationId}
+          disabled={!user.active || !companyId}
+          onChange={(e) => setLocationId(e.target.value)}
+          title="Sede (para clientes)"
+        >
+          <option value="">— todas / —</option>
+          {locations.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td className="px-4 py-2">
         <div className="flex gap-2">
           {user.active && (
             <button
               className="btn-secondary"
               disabled={busy}
-              onClick={() => patch({ role, companyId: companyId || null })}
+              onClick={() => patch({ role, companyId: companyId || null, locationId: locationId || null })}
             >
               {busy ? "…" : "Guardar"}
             </button>
