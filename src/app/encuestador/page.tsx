@@ -48,13 +48,13 @@ export default async function EncuestadorHome() {
                 </div>
               </div>
 
-              {prog.segments.length > 0 && (
+              {prog.levels.length > 0 && (
                 <div className="flex flex-wrap gap-2 text-xs">
-                  {prog.segments.map((s) => (
+                  {prog.levels.map((s) => (
                     <span
                       key={s.value}
                       className={`rounded px-2 py-0.5 ${
-                        s.done >= s.target
+                        s.target > 0 && s.done >= s.target
                           ? "bg-green-100 text-green-700"
                           : "bg-slate-100 text-slate-600"
                       }`}

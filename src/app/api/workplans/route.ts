@@ -13,15 +13,18 @@ const schema = z.object({
   totalTarget: z.number().int().min(0),
   segmentKey: z.string().optional().nullable(),
   segmentLabel: z.string().optional().nullable(),
+  segment2Key: z.string().optional().nullable(),
+  segment2Label: z.string().optional().nullable(),
   segments: z
     .array(
       z.object({
+        parentValue: z.string().optional().nullable(),
         value: z.string().min(1),
         label: z.string().min(1),
         target: z.number().int().min(0),
       })
     )
-    .max(100)
+    .max(500)
     .default([]),
   surveyorIds: z.array(z.string()).default([]),
   comment: z.string().optional().nullable(),
@@ -51,9 +54,18 @@ export async function POST(req: Request) {
       totalTarget: d.totalTarget,
       segmentKey: d.segmentKey || null,
       segmentLabel: d.segmentLabel || null,
+      segment2Key: d.segment2Key || null,
+      segment2Label: d.segment2Label || null,
       comment: d.comment || null,
       createdById: user.id,
-      segments: { create: d.segments },
+      segments: {
+        create: d.segments.map((s) => ({
+          parentValue: s.parentValue || null,
+          value: s.value,
+          label: s.label,
+          target: s.target,
+        })),
+      },
       surveyors: { connect: d.surveyorIds.map((id) => ({ id })) },
     },
   });

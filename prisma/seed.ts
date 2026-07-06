@@ -121,6 +121,23 @@ async function main() {
             bqType: "STRING",
             bqDescription: "Comentario abierto del huésped",
           },
+          {
+            order: 5,
+            type: "SINGLE_CHOICE",
+            text: "¿Por qué canal reservaste?",
+            required: false,
+            config: JSON.stringify({
+              options: [
+                { value: "directo", label: "Directo" },
+                { value: "agencia", label: "Agencia" },
+                { value: "online", label: "Online" },
+              ],
+            }),
+            equivalenceKey: "canal_reserva",
+            bqColumnName: "canal_reserva",
+            bqType: "STRING",
+            bqDescription: "Canal de reserva",
+          },
         ],
       },
     },
@@ -130,6 +147,7 @@ async function main() {
   const npsQ = version.questions.find((q) => q.type === "NPS")!;
   const likertQ = version.questions.find((q) => q.type === "LIKERT")!;
   const motivoQ = version.questions.find((q) => q.equivalenceKey === "motivo_visita")!;
+  const canalQ = version.questions.find((q) => q.equivalenceKey === "canal_reserva")!;
 
   // --- QR token por sede (de ambas empresas) ---
   for (const loc of [...company.locations, ...company2.locations]) {
@@ -142,7 +160,7 @@ async function main() {
     });
   }
 
-  // --- Plan de trabajo (meta total + sub-metas por segmento = motivo de visita) ---
+  // --- Plan de trabajo con metas de DOS niveles: motivo de visita → canal de reserva ---
   const now = new Date();
   const in30 = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
   const plan = await prisma.workPlan.create({
@@ -155,24 +173,33 @@ async function main() {
       totalTarget: 50,
       segmentKey: "motivo_visita",
       segmentLabel: "Motivo de visita",
+      segment2Key: "canal_reserva",
+      segment2Label: "Canal de reserva",
       comment: "Completar 50 encuestas este mes, priorizando pasajeros de negocios.",
       createdById: admin.id,
       surveyors: { connect: [{ id: surveyor.id }] },
       segments: {
         create: [
-          { value: "negocios", label: "Negocios", target: 20 },
-          { value: "turismo", label: "Turismo", target: 20 },
-          { value: "evento", label: "Evento", target: 10 },
+          // Nivel 1 (motivo)
+          { parentValue: null, value: "negocios", label: "Negocios", target: 20 },
+          { parentValue: null, value: "turismo", label: "Turismo", target: 20 },
+          { parentValue: null, value: "evento", label: "Evento", target: 10 },
+          // Nivel 2 (canal, dentro de cada motivo)
+          { parentValue: "negocios", value: "directo", label: "Directo", target: 10 },
+          { parentValue: "negocios", value: "agencia", label: "Agencia", target: 6 },
+          { parentValue: "negocios", value: "online", label: "Online", target: 4 },
+          { parentValue: "turismo", value: "online", label: "Online", target: 12 },
+          { parentValue: "turismo", value: "agencia", label: "Agencia", target: 8 },
         ],
       },
     },
   });
 
-  // Levantamientos de campo ligados al plan (demo del avance por segmento).
+  // Levantamientos de campo ligados al plan (demo del avance por segmento, 2 niveles).
   for (const s of [
-    { motivo: "negocios", nps: 9, likert: 5 },
-    { motivo: "negocios", nps: 8, likert: 4 },
-    { motivo: "turismo", nps: 7, likert: 4 },
+    { motivo: "negocios", canal: "directo", nps: 9, likert: 5 },
+    { motivo: "negocios", canal: "agencia", nps: 8, likert: 4 },
+    { motivo: "turismo", canal: "online", nps: 7, likert: 4 },
   ]) {
     await prisma.responseSet.create({
       data: {
@@ -182,11 +209,13 @@ async function main() {
         surveyorId: surveyor.id,
         workPlanId: plan.id,
         segmentValue: s.motivo,
+        segmentValue2: s.canal,
         answers: {
           create: [
             { questionId: npsQ.id, valueNumber: s.nps },
             { questionId: likertQ.id, valueNumber: s.likert },
             { questionId: motivoQ.id, valueText: s.motivo },
+            { questionId: canalQ.id, valueText: s.canal },
           ],
         },
       },

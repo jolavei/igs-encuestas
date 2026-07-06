@@ -32,8 +32,10 @@ export default function NewWorkPlanForm({
   const [windowStart, setWindowStart] = useState("");
   const [windowEnd, setWindowEnd] = useState("");
   const [totalTarget, setTotalTarget] = useState<number | "">("");
-  const [segEqKey, setSegEqKey] = useState("");
-  const [segTargets, setSegTargets] = useState<Record<string, number>>({});
+  const [segEqKey, setSegEqKey] = useState(""); // primario
+  const [seg2EqKey, setSeg2EqKey] = useState(""); // secundario (opcional)
+  const [segTargets, setSegTargets] = useState<Record<string, number>>({}); // nivel 1
+  const [seg2Targets, setSeg2Targets] = useState<Record<string, number>>({}); // "pval|sval"
   const [surveyorIds, setSurveyorIds] = useState<Set<string>>(new Set());
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,10 +47,8 @@ export default function NewWorkPlanForm({
     [questionnaires, companyId]
   );
   const questionnaire = questionnaires.find((q) => q.id === questionnaireId);
-  const segmentQuestion = questionnaire?.segmentQuestions.find(
-    (s) => s.equivalenceKey === segEqKey
-  );
-  const segSum = Object.values(segTargets).reduce((a, b) => a + (b || 0), 0);
+  const primaryQ = questionnaire?.segmentQuestions.find((s) => s.equivalenceKey === segEqKey);
+  const secondaryQ = questionnaire?.segmentQuestions.find((s) => s.equivalenceKey === seg2EqKey);
 
   function toggleSurveyor(id: string) {
     setSurveyorIds((s) => {
@@ -63,11 +63,35 @@ export default function NewWorkPlanForm({
     setBusy(true);
     setError(null);
     try {
-      const segments = segmentQuestion
-        ? segmentQuestion.options
-            .filter((o) => (segTargets[o.value] ?? 0) > 0)
-            .map((o) => ({ value: o.value, label: o.label, target: segTargets[o.value] }))
-        : [];
+      const segments: {
+        parentValue: string | null;
+        value: string;
+        label: string;
+        target: number;
+      }[] = [];
+
+      if (primaryQ) {
+        for (const po of primaryQ.options) {
+          const childSum = secondaryQ
+            ? secondaryQ.options.reduce(
+                (a, so) => a + (seg2Targets[`${po.value}|${so.value}`] ?? 0),
+                0
+              )
+            : 0;
+          const l1target = segTargets[po.value] || childSum;
+          if (l1target > 0) {
+            segments.push({ parentValue: null, value: po.value, label: po.label, target: l1target });
+          }
+          if (secondaryQ) {
+            for (const so of secondaryQ.options) {
+              const t = seg2Targets[`${po.value}|${so.value}`] ?? 0;
+              if (t > 0) {
+                segments.push({ parentValue: po.value, value: so.value, label: so.label, target: t });
+              }
+            }
+          }
+        }
+      }
 
       const r = await fetch("/api/workplans", {
         method: "POST",
@@ -79,8 +103,10 @@ export default function NewWorkPlanForm({
           windowStart,
           windowEnd,
           totalTarget: Number(totalTarget) || 0,
-          segmentKey: segmentQuestion ? segEqKey : null,
-          segmentLabel: segmentQuestion ? segmentQuestion.text : null,
+          segmentKey: primaryQ ? segEqKey : null,
+          segmentLabel: primaryQ ? primaryQ.text : null,
+          segment2Key: primaryQ && secondaryQ ? seg2EqKey : null,
+          segment2Label: primaryQ && secondaryQ ? secondaryQ.text : null,
           segments,
           surveyorIds: [...surveyorIds],
           comment: comment || null,
@@ -88,7 +114,6 @@ export default function NewWorkPlanForm({
       });
       if (!r.ok) throw new Error((await r.json()).error ?? "Error");
       router.refresh();
-      // reset
       setCompanyId("");
       setQuestionnaireId("");
       setLocationId("");
@@ -96,7 +121,9 @@ export default function NewWorkPlanForm({
       setWindowEnd("");
       setTotalTarget("");
       setSegEqKey("");
+      setSeg2EqKey("");
       setSegTargets({});
+      setSeg2Targets({});
       setSurveyorIds(new Set());
       setComment("");
     } catch (e: any) {
@@ -119,7 +146,9 @@ export default function NewWorkPlanForm({
             setQuestionnaireId("");
             setLocationId("");
             setSegEqKey("");
+            setSeg2EqKey("");
             setSegTargets({});
+            setSeg2Targets({});
           }}
         >
           <option value="">— elegir —</option>
@@ -141,7 +170,9 @@ export default function NewWorkPlanForm({
             onChange={(e) => {
               setQuestionnaireId(e.target.value);
               setSegEqKey("");
+              setSeg2EqKey("");
               setSegTargets({});
+              setSeg2Targets({});
             }}
           >
             <option value="">— elegir —</option>
@@ -162,11 +193,7 @@ export default function NewWorkPlanForm({
       {company && (
         <div>
           <label className="label">Sede (opcional — si no eliges, el encuestador la elige)</label>
-          <select
-            className="input"
-            value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
-          >
+          <select className="input" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
             <option value="">— cualquiera de la empresa —</option>
             {company.locations.map((l) => (
               <option key={l.id} value={l.id}>
@@ -180,23 +207,11 @@ export default function NewWorkPlanForm({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Desde</label>
-          <input
-            className="input"
-            type="date"
-            required
-            value={windowStart}
-            onChange={(e) => setWindowStart(e.target.value)}
-          />
+          <input className="input" type="date" required value={windowStart} onChange={(e) => setWindowStart(e.target.value)} />
         </div>
         <div>
           <label className="label">Hasta</label>
-          <input
-            className="input"
-            type="date"
-            required
-            value={windowEnd}
-            onChange={(e) => setWindowEnd(e.target.value)}
-          />
+          <input className="input" type="date" required value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} />
         </div>
       </div>
 
@@ -212,63 +227,115 @@ export default function NewWorkPlanForm({
         />
       </div>
 
-      {questionnaire && (
+      {questionnaire && questionnaire.segmentQuestions.length === 0 && (
+        <p className="text-xs text-slate-400">
+          Este cuestionario no tiene preguntas de selección única con clave de equivalencia
+          para usar como segmento.
+        </p>
+      )}
+
+      {questionnaire && questionnaire.segmentQuestions.length > 0 && (
         <div>
-          <label className="label">Segmento (opcional)</label>
-          {questionnaire.segmentQuestions.length === 0 ? (
-            <p className="text-xs text-slate-400">
-              Este cuestionario no tiene preguntas de selección única con clave de
-              equivalencia para usar como segmento.
-            </p>
-          ) : (
-            <select
-              className="input"
-              value={segEqKey}
-              onChange={(e) => {
-                setSegEqKey(e.target.value);
-                setSegTargets({});
-              }}
-            >
-              <option value="">— sin segmento —</option>
-              {questionnaire.segmentQuestions.map((s) => (
+          <label className="label">Segmento principal (opcional)</label>
+          <select
+            className="input"
+            value={segEqKey}
+            onChange={(e) => {
+              setSegEqKey(e.target.value);
+              setSeg2EqKey("");
+              setSegTargets({});
+              setSeg2Targets({});
+            }}
+          >
+            <option value="">— sin segmento —</option>
+            {questionnaire.segmentQuestions.map((s) => (
+              <option key={s.equivalenceKey} value={s.equivalenceKey}>
+                {s.text}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {primaryQ && questionnaire!.segmentQuestions.length > 1 && (
+        <div>
+          <label className="label">Sub-segmento (opcional — para metas de dos niveles)</label>
+          <select
+            className="input"
+            value={seg2EqKey}
+            onChange={(e) => {
+              setSeg2EqKey(e.target.value);
+              setSeg2Targets({});
+            }}
+          >
+            <option value="">— sin sub-segmento —</option>
+            {questionnaire!.segmentQuestions
+              .filter((s) => s.equivalenceKey !== segEqKey)
+              .map((s) => (
                 <option key={s.equivalenceKey} value={s.equivalenceKey}>
                   {s.text}
                 </option>
               ))}
-            </select>
-          )}
+          </select>
         </div>
       )}
 
-      {segmentQuestion && (
+      {primaryQ && (
         <div className="rounded-md bg-slate-50 p-3">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Sub-metas por {segmentQuestion.text}
+            Sub-metas por {primaryQ.text}
+            {secondaryQ && ` → ${secondaryQ.text}`}
           </p>
           <div className="space-y-2">
-            {segmentQuestion.options.map((o) => (
-              <div key={o.value} className="flex items-center gap-3">
-                <span className="flex-1 text-sm">{o.label}</span>
-                <input
-                  className="input w-24"
-                  type="number"
-                  min={0}
-                  placeholder="0"
-                  value={segTargets[o.value] ?? ""}
-                  onChange={(e) =>
-                    setSegTargets((s) => ({
-                      ...s,
-                      [o.value]: e.target.value === "" ? 0 : Number(e.target.value),
-                    }))
-                  }
-                />
+            {primaryQ.options.map((po) => (
+              <div key={po.value} className="rounded-md border border-slate-200 bg-white p-2">
+                <div className="flex items-center gap-3">
+                  <span className="flex-1 text-sm font-medium">{po.label}</span>
+                  <input
+                    className="input w-24"
+                    type="number"
+                    min={0}
+                    placeholder="meta"
+                    value={segTargets[po.value] ?? ""}
+                    onChange={(e) =>
+                      setSegTargets((s) => ({
+                        ...s,
+                        [po.value]: e.target.value === "" ? 0 : Number(e.target.value),
+                      }))
+                    }
+                  />
+                </div>
+                {secondaryQ && (
+                  <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                    {secondaryQ.options.map((so) => {
+                      const k = `${po.value}|${so.value}`;
+                      return (
+                        <div key={so.value} className="flex items-center gap-3 pl-4">
+                          <span className="flex-1 text-sm text-slate-600">↳ {so.label}</span>
+                          <input
+                            className="input w-24"
+                            type="number"
+                            min={0}
+                            placeholder="0"
+                            value={seg2Targets[k] ?? ""}
+                            onChange={(e) =>
+                              setSeg2Targets((s) => ({
+                                ...s,
+                                [k]: e.target.value === "" ? 0 : Number(e.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            Suma de sub-metas: {segSum}
-            {totalTarget !== "" && ` de ${totalTarget}`}. No es obligatorio que sumen N
-            (el resto se cuenta como “Otros”).
+            No es obligatorio que las sub-metas sumen N (el resto cuenta como “Otros”). Si un
+            proceso no tiene meta propia, se usa la suma de sus sub-metas.
           </p>
         </div>
       )}
@@ -281,11 +348,7 @@ export default function NewWorkPlanForm({
           )}
           {surveyors.map((s) => (
             <label key={s.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={surveyorIds.has(s.id)}
-                onChange={() => toggleSurveyor(s.id)}
-              />
+              <input type="checkbox" checked={surveyorIds.has(s.id)} onChange={() => toggleSurveyor(s.id)} />
               <span className="truncate">{s.email}</span>
             </label>
           ))}

@@ -53,6 +53,7 @@ export async function POST(req: Request) {
     surveyorId: user.id,
     workPlanId: plan.id,
     segmentKey: plan.segmentKey,
+    segment2Key: plan.segment2Key,
     raw: parsed.data.answers,
   });
   if (!result.ok) return NextResponse.json(result, { status: result.status });
