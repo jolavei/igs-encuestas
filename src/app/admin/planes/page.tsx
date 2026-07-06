@@ -94,7 +94,7 @@ export default async function PlanesPage() {
         {plans.map((p, i) => {
           const prog = progress[i];
           return (
-            <div key={p.id} className="card space-y-3">
+            <div key={p.id} id={`plan-${p.id}`} className="card space-y-3 scroll-mt-20">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <h3 className="font-semibold">{p.questionnaire.title}</h3>

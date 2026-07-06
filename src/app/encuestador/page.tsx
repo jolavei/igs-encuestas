@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/rbac";
 import { getPlanProgress } from "@/lib/planProgress";
+import { PlanAvanceCard } from "@/components/planCards";
 
 function fmtDate(d: Date) {
   return new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", dateStyle: "medium" }).format(d);
@@ -25,29 +26,17 @@ export default async function EncuestadorHome() {
 
       {plans.length === 0 && <p className="text-slate-500">No tienes planes activos.</p>}
 
-      <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         {plans.map((p, i) => {
           const prog = progress[i];
-          const pending = p.totalTarget > 0 ? Math.max(0, p.totalTarget - prog.done) : null;
           return (
-            <div key={p.id} className="card space-y-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-semibold">{p.questionnaire.title}</h3>
-                  <p className="text-sm text-slate-500">
-                    {p.company.name}
-                    {p.location && ` · ${p.location.name}`} · hasta {fmtDate(p.windowEnd)}
-                  </p>
-                </div>
-                <div className="text-right text-sm">
-                  <div className="font-medium">
-                    {prog.done}
-                    {p.totalTarget > 0 && ` / ${p.totalTarget}`}
-                  </div>
-                  {pending !== null && <div className="text-slate-500">{pending} pendientes</div>}
-                </div>
-              </div>
-
+            <PlanAvanceCard
+              key={p.id}
+              title={p.questionnaire.title}
+              subtitle={`${p.company.name}${p.location ? ` · ${p.location.name}` : ""} · hasta ${fmtDate(p.windowEnd)}`}
+              done={prog.done}
+              total={p.totalTarget}
+            >
               {prog.levels.length > 0 && (
                 <div className="flex flex-wrap gap-2 text-xs">
                   {prog.levels.map((s) => (
@@ -67,10 +56,12 @@ export default async function EncuestadorHome() {
 
               {p.comment && <p className="text-sm text-slate-600">📋 {p.comment}</p>}
 
-              <Link href={`/encuestador/levantar/${p.id}`} className="btn">
-                Levantar encuesta
-              </Link>
-            </div>
+              <div>
+                <Link href={`/encuestador/levantar/${p.id}`} className="btn">
+                  Levantar encuesta
+                </Link>
+              </div>
+            </PlanAvanceCard>
           );
         })}
       </div>

@@ -3,6 +3,15 @@ import { getSessionUser } from "@/lib/rbac";
 import { computeNps, computeCsat } from "@/lib/metrics";
 import { fromJson } from "@/lib/enums";
 import type { QuestionConfig } from "@/lib/questionTypes";
+import { getPlanProgress } from "@/lib/planProgress";
+import { PlanAvanceCard } from "@/components/planCards";
+
+function fmtDate(d: Date) {
+  return new Intl.DateTimeFormat("es-CL", {
+    timeZone: "America/Santiago",
+    dateStyle: "medium",
+  }).format(d);
+}
 
 async function locationMetrics(locationId: string) {
   const [nps, likert, total] = await Promise.all([
@@ -62,9 +71,58 @@ export default async function ClienteHome() {
     }))
   );
 
+  // Planes vigentes (hoy dentro de la ventana) de la empresa. Si el usuario
+  // está acotado a una sede, solo esa sede + planes sin sede fija.
+  const now = new Date();
+  const planWhere: {
+    companyId: string;
+    windowStart: { lte: Date };
+    windowEnd: { gte: Date };
+    OR?: { locationId: string | null }[];
+  } = {
+    companyId: user!.companyId,
+    windowStart: { lte: now },
+    windowEnd: { gte: now },
+  };
+  if (user!.locationId) {
+    planWhere.OR = [{ locationId: user!.locationId }, { locationId: null }];
+  }
+  const plans = await prisma.workPlan.findMany({
+    where: planWhere,
+    include: { questionnaire: true, location: true, segments: true },
+    orderBy: { windowEnd: "asc" },
+  });
+  const planProg = await Promise.all(
+    plans.map((p) =>
+      getPlanProgress(p.id, { totalTarget: p.totalTarget, segments: p.segments })
+    )
+  );
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">{company?.name}</h1>
+
+      <section className="space-y-3">
+        <h2 className="font-semibold">Avance de planes vigentes</h2>
+        {plans.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            No hay planes de trabajo vigentes en este momento.
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {plans.map((p, i) => (
+              <PlanAvanceCard
+                key={p.id}
+                title={p.questionnaire.title}
+                subtitle={`${p.location ? p.location.name : "Todas las sedes"} · vence ${fmtDate(p.windowEnd)}`}
+                done={planProg[i].done}
+                total={planProg[i].total}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
       <p className="text-slate-500">Resultados por sede</p>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">

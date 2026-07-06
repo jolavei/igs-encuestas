@@ -7,11 +7,8 @@ export const metadata: Metadata = {
   title: "Aeródromos IGS — Encuestas",
   description: "Plataforma de encuestas y benchmarking de satisfacción.",
   manifest: "/manifest.json",
-  icons: {
-    icon: "/icon.png",
-    shortcut: "/icon.png",
-    apple: "/icon.png",
-  },
+  // El favicon y el ícono de Apple se generan por convención de archivos:
+  // src/app/icon.png y src/app/apple-icon.png (Next inyecta los <link> solo).
 };
 
 export const viewport: Viewport = {

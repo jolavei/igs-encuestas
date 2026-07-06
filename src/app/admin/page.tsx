@@ -1,15 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/rbac";
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="card">
-      <div className="text-3xl font-bold text-brand-700">{value}</div>
-      <div className="text-sm text-slate-500">{label}</div>
-    </div>
-  );
-}
+import { getPlanProgress } from "@/lib/planProgress";
+import LatestResponses, { type ResponseRow } from "@/components/LatestResponses";
+import { PlanAvanceCard } from "@/components/planCards";
 
 function fmt(d: Date) {
   return new Intl.DateTimeFormat("es-CL", {
@@ -24,17 +18,45 @@ const SOURCE_LABEL: Record<string, string> = {
   FIELD: "Encuestador",
 };
 
+// Cuadro-resumen clicable que lleva a su sección/página.
+function StatCard({
+  href,
+  label,
+  value,
+}: {
+  href: string;
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <Link
+      href={href}
+      className="card flex flex-col justify-between transition-shadow duration-150 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+    >
+      <div className="text-3xl font-bold text-brand-700">{value}</div>
+      <div className="mt-1 text-sm text-slate-500">{label}</div>
+    </Link>
+  );
+}
+
 export default async function AdminHome() {
-  const [user, companies, questionnaires, responses, lastSync, latest] =
+  const now = new Date();
+  const [user, companies, questionnaires, responses, activePlans, lastSync, latest] =
     await Promise.all([
       getSessionUser(),
       prisma.company.count(),
       prisma.questionnaire.count(),
       prisma.responseSet.count(),
+      // Planes vigentes: la fecha de hoy cae dentro de su ventana.
+      prisma.workPlan.findMany({
+        where: { windowStart: { lte: now }, windowEnd: { gte: now } },
+        include: { company: true, questionnaire: true, segments: true },
+        orderBy: { windowEnd: "asc" },
+      }),
       prisma.syncLog.findFirst({ orderBy: { syncedAt: "desc" } }),
       prisma.responseSet.findMany({
         orderBy: { createdAt: "desc" },
-        take: 10,
+        take: 50,
         include: {
           version: { include: { questionnaire: true } },
           location: { include: { company: true } },
@@ -44,88 +66,90 @@ export default async function AdminHome() {
 
   const firstName = user?.name?.split(" ")[0] ?? user?.email ?? "";
 
+  // Avance de cada plan vigente.
+  const plansProgress = await Promise.all(
+    activePlans.map(async (p) => {
+      const prog = await getPlanProgress(p.id, {
+        totalTarget: p.totalTarget,
+        segments: p.segments,
+      });
+      return {
+        id: p.id,
+        title: p.questionnaire.title,
+        company: p.company.name,
+        windowEnd: p.windowEnd,
+        done: prog.done,
+        total: prog.total,
+      };
+    })
+  );
+
+  const responseRows: ResponseRow[] = latest.map((r) => ({
+    id: r.id,
+    date: fmt(r.createdAt),
+    questionnaire: r.version.questionnaire.title,
+    place: r.location ? `${r.location.company.name} · ${r.location.name}` : "—",
+    source: SOURCE_LABEL[r.source] ?? r.source,
+  }));
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <h1 className="text-2xl font-bold">¡Bienvenido {firstName}! 👋</h1>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Stat label="Empresas" value={companies} />
-        <Stat label="Cuestionarios" value={questionnaires} />
-        <Stat label="Respuestas" value={responses} />
+      {/* Cuadros-resumen clicables */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard href="/admin/empresas" label="Empresas" value={companies} />
+        <StatCard href="/admin/cuestionarios" label="Cuestionarios" value={questionnaires} />
+        <StatCard href="#ultimas-respuestas" label="Respuestas" value={responses} />
+        <StatCard
+          href="/admin/planes"
+          label="Planes de trabajo vigentes"
+          value={activePlans.length}
+        />
       </div>
 
-      <div className="card">
-        <h2 className="mb-1 font-semibold">Datos en BigQuery</h2>
-        {lastSync ? (
-          <p className="text-sm text-slate-600">
-            Última actualización:{" "}
-            <span className="font-medium text-slate-900">{fmt(lastSync.syncedAt)}</span>{" "}
-            <span className="text-slate-400">
-              ({lastSync.tables} tablas, {lastSync.rows} filas)
-            </span>
+      {/* Avance de planes de trabajo vigentes */}
+      <section className="space-y-3">
+        <h2 className="font-semibold">Avance de planes vigentes</h2>
+        {plansProgress.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            No hay planes de trabajo vigentes en este momento.
           </p>
         ) : (
-          <p className="text-sm text-slate-600">
-            Aún no se ha sincronizado a BigQuery.
-          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {plansProgress.map((pl) => (
+              <PlanAvanceCard
+                key={pl.id}
+                href={`/admin/planes#plan-${pl.id}`}
+                title={pl.title}
+                subtitle={`${pl.company} · vence ${fmt(pl.windowEnd)}`}
+                done={pl.done}
+                total={pl.total}
+              />
+            ))}
+          </div>
         )}
-        <p className="mt-1 text-xs text-slate-400">
-          La sincronización corre automáticamente cada 6 horas.
-        </p>
-      </div>
+      </section>
 
-      <div>
-        <h2 className="mb-2 font-semibold">Últimas respuestas</h2>
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
-              <tr>
-                <th className="px-4 py-2">Fecha</th>
-                <th className="px-4 py-2">Cuestionario</th>
-                <th className="px-4 py-2">Empresa · Sede</th>
-                <th className="px-4 py-2">Origen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {latest.map((r) => (
-                <tr key={r.id} className="border-t border-slate-100">
-                  <td className="px-4 py-2 whitespace-nowrap text-slate-600">
-                    {fmt(r.createdAt)}
-                  </td>
-                  <td className="px-4 py-2 font-medium">
-                    {r.version.questionnaire.title}
-                  </td>
-                  <td className="px-4 py-2 text-slate-600">
-                    {r.location
-                      ? `${r.location.company.name} · ${r.location.name}`
-                      : "—"}
-                  </td>
-                  <td className="px-4 py-2">
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                      {SOURCE_LABEL[r.source] ?? r.source}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {latest.length === 0 && (
-                <tr>
-                  <td className="px-4 py-6 text-center text-slate-400" colSpan={4}>
-                    Aún no hay respuestas.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* Últimas respuestas (10 iniciales + mostrar más) */}
+      <section id="ultimas-respuestas" className="space-y-3 scroll-mt-20">
+        <h2 className="font-semibold">Últimas respuestas</h2>
+        <LatestResponses rows={responseRows} />
+      </section>
 
-      <div className="flex gap-3">
-        <Link href="/admin/cuestionarios" className="btn">
-          Gestionar cuestionarios
-        </Link>
-        <Link href="/admin/planes" className="btn-secondary">
-          Planes de trabajo
-        </Link>
+      {/* Última actualización en BigQuery (cuadro pequeño) */}
+      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
+        <span className="text-slate-500">Última actualización en BigQuery: </span>
+        {lastSync ? (
+          <span className="font-medium text-slate-900">
+            {fmt(lastSync.syncedAt)}
+            <span className="ml-1 font-normal text-slate-400">
+              ({lastSync.tables} tablas, {lastSync.rows} filas)
+            </span>
+          </span>
+        ) : (
+          <span className="text-slate-500">aún sin sincronizar.</span>
+        )}
       </div>
     </div>
   );
