@@ -1,0 +1,42 @@
+name: Encuestas ASQ — scrape ACI (diario)
+
+# Consulta el portal ACI-ASQ (Sample Plan por Airline-Destination) y actualiza la
+# base de producción (Neon). Idempotente: upsert por (aeropuerto, temporada).
+on:
+  schedule:
+    # 08:00 America/Santiago. GitHub usa UTC y NO ajusta horario de verano:
+    #   invierno (CLT, UTC-4): 12:00 UTC = 08:00
+    #   verano  (CLST, UTC-3): 12:00 UTC = 09:00  -> para 08:00 en verano: "0 11 * * *"
+    - cron: "0 12 * * *"
+  workflow_dispatch: {} # permite ejecutarlo a mano desde la pestaña Actions
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Instalar navegador (Chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Aplicar migraciones a Neon (idempotente)
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Consultar ACI-ASQ y guardar en Neon
+        run: node scripts/scrape-asq.mjs
+        env:
+          ASQ_USERNAME: ${{ secrets.ASQ_USERNAME }}
+          ASQ_PASSWORD: ${{ secrets.ASQ_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ASQ_BROWSER_CHANNEL: chromium # en CI usa el Chromium de Playwright (no Edge)
+          HEADLESS: "true"

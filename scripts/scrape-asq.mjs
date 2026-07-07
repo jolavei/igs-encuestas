@@ -346,7 +346,13 @@ async function saveRun(pool, run) {
 // --- Main ------------------------------------------------------------------
 
 async function main() {
-  const browser = await chromium.launch({ channel: ASQ_BROWSER_CHANNEL, headless });
+  // Local usa Edge (channel "msedge"); en CI (Linux) se pasa ASQ_BROWSER_CHANNEL=""
+  // o "chromium" para usar el Chromium empaquetado por Playwright.
+  const launchOpts = { headless };
+  if (ASQ_BROWSER_CHANNEL && ASQ_BROWSER_CHANNEL !== "chromium") {
+    launchOpts.channel = ASQ_BROWSER_CHANNEL;
+  }
+  const browser = await chromium.launch(launchOpts);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   page.setDefaultTimeout(45000);
