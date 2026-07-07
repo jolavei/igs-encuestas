@@ -15,6 +15,7 @@ const NAV: Record<Role, NavItem[]> = {
     { href: "/admin/cuestionarios", label: "Cuestionarios", icon: "questionnaire" },
     { href: "/admin/planes", label: "Planes de trabajo", icon: "assignment" },
     { href: "/admin/levantar", label: "Levantar encuesta", icon: "workplan" },
+    { href: "/admin/compliance", label: "Encuestas ASQ", icon: "compliance" },
     { href: "/admin/documentos", label: "Documentos", icon: "documents" },
     { href: "/admin/empresas", label: "Empresas", icon: "company" },
     { href: "/admin/usuarios", label: "Usuarios", icon: "users" },

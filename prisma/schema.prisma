@@ -337,6 +337,42 @@ model Document {
   @@index([folderId])
 }
 
+// ----------------------------------------------------------------------------
+// Compliance ASQ: datos extraídos del portal ACI-ASQ (Survey Management Tool)
+// por el scraper (scripts/scrape-asq.mjs). Un "run" = una combinación
+// aeropuerto + temporada; "solo el más reciente": reejecutar reemplaza sus filas.
+// ----------------------------------------------------------------------------
+
+model AsqComplianceRun {
+  id          String   @id // randomUUID desde el script
+  airport     String // código del desplegable de ASQ (PMC, IQQ, CJC, ...)
+  season      String // "SUMMER" | "WINTER" (parseado de la etiqueta)
+  seasonLabel String // "Summer-2026" | "Winter-2025-26" (como aparece en ASQ)
+  year        Int // año de inicio de la temporada (2026 / 2025)
+  terminal    String   @default("ALL")
+  surveyType  String   @default("DEPARTURES")
+  period      String   @default("REGIONAL")
+  scrapedAt   DateTime @default(now())
+
+  rows AsqComplianceRow[]
+
+  @@unique([airport, seasonLabel]) // clave de upsert: solo el más reciente
+  @@index([seasonLabel])
+}
+
+model AsqComplianceRow {
+  id                 String           @id
+  runId              String
+  run                AsqComplianceRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  airlineDestination String // "LA-SCL"
+  airlineCode        String? // "LA"
+  destinationCode    String? // "SCL"
+  target             Int // Questionnaires Original Target (plan de trabajo)
+  collected          Int // encuestas realizadas
+
+  @@index([runId])
+}
+
 // Auditoria: quien creo/edito version y quien asigno cuota.
 model AuditLog {
   id        String   @id @default(cuid())
