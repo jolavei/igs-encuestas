@@ -55,6 +55,7 @@ export async function POST(req: Request) {
     segmentKey: plan.segmentKey,
     segment2Key: plan.segment2Key,
     raw: parsed.data.answers,
+    presentedQuestionIds: parsed.data.presentedQuestionIds,
   });
   if (!result.ok) return NextResponse.json(result, { status: result.status });
   return NextResponse.json({ id: result.id }, { status: 201 });

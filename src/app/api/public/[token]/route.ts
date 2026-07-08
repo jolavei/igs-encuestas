@@ -63,6 +63,7 @@ export async function POST(
     source: "QR_PUBLIC",
     locationId: r.qr.locationId,
     raw: parsed.data.answers,
+    presentedQuestionIds: parsed.data.presentedQuestionIds,
   });
   if (!result.ok) return NextResponse.json(result, { status: result.status });
   return NextResponse.json({ id: result.id }, { status: 201 });

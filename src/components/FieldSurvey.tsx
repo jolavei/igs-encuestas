@@ -1,20 +1,20 @@
 "use client";
 import { useState } from "react";
 import SurveyRunner from "@/components/SurveyRunner";
-import type { ClientQuestion } from "@/components/QuestionInput";
+import type { ClientSection } from "@/components/QuestionInput";
 
 // Levantamiento ligado a un plan. Si el plan no fija sede, se elige aquí.
 export default function FieldSurvey({
   workPlanId,
   title,
   subtitle,
-  questions,
+  sections,
   locations,
 }: {
   workPlanId: string;
   title: string;
   subtitle?: string;
-  questions: ClientQuestion[];
+  sections: ClientSection[];
   locations?: { id: string; name: string }[]; // si viene, hay que elegir sede
 }) {
   const [locationId, setLocationId] = useState("");
@@ -45,11 +45,12 @@ export default function FieldSurvey({
 
   return (
     <SurveyRunner
-      questions={questions}
+      sections={sections}
       endpoint="/api/responses"
       title={title}
       subtitle={needsLocation ? locations!.find((l) => l.id === locationId)?.name : subtitle}
       offline
+      allowFileUpload
       extra={{ workPlanId, ...(needsLocation ? { locationId } : {}) }}
     />
   );

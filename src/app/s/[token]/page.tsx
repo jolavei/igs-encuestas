@@ -3,9 +3,7 @@ import SurveyRunner from "@/components/SurveyRunner";
 import { Logo } from "@/components/Logo";
 
 export const dynamic = "force-dynamic";
-import type { ClientQuestion } from "@/components/QuestionInput";
-import type { QuestionConfig, QuestionType } from "@/lib/questionTypes";
-import { fromJson } from "@/lib/enums";
+import { buildClientSections } from "@/lib/surveyForm";
 
 // Flujo publico via QR: sin login. Resuelve la version ACTIVE del cuestionario.
 export default async function PublicSurvey({
@@ -23,7 +21,10 @@ export default async function PublicSurvey({
       ? await prisma.questionnaireVersion.findFirst({
           where: { questionnaireId: qr.questionnaireId, status: "ACTIVE" },
           orderBy: { versionNumber: "desc" },
-          include: { questions: { orderBy: { order: "asc" } } },
+          include: {
+            questions: { orderBy: { order: "asc" } },
+            sections: { orderBy: { order: "asc" } },
+          },
         })
       : null;
 
@@ -38,14 +39,7 @@ export default async function PublicSurvey({
     );
   }
 
-  const questions: ClientQuestion[] = version.questions.map((q) => ({
-    id: q.id,
-    order: q.order,
-    type: q.type as QuestionType,
-    text: q.text,
-    required: q.required,
-    config: fromJson<QuestionConfig>(q.config),
-  }));
+  const sections = buildClientSections(version.questions, version.sections);
 
   return (
     <main className="mx-auto max-w-lg space-y-4 p-4">
@@ -53,7 +47,7 @@ export default async function PublicSurvey({
         <Logo variant="full" className="h-12 w-auto" />
       </div>
       <SurveyRunner
-        questions={questions}
+        sections={sections}
         endpoint={`/api/public/${params.token}`}
         title={qr.questionnaire.title}
         subtitle={`${qr.location.name}`}

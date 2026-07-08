@@ -4,17 +4,15 @@ import NewQuestionnaireForm from "@/components/NewQuestionnaireForm";
 import Fab from "@/components/Fab";
 
 export default async function CuestionariosPage() {
-  const [companies, questionnaires] = await Promise.all([
-    prisma.company.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-    prisma.questionnaire.findMany({
-      include: {
-        companies: { select: { id: true, name: true } },
-        versions: { orderBy: { versionNumber: "desc" } },
-        _count: { select: { versions: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-  ]);
+  const questionnaires = await prisma.questionnaire.findMany({
+    include: {
+      // Empresas derivadas de los planes de trabajo (ya no hay asignación manual).
+      workPlans: { select: { company: { select: { id: true, name: true } } } },
+      versions: { orderBy: { versionNumber: "desc" } },
+      _count: { select: { versions: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
   return (
     <div className="space-y-6 pb-24">
@@ -23,6 +21,9 @@ export default async function CuestionariosPage() {
       <div className="space-y-3">
         {questionnaires.map((q) => {
           const active = q.versions.find((v) => v.status === "ACTIVE");
+          const companies = Array.from(
+            new Map(q.workPlans.map((wp) => [wp.company.id, wp.company])).values()
+          );
           return (
             <Link
               key={q.id}
@@ -33,10 +34,10 @@ export default async function CuestionariosPage() {
                 <div className="min-w-0">
                   <h3 className="font-semibold">{q.title}</h3>
                   <p className="mt-0.5 flex flex-wrap gap-1 text-sm text-slate-500">
-                    {q.companies.length === 0 ? (
-                      <span className="text-amber-600">Sin empresas asignadas</span>
+                    {companies.length === 0 ? (
+                      <span className="text-slate-400">Sin planes de trabajo aún</span>
                     ) : (
-                      q.companies.map((c) => (
+                      companies.map((c) => (
                         <span
                           key={c.id}
                           className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600"
@@ -65,17 +66,7 @@ export default async function CuestionariosPage() {
       </div>
 
       <Fab title="Nuevo cuestionario">
-        {companies.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Crea primero una empresa en{" "}
-            <Link href="/admin/empresas" className="text-brand-600 underline">
-              Empresas
-            </Link>
-            .
-          </p>
-        ) : (
-          <NewQuestionnaireForm companies={companies} />
-        )}
+        <NewQuestionnaireForm />
       </Fab>
     </div>
   );

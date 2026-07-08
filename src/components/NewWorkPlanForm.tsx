@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 type Company = { id: string; name: string; locations: { id: string; name: string }[] };
 type SegmentQuestion = {
@@ -42,10 +42,9 @@ export default function NewWorkPlanForm({
   const [error, setError] = useState<string | null>(null);
 
   const company = companies.find((c) => c.id === companyId);
-  const availableQuestionnaires = useMemo(
-    () => questionnaires.filter((q) => q.companyIds.includes(companyId)),
-    [questionnaires, companyId]
-  );
+  // La asignación empresa↔cuestionario nace del propio plan: se ofrecen todos los
+  // cuestionarios con versión activa (ya no se filtra por empresa).
+  const availableQuestionnaires = questionnaires;
   const questionnaire = questionnaires.find((q) => q.id === questionnaireId);
   const primaryQ = questionnaire?.segmentQuestions.find((s) => s.equivalenceKey === segEqKey);
   const secondaryQ = questionnaire?.segmentQuestions.find((s) => s.equivalenceKey === seg2EqKey);
@@ -184,7 +183,7 @@ export default function NewWorkPlanForm({
           </select>
           {availableQuestionnaires.length === 0 && (
             <p className="mt-1 text-xs text-amber-600">
-              Esta empresa no tiene cuestionarios con versión activa.
+              No hay cuestionarios con versión activa.
             </p>
           )}
         </div>

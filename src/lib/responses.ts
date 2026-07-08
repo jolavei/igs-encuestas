@@ -18,6 +18,8 @@ type Args = {
   segmentKey?: string | null;
   segment2Key?: string | null;
   raw: RawAnswer[];
+  // Preguntas mostradas (secciones visitadas). Si viene, solo se exigen esas.
+  presentedQuestionIds?: string[] | null;
 };
 
 /**
@@ -41,7 +43,11 @@ export async function createResponseSet(args: Args) {
     text: q.text,
   }));
 
-  const { ok, errors, answers } = validateAnswers(qLike, args.raw);
+  const activeIds =
+    args.presentedQuestionIds && args.presentedQuestionIds.length
+      ? new Set(args.presentedQuestionIds)
+      : undefined;
+  const { ok, errors, answers } = validateAnswers(qLike, args.raw, activeIds);
   if (!ok) return { ok: false as const, status: 422, errors };
 
   // Segmento: valor de la respuesta a la pregunta marcada por el plan (equivalenceKey).

@@ -74,7 +74,10 @@ export default async function PlanesPage() {
       title: q.title,
       companyIds: q.companies.map((c) => c.id),
       segmentQuestions: q.versions[0].questions
-        .filter((qq) => qq.type === "SINGLE_CHOICE" && qq.equivalenceKey)
+        .filter(
+          (qq) =>
+            (qq.type === "SINGLE_CHOICE" || qq.type === "DROPDOWN") && qq.equivalenceKey
+        )
         .map((qq) => ({
           equivalenceKey: qq.equivalenceKey as string,
           text: qq.text,

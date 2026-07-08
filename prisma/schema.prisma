@@ -141,10 +141,28 @@ model QuestionnaireVersion {
   createdAt       DateTime      @default(now())
 
   questions Question[]
+  sections  QuestionSection[]
   responses ResponseSet[]
 
   @@unique([questionnaireId, versionNumber])
   @@index([questionnaireId, status])
+}
+
+// Sección de un cuestionario (estilo Google Forms). Al final de cada sección se
+// decide a dónde ir: NEXT (siguiente), SUBMIT (enviar) o GOTO:<order> (una sección
+// específica). Pertenecen a una VERSION (inmutable): editar = nueva versión.
+model QuestionSection {
+  id          String               @id @default(cuid())
+  versionId   String
+  version     QuestionnaireVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  order       Int
+  title       String               @default("")
+  description String?
+  routing     String               @default("NEXT") // "NEXT" | "SUBMIT" | "GOTO:<order>"
+
+  questions Question[]
+
+  @@index([versionId])
 }
 
 // Pertenecen a una VERSION, no al cuestionario abstracto.
@@ -153,6 +171,8 @@ model Question {
   id        String               @id @default(cuid())
   versionId String
   version   QuestionnaireVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  sectionId String? // sección a la que pertenece (null en versiones antiguas)
+  section   QuestionSection?     @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   order     Int
   type      String
   text      String

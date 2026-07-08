@@ -27,7 +27,7 @@ export default async function AdminLevantar({ params }: { params: { planId: stri
         workPlanId={data.plan.id}
         title={data.plan.questionnaire.title}
         subtitle={data.plan.location?.name}
-        questions={data.questions}
+        sections={data.sections}
         locations={data.locations ?? undefined}
       />
     </div>

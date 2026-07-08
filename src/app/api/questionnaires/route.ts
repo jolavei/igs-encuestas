@@ -6,7 +6,6 @@ import { audit } from "@/lib/audit";
 
 const schema = z.object({
   title: z.string().min(2),
-  companyIds: z.array(z.string()).default([]),
 });
 
 export async function POST(req: Request) {
@@ -17,10 +16,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
 
   const q = await prisma.questionnaire.create({
-    data: {
-      title: parsed.data.title,
-      companies: { connect: parsed.data.companyIds.map((id) => ({ id })) },
-    },
+    data: { title: parsed.data.title },
   });
   await audit(user.id, "questionnaire.create", "Questionnaire", q.id, parsed.data);
   return NextResponse.json({ id: q.id }, { status: 201 });

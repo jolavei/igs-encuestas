@@ -9,78 +9,105 @@ import {
 } from "@/lib/questionTypes";
 import { fromJson } from "@/lib/enums";
 import { type BqType } from "@/lib/dataform";
-import QuestionnaireBuilder, { type Draft } from "@/components/QuestionnaireBuilder";
+import QuestionnaireBuilder, {
+  type Draft,
+  type SectionDraft,
+} from "@/components/QuestionnaireBuilder";
 import QrManager from "@/components/QrManager";
 import DataformPanel from "@/components/DataformPanel";
-import QuestionnaireCompanies from "@/components/QuestionnaireCompanies";
 
 type VersionQuestion = {
+  sectionId: string | null;
+  order: number;
   type: string;
   text: string;
   required: boolean;
-  equivalenceKey: string | null;
   config: string | null;
   bqColumnName: string | null;
   bqType: string | null;
   bqDescription: string | null;
 };
+type VersionSection = { id: string; order: number; title: string; description: string | null; routing: string };
 
-// Convierte las preguntas de una versión en drafts para pre-cargar el builder.
-function toDrafts(questions: VersionQuestion[]): Draft[] {
-  const cfgs = questions.map((qq) => fromJson<QuestionConfig>(qq.config) ?? {});
-  const keys = questions.map(() => randomUUID());
-  return questions.map((qq, i) => {
-    const cfg = cfgs[i];
+// Reconstruye las secciones (con sus preguntas) para pre-cargar el builder.
+function toSections(questions: VersionQuestion[], sections: VersionSection[]): SectionDraft[] {
+  const qKeys = new Map<number, string>(questions.map((q) => [q.order, randomUUID()]));
+  const sKeys = new Map<number, string>(sections.map((s) => [s.order, randomUUID()]));
+  // Convierte un ruteo guardado (order) al key interno de sección.
+  const convBack = (r: string) => {
+    if (r === "SUBMIT") return "SUBMIT";
+    if (r.startsWith("GOTO:")) {
+      const k = sKeys.get(parseInt(r.slice(5), 10));
+      return k ? `GOTO:${k}` : "NEXT";
+    }
+    return "NEXT";
+  };
+  const toDraft = (q: VersionQuestion): Draft => {
+    const cfg = fromJson<QuestionConfig>(q.config) ?? {};
     return {
-      key: keys[i],
-      type: qq.type as QuestionType,
-      text: qq.text,
-      required: qq.required,
-      equivalenceKey: qq.equivalenceKey ?? undefined,
+      key: qKeys.get(q.order)!,
+      type: q.type as QuestionType,
+      text: q.text,
+      required: q.required,
+      options: cfg.options?.map((o) => ({ label: o.label, goto: o.goto ? convBack(o.goto) : "NEXT" })),
+      maxStars: cfg.maxStars,
+      maxLength: cfg.maxLength,
       min: cfg.min,
       max: cfg.max,
-      maxLength: cfg.maxLength,
-      optionsText: cfg.options?.map((o) => `${o.value}:${o.label}`).join("\n"),
-      afterKey: cfg.afterQuestionOrder ? keys[cfg.afterQuestionOrder - 1] : undefined,
-      bqColumnName: qq.bqColumnName ?? undefined,
-      bqType: (qq.bqType as BqType) ?? undefined,
-      bqDescription: qq.bqDescription ?? undefined,
+      afterKey: cfg.afterQuestionOrder ? qKeys.get(cfg.afterQuestionOrder) : undefined,
+      bqColumnName: q.bqColumnName ?? undefined,
+      bqType: (q.bqType as BqType) ?? undefined,
+      bqDescription: q.bqDescription ?? undefined,
     };
-  });
+  };
+
+  if (sections.length === 0) {
+    // Versión antigua: una sola sección con todo, y enviar al final.
+    return [{ key: randomUUID(), title: "", routing: "SUBMIT", questions: questions.map(toDraft) }];
+  }
+
+  return [...sections]
+    .sort((a, b) => a.order - b.order)
+    .map((s) => ({
+      key: sKeys.get(s.order)!,
+      title: s.title,
+      description: s.description ?? undefined,
+      routing: convBack(s.routing),
+      questions: questions.filter((q) => q.sectionId === s.id).map(toDraft),
+    }));
 }
 
-export default async function QuestionnaireDetail({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const [q, allCompanies] = await Promise.all([
-    prisma.questionnaire.findUnique({
-      where: { id: params.id },
-      include: {
-        companies: { include: { locations: true }, orderBy: { name: "asc" } },
-        versions: {
-          orderBy: { versionNumber: "desc" },
-          include: {
-            questions: { orderBy: { order: "asc" } },
-            _count: { select: { responses: true } },
-          },
-        },
-        qrTokens: {
-          include: { location: { include: { company: true } } },
-          orderBy: { createdAt: "desc" },
+export default async function QuestionnaireDetail({ params }: { params: { id: string } }) {
+  const q = await prisma.questionnaire.findUnique({
+    where: { id: params.id },
+    include: {
+      workPlans: { include: { company: { include: { locations: true } } } },
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        include: {
+          questions: { orderBy: { order: "asc" } },
+          sections: { orderBy: { order: "asc" } },
+          _count: { select: { responses: true } },
         },
       },
-    }),
-    prisma.company.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-  ]);
+      qrTokens: {
+        include: { location: { include: { company: true } } },
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
   if (!q) notFound();
 
   const nextVersion = (q.versions[0]?.versionNumber ?? 0) + 1;
-  const initialDrafts = q.versions[0] ? toDrafts(q.versions[0].questions) : [];
+  const initialSections = q.versions[0]
+    ? toSections(q.versions[0].questions, q.versions[0].sections)
+    : [];
 
-  // Sedes de todas las empresas asignadas, etiquetadas con la empresa.
-  const qrLocations = q.companies.flatMap((c) =>
+  const companies = Array.from(
+    new Map(q.workPlans.map((wp) => [wp.company.id, wp.company])).values()
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  const qrLocations = companies.flatMap((c) =>
     c.locations.map((l) => ({ id: l.id, name: `${c.name} · ${l.name}` }))
   );
 
@@ -92,10 +119,12 @@ export default async function QuestionnaireDetail({
         </Link>
         <h1 className="text-2xl font-bold">{q.title}</h1>
         <p className="flex flex-wrap gap-1 text-slate-500">
-          {q.companies.length === 0 ? (
-            <span className="text-amber-600">Sin empresas asignadas</span>
+          {companies.length === 0 ? (
+            <span className="text-slate-400">
+              Sin empresas todavía (se asignan al crear un plan de trabajo).
+            </span>
           ) : (
-            q.companies.map((c) => (
+            companies.map((c) => (
               <span key={c.id} className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
                 {c.name}
               </span>
@@ -104,16 +133,10 @@ export default async function QuestionnaireDetail({
         </p>
       </div>
 
-      <QuestionnaireCompanies
-        questionnaireId={q.id}
-        companies={allCompanies.map((c) => ({ id: c.id, name: c.name }))}
-        assigned={q.companies.map((c) => c.id)}
-      />
-
       <QuestionnaireBuilder
         questionnaireId={q.id}
         nextVersion={nextVersion}
-        initialDrafts={initialDrafts}
+        initialSections={initialSections}
       />
 
       <div className="space-y-3">
@@ -136,20 +159,19 @@ export default async function QuestionnaireDetail({
                 </span>
               </h3>
               <span className="text-sm text-slate-500">
-                {v.questions.length} preguntas · {v._count.responses} respuestas
+                {v.questions.length} preguntas · {v.sections.length} sección(es) ·{" "}
+                {v._count.responses} respuestas
               </span>
             </div>
             {v.note && (
-              <p className="mt-1 rounded bg-slate-50 px-2 py-1 text-sm text-slate-600">
-                📝 {v.note}
-              </p>
+              <p className="mt-1 rounded bg-slate-50 px-2 py-1 text-sm text-slate-600">📝 {v.note}</p>
             )}
             <ul className="mt-2 space-y-1 text-sm text-slate-600">
               {v.questions.map((qq) => (
                 <li key={qq.id}>
                   {qq.order}. {qq.text}{" "}
                   <span className="text-slate-400">
-                    ({QUESTION_TYPE_LABELS[qq.type as QuestionType]})
+                    ({QUESTION_TYPE_LABELS[qq.type as QuestionType] ?? qq.type})
                   </span>
                 </li>
               ))}

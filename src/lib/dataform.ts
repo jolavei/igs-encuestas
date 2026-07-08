@@ -46,13 +46,14 @@ export function defaultBqType(type: QuestionType): BqType {
   switch (type) {
     case "NPS":
     case "LIKERT":
+    case "RATING":
       return "INT64";
     case "NUMBER":
       return "FLOAT64";
     case "DATETIME":
       return "TIMESTAMP";
     default:
-      return "STRING"; // TEXT, SINGLE_CHOICE, MULTI_CHOICE
+      return "STRING"; // TEXT, PARAGRAPH, SINGLE_CHOICE, MULTI_CHOICE, DROPDOWN, FILE_UPLOAD
   }
 }
 
@@ -62,13 +63,15 @@ function valueColumn(type: QuestionType): string {
     case "NPS":
     case "LIKERT":
     case "NUMBER":
+    case "RATING":
       return "a.valueNumber";
     case "DATETIME":
       return "a.valueDate";
     case "MULTI_CHOICE":
+    case "FILE_UPLOAD":
       return "a.valueJson"; // array serializado como JSON (STRING)
     default:
-      return "a.valueText"; // TEXT, SINGLE_CHOICE
+      return "a.valueText"; // TEXT, PARAGRAPH, SINGLE_CHOICE, DROPDOWN
   }
 }
 

@@ -14,11 +14,11 @@ function fmtDate(d: Date) {
 }
 
 async function locationMetrics(locationId: string) {
-  const [nps, likert, total] = await Promise.all([
+  const [nps, rating, total] = await Promise.all([
     prisma.answer.findMany({
       where: {
         valueNumber: { not: null },
-        question: { type: "NPS" },
+        question: { type: "NPS" }, // solo datos históricos
         responseSet: { locationId },
       },
       select: { valueNumber: true },
@@ -26,7 +26,8 @@ async function locationMetrics(locationId: string) {
     prisma.answer.findMany({
       where: {
         valueNumber: { not: null },
-        question: { type: "LIKERT" },
+        // CSAT desde "Calificación" (RATING, estrellas) + Likert histórico.
+        question: { type: { in: ["RATING", "LIKERT"] } },
         responseSet: { locationId },
       },
       select: { valueNumber: true, question: { select: { config: true } } },
@@ -35,12 +36,15 @@ async function locationMetrics(locationId: string) {
   ]);
 
   const npsRes = computeNps(nps.map((a) => a.valueNumber!));
-  // CSAT: usa el max de config de cada pregunta (fallback 5).
+  // CSAT top-box: usa el tope de cada pregunta (maxStars para RATING, max para Likert).
   const max = Math.max(
     5,
-    ...likert.map((a) => fromJson<QuestionConfig>(a.question.config)?.max ?? 5)
+    ...rating.map((a) => {
+      const c = fromJson<QuestionConfig>(a.question.config);
+      return c?.maxStars ?? c?.max ?? 5;
+    })
   );
-  const csatRes = computeCsat(likert.map((a) => a.valueNumber!), max);
+  const csatRes = computeCsat(rating.map((a) => a.valueNumber!), max);
   return { nps: npsRes.nps, csat: csatRes.csat, total };
 }
 

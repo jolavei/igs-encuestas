@@ -1,7 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { fromJson } from "@/lib/enums";
-import type { ClientQuestion } from "@/components/QuestionInput";
-import type { QuestionConfig, QuestionType } from "@/lib/questionTypes";
+import { buildClientSections } from "@/lib/surveyForm";
 
 // Carga un plan + la versión ACTIVE de su cuestionario para levantar una encuesta.
 export async function getPlanSurvey(planId: string) {
@@ -19,22 +17,18 @@ export async function getPlanSurvey(planId: string) {
   const version = await prisma.questionnaireVersion.findFirst({
     where: { questionnaireId: plan.questionnaireId, status: "ACTIVE" },
     orderBy: { versionNumber: "desc" },
-    include: { questions: { orderBy: { order: "asc" } } },
+    include: {
+      questions: { orderBy: { order: "asc" } },
+      sections: { orderBy: { order: "asc" } },
+    },
   });
 
-  const questions: ClientQuestion[] = (version?.questions ?? []).map((q) => ({
-    id: q.id,
-    order: q.order,
-    type: q.type as QuestionType,
-    text: q.text,
-    required: q.required,
-    config: fromJson<QuestionConfig>(q.config),
-  }));
+  const sections = version ? buildClientSections(version.questions, version.sections) : [];
 
   // Si el plan no fija sede, el encuestador la elige entre las de la empresa.
   const locations = plan.locationId
     ? null
     : plan.company.locations.map((l) => ({ id: l.id, name: l.name }));
 
-  return { plan, hasVersion: !!version, questions, locations };
+  return { plan, hasVersion: !!version, sections, locations };
 }
