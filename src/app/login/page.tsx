@@ -37,6 +37,13 @@ export default function Login() {
           Entrar con Google
         </button>
 
+        <button
+          className="btn-secondary w-full"
+          onClick={() => signIn("azure-ad", { callbackUrl: "/" })}
+        >
+          Entrar con Microsoft
+        </button>
+
         {devEnabled && (
           <>
             <div className="relative text-center text-xs text-slate-400">

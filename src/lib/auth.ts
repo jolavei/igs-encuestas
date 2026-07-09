@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import GoogleProvider from "next-auth/providers/google";
+import AzureADProvider from "next-auth/providers/azure-ad";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@/lib/enums";
@@ -16,6 +17,34 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       // (admin lo crea en "Usuarios y roles" antes de su primer ingreso). Seguro
       // porque Google verifica el email.
       allowDangerousEmailAccountLinking: true,
+    })
+  );
+}
+
+if (process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET) {
+  providers.push(
+    AzureADProvider({
+      clientId: process.env.AZURE_AD_CLIENT_ID,
+      clientSecret: process.env.AZURE_AD_CLIENT_SECRET,
+      // "common" = cualquier cuenta Microsoft; pon el ID del tenant de la
+      // organización para restringir solo a sus cuentas. La lista blanca por
+      // email (callback signIn) protege igual cuál sea el valor.
+      tenantId: process.env.AZURE_AD_TENANT_ID,
+      // Igual que Google: permite vincular el login de Microsoft a un usuario
+      // pre-registrado por email. Microsoft verifica el email de las cuentas
+      // organizacionales.
+      allowDangerousEmailAccountLinking: true,
+      // El claim de email de Entra ID a veces viene en `preferred_username`
+      // (UPN) en vez de `email`; usamos el que exista para no perder el correo
+      // con el que la lista blanca autoriza al usuario.
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email ?? profile.preferred_username ?? null,
+          image: null,
+        };
+      },
     })
   );
 }
