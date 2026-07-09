@@ -1,10 +1,41 @@
 import type { NextAuthOptions } from "next-auth";
+import type { Adapter, AdapterAccount } from "next-auth/adapters";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@/lib/enums";
+
+// PrismaAdapter con un `linkAccount` "a prueba de campos extra". Azure AD /
+// Entra ID devuelve en el token campos que NO existen como columna en la tabla
+// Account (p. ej. `ext_expires_in`). NextAuth arma la cuenta con `...tokens`
+// (core/lib/oauth/callback.js), así que esos extras llegan a Prisma y hacen
+// fallar el vínculo de una 2ª forma de acceso (error=Callback) — típicamente al
+// entrar con Microsoft a un correo que ya estaba ligado a Google. Filtramos a
+// solo las columnas del esquema.
+function buildAdapter(): Adapter {
+  const base = PrismaAdapter(prisma);
+  return {
+    ...base,
+    linkAccount: (account: AdapterAccount) =>
+      prisma.account.create({
+        data: {
+          userId: account.userId,
+          type: account.type,
+          provider: account.provider,
+          providerAccountId: account.providerAccountId,
+          refresh_token: account.refresh_token,
+          access_token: account.access_token,
+          expires_at: account.expires_at,
+          token_type: account.token_type,
+          scope: account.scope,
+          id_token: account.id_token,
+          session_state: account.session_state,
+        },
+      }) as unknown as ReturnType<NonNullable<Adapter["linkAccount"]>>,
+  };
+}
 
 const providers: NextAuthOptions["providers"] = [];
 
@@ -78,7 +109,7 @@ if (process.env.ENABLE_DEV_LOGIN === "true") {
 }
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  adapter: buildAdapter(),
   providers,
   session: { strategy: "jwt" },
   pages: { signIn: "/login", error: "/login" },
