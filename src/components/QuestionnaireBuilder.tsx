@@ -210,10 +210,10 @@ function AnswerPreview({
               ))}
             </select>
           </label>
-          <div className="flex flex-wrap items-end justify-center gap-3 py-1">
+          <div className="flex flex-wrap items-start justify-center gap-3 py-1">
             <div className="flex flex-col items-center gap-1">
               <span className="text-xs text-slate-400">N/A</span>
-              <span className="h-7 w-7 rounded border border-slate-300" />
+              <span className="h-3.5 w-3.5 rounded border border-slate-300" />
             </div>
             {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
               <div key={n} className="flex flex-col items-center gap-1">

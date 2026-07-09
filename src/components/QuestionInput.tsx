@@ -136,7 +136,7 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
           const na = value.valueText === "N/A";
           const current = na ? 0 : value.valueNumber ?? 0;
           return (
-            <div className="flex flex-wrap items-end justify-center gap-3 py-2">
+            <div className="flex flex-wrap items-start justify-center gap-3 py-2">
               <button
                 type="button"
                 onClick={() => set({ valueText: "N/A", valueNumber: null })}
@@ -145,14 +145,10 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
               >
                 <span className="text-xs text-slate-500">N/A</span>
                 <span
-                  className={`flex h-7 w-7 items-center justify-center rounded border ${
-                    na
-                      ? "border-brand-600 bg-brand-600 text-white"
-                      : "border-slate-300 bg-white text-transparent"
+                  className={`h-3.5 w-3.5 rounded border ${
+                    na ? "border-brand-600 bg-brand-600" : "border-slate-300 bg-white"
                   }`}
-                >
-                  ✓
-                </span>
+                />
               </button>
               {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
                 <button
