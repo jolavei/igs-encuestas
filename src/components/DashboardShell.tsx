@@ -1,5 +1,7 @@
 import type { Role } from "@/lib/enums";
 import AppShell from "./AppShell";
+import FreshnessGuard from "./FreshnessGuard";
+import { getAppVersion } from "@/lib/version";
 
 export default function DashboardShell({
   role,
@@ -13,8 +15,11 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   return (
-    <AppShell role={role} email={email} name={name}>
-      {children}
-    </AppShell>
+    <>
+      <FreshnessGuard version={getAppVersion()} />
+      <AppShell role={role} email={email} name={name}>
+        {children}
+      </AppShell>
+    </>
   );
 }
