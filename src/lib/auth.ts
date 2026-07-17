@@ -1,11 +1,57 @@
 import type { NextAuthOptions } from "next-auth";
 import type { Adapter, AdapterAccount } from "next-auth/adapters";
+import type { OAuthConfig, OAuthUserConfig } from "next-auth/providers/oauth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@/lib/enums";
+
+// Yahoo no viene incluido en next-auth v4 (sí en Auth.js v5), así que lo
+// definimos a mano. Es un proveedor OpenID Connect estándar: el `wellKnown`
+// publica authorization/token/userinfo, y `claims_supported` incluye `email` y
+// `email_verified`, por lo que el id_token basta y no hace falta userinfo.
+// Ojo: el token de Yahoo trae extras fuera del esquema (p. ej.
+// `xoauth_yahoo_guid`); el filtro de `buildAdapter` ya los descarta.
+interface YahooProfile {
+  sub: string;
+  name?: string;
+  given_name?: string;
+  family_name?: string;
+  email?: string;
+  email_verified?: boolean;
+}
+
+function YahooProvider(
+  options: OAuthUserConfig<YahooProfile>
+): OAuthConfig<YahooProfile> {
+  return {
+    id: "yahoo",
+    name: "Yahoo",
+    type: "oauth",
+    wellKnown: "https://api.login.yahoo.com/.well-known/openid-configuration",
+    authorization: { params: { scope: "openid profile email" } },
+    idToken: true,
+    // Yahoo exige `nonce` en el flujo OIDC y lo devuelve en el id_token.
+    checks: ["state", "nonce"],
+    // Yahoo no anuncia PKCE (no hay `code_challenge_methods_supported` en su
+    // discovery) y autentica el cliente por Basic en el token endpoint.
+    client: { token_endpoint_auth_method: "client_secret_basic" },
+    profile(profile) {
+      const fullName =
+        profile.name ??
+        [profile.given_name, profile.family_name].filter(Boolean).join(" ");
+      return {
+        id: profile.sub,
+        name: fullName || null,
+        email: profile.email ?? null,
+        image: null,
+      };
+    },
+    options,
+  };
+}
 
 // PrismaAdapter con un `linkAccount` "a prueba de campos extra". Azure AD /
 // Entra ID devuelve en el token campos que NO existen como columna en la tabla
@@ -76,6 +122,18 @@ if (process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET) {
           image: null,
         };
       },
+    })
+  );
+}
+
+if (process.env.YAHOO_CLIENT_ID && process.env.YAHOO_CLIENT_SECRET) {
+  providers.push(
+    YahooProvider({
+      clientId: process.env.YAHOO_CLIENT_ID,
+      clientSecret: process.env.YAHOO_CLIENT_SECRET,
+      // Igual que Google y Microsoft: permite vincular el login de Yahoo a un
+      // usuario pre-registrado por email. Yahoo verifica el email de la cuenta.
+      allowDangerousEmailAccountLinking: true,
     })
   );
 }
