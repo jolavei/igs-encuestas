@@ -37,7 +37,14 @@ function YahooProvider(
     checks: ["state", "nonce"],
     // Yahoo no anuncia PKCE (no hay `code_challenge_methods_supported` en su
     // discovery) y autentica el cliente por Basic en el token endpoint.
-    client: { token_endpoint_auth_method: "client_secret_basic" },
+    // `id_token_signed_response_alg: ES256`: Yahoo firma el id_token con ES256,
+    // pero openid-client espera RS256 por defecto y lo rechaza con
+    // "unexpected JWT alg received, expected RS256, got: ES256". Le decimos que
+    // acepte ES256 (algoritmo que Yahoo publica en su discovery).
+    client: {
+      token_endpoint_auth_method: "client_secret_basic",
+      id_token_signed_response_alg: "ES256",
+    },
     profile(profile) {
       const fullName =
         profile.name ??
