@@ -1,87 +1,107 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/rbac";
-import { canAccessDoc } from "@/lib/docsAccess";
+import { getUserScope } from "@/lib/userScope";
 import { getFolderView, fileKind, fmtSize } from "@/lib/docsBrowser";
 import { FolderIcon, FileIcon } from "@/components/icons";
 
 export default async function ClienteDocs({
   searchParams,
 }: {
-  searchParams: { folderId?: string };
+  searchParams: { loc?: string; folderId?: string };
 }) {
   const user = await getSessionUser();
-  if (!user!.companyId) {
+  const scope = await getUserScope(user!.id);
+
+  if (scope.locations.length === 0) {
     return (
       <div className="card">
         <h1 className="text-xl font-bold">Documentos</h1>
         <p className="mt-2 text-slate-600">
-          Tu usuario no está vinculado a una empresa. Pide a un administrador que asocie tu
+          Tu usuario aún no está vinculado a ninguna sede. Pide a un administrador que asocie tu
           cuenta.
         </p>
       </div>
     );
   }
 
-  const companyId = user!.companyId;
-  const locationId = user!.locationId;
-  const folderId = searchParams.folderId ?? null;
+  const { loc, folderId } = searchParams;
 
-  // Verificar acceso a la carpeta pedida.
+  // 1) Sin sede elegida: elegir una de sus sedes.
+  if (!loc) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">Documentos</h1>
+        <p className="text-slate-500">Elige una sede para ver sus documentos.</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {scope.locations.map((l) => (
+            <Link
+              key={l.id}
+              href={`/cliente/documentos?loc=${l.id}`}
+              className="card hover:border-brand-300"
+            >
+              {l.company.name} · {l.name}
+            </Link>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // La sede pedida debe ser una de las suyas.
+  const sede = scope.locations.find((l) => l.id === loc);
+  if (!sede) return <p className="text-slate-500">No tienes acceso a esta sede.</p>;
+
+  // La carpeta pedida debe pertenecer a esta sede.
   if (folderId) {
     const folder = await prisma.folder.findUnique({ where: { id: folderId } });
-    if (!folder || !canAccessDoc(user!, folder)) {
+    if (!folder || folder.locationId !== loc) {
       return <p className="text-slate-500">No tienes acceso a esta carpeta.</p>;
     }
   }
 
-  // Raíz del cliente: sus carpetas de sede + las generales de la empresa.
-  let crumbs: { id: string | null; name: string }[] = [];
-  let folders: any[];
-  let documents: any[];
-  if (folderId) {
-    ({ crumbs, folders, documents } = await getFolderView(companyId, locationId, folderId));
-  } else {
-    const scope = { companyId, OR: [{ locationId: null }, { locationId }] };
-    [folders, documents] = await Promise.all([
-      prisma.folder.findMany({
-        where: { parentId: null, ...scope },
-        orderBy: { name: "asc" },
-        include: { _count: { select: { children: true, documents: true } } },
-      }),
-      prisma.document.findMany({
-        where: { folderId: null, ...scope },
-        orderBy: { createdAt: "desc" },
-      }),
-    ]);
-  }
-
-  const base = `/cliente/documentos`;
+  const { crumbs, folders, documents } = await getFolderView(
+    sede.companyId,
+    loc,
+    folderId ?? null
+  );
+  const base = `/cliente/documentos?loc=${loc}`;
 
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-bold">Documentos</h1>
+      <div>
+        <h1 className="text-2xl font-bold">Documentos</h1>
+        <p className="text-slate-500">
+          {sede.company.name} · {sede.name}
+        </p>
+      </div>
 
+      {/* Breadcrumb */}
       <div className="flex flex-wrap items-center gap-1 text-sm text-slate-500">
+        <Link href="/cliente/documentos" className="hover:text-brand-600">
+          Sedes
+        </Link>
+        <span>/</span>
         <Link href={base} className="hover:text-brand-600">
-          Inicio
+          {sede.name}
         </Link>
         {crumbs.map((c) => (
           <span key={c.id} className="flex items-center gap-1">
             <span>/</span>
-            <Link href={`${base}?folderId=${c.id}`} className="hover:text-brand-600">
+            <Link href={`${base}&folderId=${c.id}`} className="hover:text-brand-600">
               {c.name}
             </Link>
           </span>
         ))}
       </div>
 
+      {/* Carpetas */}
       {folders.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {folders.map((f) => (
             <Link
               key={f.id}
-              href={`${base}?folderId=${f.id}`}
+              href={`${base}&folderId=${f.id}`}
               className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-3 hover:border-brand-300"
             >
               <FolderIcon className="shrink-0 text-brand-500" />
@@ -94,6 +114,7 @@ export default async function ClienteDocs({
         </div>
       )}
 
+      {/* Documentos */}
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-slate-500">

@@ -27,9 +27,14 @@ const NAV: Record<Role, NavItem[]> = {
     { href: "/admin/empresas", label: "Empresas", icon: "company" },
     { href: "/admin/usuarios", label: "Usuarios", icon: "users" },
   ],
-  SURVEYOR: [{ href: "/encuestador", label: "Mi plan de trabajo", icon: "workplan" }],
+  SURVEYOR: [
+    { href: "/encuestador", label: "Inicio", icon: "home", exact: true },
+    { href: "/encuestador/levantar", label: "Levantar encuesta", icon: "workplan" },
+    { href: "/encuestador/compliance", label: "Encuestas ASQ", icon: "compliance" },
+  ],
   CLIENT: [
-    { href: "/cliente", label: "Dashboard", icon: "dashboard", exact: true },
+    { href: "/cliente", label: "Inicio", icon: "home", exact: true },
+    { href: "/cliente/compliance", label: "Encuestas ASQ", icon: "compliance" },
     { href: "/cliente/documentos", label: "Documentos", icon: "documents" },
   ],
 };
