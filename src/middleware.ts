@@ -26,6 +26,7 @@ export default withAuth(
 );
 
 // Rutas que requieren sesion. Publicas quedan fuera: /, /login, /s/*, /api/public/*, /api/auth/*
+// /perfil no exige rol: cualquier usuario autenticado ve su propio perfil.
 export const config = {
-  matcher: ["/admin/:path*", "/encuestador/:path*", "/cliente/:path*"],
+  matcher: ["/admin/:path*", "/encuestador/:path*", "/cliente/:path*", "/perfil/:path*"],
 };

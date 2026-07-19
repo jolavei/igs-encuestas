@@ -215,6 +215,10 @@ export const authOptions: NextAuthOptions = {
         token.role = dbUser.role as Role;
         token.companyId = dbUser.companyId ?? null;
         token.locationId = dbUser.locationId ?? null;
+        // Nombre mostrado = Nombre + Apellidos definidos por el admin (fuente única);
+        // si no están, cae al nombre del proveedor OAuth.
+        const fullName = [dbUser.firstName, dbUser.lastName].filter(Boolean).join(" ").trim();
+        token.name = fullName || dbUser.name || token.name;
       } else if (dbUser && !dbUser.active) {
         // Desactivado: revoca rol en sesiones ya emitidas (queda sin acceso a rutas por rol).
         token.uid = dbUser.id;

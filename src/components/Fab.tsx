@@ -1,7 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 // Botón flotante "+" (abajo a la derecha) que despliega un panel para crear ítems.
+// Se renderiza con un portal a <body> para que ni el espaciado de la página
+// (utilidades space-y-*, que inyectan margin-top) ni los contextos de apilamiento
+// puedan desplazar u ocultar el overlay: así el fondo gris cubre toda la pantalla.
 export default function Fab({
   title,
   children,
@@ -10,6 +14,9 @@ export default function Fab({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -19,15 +26,17 @@ export default function Fab({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <>
       {open && (
         <>
           <div
-            className="fixed inset-0 z-30 bg-slate-900/20"
+            className="fixed inset-0 z-40 bg-slate-900/30"
             onClick={() => setOpen(false)}
           />
-          <div className="fixed bottom-24 right-6 z-40 max-h-[75vh] w-[26rem] max-w-[92vw] overflow-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+          <div className="fixed bottom-24 right-6 z-50 max-h-[75vh] w-[26rem] max-w-[92vw] overflow-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold">{title}</h2>
               <button
@@ -47,10 +56,11 @@ export default function Fab({
         aria-label={title}
         title={title}
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-xl bg-brand-600 text-3xl leading-none text-white shadow-lg transition-colors hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-xl bg-brand-600 text-3xl leading-none text-white shadow-lg transition-colors hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
       >
         {open ? "−" : "+"}
       </button>
-    </>
+    </>,
+    document.body
   );
 }

@@ -2,10 +2,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Role } from "@/lib/enums";
 import { Logo } from "@/components/Logo";
-import { NAV_ICONS, type IconName, MenuIcon, LogoutIcon } from "@/components/icons";
+import {
+  NAV_ICONS,
+  type IconName,
+  MenuIcon,
+  LogoutIcon,
+  ChevronDownIcon,
+  UserIcon,
+} from "@/components/icons";
 
 type NavItem = { href: string; label: string; icon: IconName; exact?: boolean };
 
@@ -59,13 +66,33 @@ export default function AppShell({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCollapsed(localStorage.getItem("igs.sidebar.collapsed") === "1");
   }, []);
   useEffect(() => {
     setMobileOpen(false); // cierra el drawer al navegar
+    setMenuOpen(false); // cierra el menú de perfil al navegar
   }, [pathname]);
+
+  // Cierra el menú de perfil al hacer clic fuera o con Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   // Un solo botón hamburguesa: en escritorio colapsa/expande el sidebar;
   // en móvil abre/cierra el drawer.
@@ -136,23 +163,57 @@ export default function AppShell({
           </Link>
         </div>
 
-        {/* Detalle de usuario a la derecha */}
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white">
-            {initials(name, email)}
-          </div>
-          <div className="hidden min-w-0 leading-tight sm:block">
-            <p className="truncate text-sm font-medium text-slate-800">{name || email}</p>
-            <p className="text-xs text-slate-400">{ROLE_LABEL[role]}</p>
-          </div>
+        {/* Menú de perfil a la derecha */}
+        <div className="relative shrink-0" ref={menuRef}>
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            title="Cerrar sesión"
-            aria-label="Cerrar sesión"
-            className="rounded-md p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label="Menú de perfil"
+            className="flex items-center gap-2 rounded-md p-1 pr-1.5 transition-colors hover:bg-slate-100 sm:pr-2"
           >
-            <LogoutIcon />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white">
+              {initials(name, email)}
+            </div>
+            <div className="hidden min-w-0 text-left leading-tight sm:block">
+              <p className="truncate text-sm font-medium text-slate-800">{name || email}</p>
+              <p className="text-xs text-slate-400">{ROLE_LABEL[role]}</p>
+            </div>
+            <ChevronDownIcon
+              className={`hidden shrink-0 text-slate-400 transition-transform sm:block ${
+                menuOpen ? "rotate-180" : ""
+              }`}
+            />
           </button>
+
+          {menuOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg"
+            >
+              <div className="border-b border-slate-100 px-4 py-3">
+                <p className="truncate text-sm font-semibold text-slate-800">{name || "—"}</p>
+                <p className="truncate text-xs text-slate-500">{email}</p>
+                <span className="mt-1.5 inline-block rounded bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                  {ROLE_LABEL[role]}
+                </span>
+              </div>
+              <Link
+                href="/perfil"
+                role="menuitem"
+                className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <UserIcon className="text-slate-400" /> Mi perfil
+              </Link>
+              <button
+                onClick={() => signOut({ callbackUrl: "/login" })}
+                role="menuitem"
+                className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <LogoutIcon className="text-slate-400" /> Cerrar sesión
+              </button>
+            </div>
+          )}
         </div>
       </header>
 

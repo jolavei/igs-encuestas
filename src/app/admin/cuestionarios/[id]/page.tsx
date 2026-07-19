@@ -118,19 +118,15 @@ export default async function QuestionnaireDetail({ params }: { params: { id: st
           ← Cuestionarios
         </Link>
         <h1 className="text-2xl font-bold">{q.title}</h1>
-        <p className="flex flex-wrap gap-1 text-slate-500">
-          {companies.length === 0 ? (
-            <span className="text-slate-400">
-              Sin empresas todavía (se asignan al crear un plan de trabajo).
-            </span>
-          ) : (
-            companies.map((c) => (
+        {companies.length > 0 && (
+          <p className="flex flex-wrap gap-1 text-slate-500">
+            {companies.map((c) => (
               <span key={c.id} className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
                 {c.name}
               </span>
-            ))
-          )}
-        </p>
+            ))}
+          </p>
+        )}
       </div>
 
       <QuestionnaireBuilder
@@ -140,7 +136,6 @@ export default async function QuestionnaireDetail({ params }: { params: { id: st
       />
 
       <div className="space-y-3">
-        <h2 className="font-semibold">Versiones</h2>
         {q.versions.map((v) => (
           <div key={v.id} className="card">
             <div className="flex items-center justify-between">

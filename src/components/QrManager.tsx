@@ -48,31 +48,31 @@ export default function QrManager({
 
   return (
     <div className="card space-y-4">
-      <h2 className="font-semibold">Códigos QR por sede</h2>
-      <p className="text-sm text-slate-500">
-        El QR es estable: apunta siempre a la versión activa, así no caduca al crear
-        una nueva versión.
-      </p>
-
-      <div className="flex gap-2">
-        <select
-          className="input"
-          value={locationId}
-          onChange={(e) => setLocationId(e.target.value)}
-        >
-          <option value="">— elegir sede —</option>
-          {locations.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-        <button className="btn" disabled={busy || !locationId} onClick={create}>
-          Generar QR
-        </button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="font-semibold">Códigos QR por sede</h2>
+          <p className="text-sm text-slate-500">Estable: apunta siempre a la versión activa.</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <select
+            className="input sm:w-56"
+            value={locationId}
+            onChange={(e) => setLocationId(e.target.value)}
+          >
+            <option value="">— elegir sede —</option>
+            {locations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+          <button className="btn shrink-0" disabled={busy || !locationId} onClick={create}>
+            Generar QR
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
         {tokens.map((t) => {
           const url = `${origin}/s/${t.token}`;
           return (

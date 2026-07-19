@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import PostForm from "@/components/PostForm";
 import CompanyActions from "@/components/CompanyActions";
+import CompanyEditor from "@/components/CompanyEditor";
 import Fab from "@/components/Fab";
 
 export default async function EmpresasPage() {
@@ -30,63 +31,103 @@ export default async function EmpresasPage() {
   }
 
   const activeCompanies = companies.filter((c) => c.active);
+  const inactiveCompanies = companies.filter((c) => !c.active);
+
+  // Tarjeta de empresa (misma pieza para vigentes y no vigentes).
+  function companyCard(c: (typeof companies)[number]) {
+    const responses = responsesByCompany.get(c.id) ?? 0;
+    const canDelete = c._count.questionnaires === 0 && responses === 0;
+    return (
+      <div
+        key={c.id}
+        className={`card ${!c.active ? "border-slate-200 bg-slate-50 opacity-75" : ""}`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold">{c.name}</h3>
+              <span className="rounded bg-slate-100 px-2 py-0.5 text-xs uppercase text-slate-500">
+                {c.kind}
+              </span>
+              {!c.active && (
+                <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Desactivada
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              {c._count.questionnaires} cuestionario(s) · {responses} respuesta(s)
+            </p>
+            <ul className="mt-2 text-sm text-slate-600">
+              {c.locations.length === 0 && (
+                <li className="text-slate-400">Sin sedes.</li>
+              )}
+              {c.locations.map((l) => (
+                <li key={l.id}>
+                  • {l.name} {l.city && `· ${l.city}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <CompanyEditor
+              company={{
+                id: c.id,
+                name: c.name,
+                kind: c.kind,
+                locations: c.locations.map((l) => ({
+                  id: l.id,
+                  name: l.name,
+                  city: l.city,
+                  address: l.address,
+                })),
+              }}
+            />
+            <CompanyActions
+              id={c.id}
+              name={c.name}
+              active={c.active}
+              canDelete={canDelete}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-8 pb-24">
       <h1 className="text-2xl font-bold">Empresas / Clientes</h1>
 
-      <div className="space-y-3">
-        {companies.map((c) => {
-          const responses = responsesByCompany.get(c.id) ?? 0;
-          const canDelete = c._count.questionnaires === 0 && responses === 0;
-          return (
-            <div
-              key={c.id}
-              className={`card ${!c.active ? "border-slate-200 bg-slate-50 opacity-75" : ""}`}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">{c.name}</h3>
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs uppercase text-slate-500">
-                      {c.kind}
-                    </span>
-                    {!c.active && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                        Desactivada
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs text-slate-400">
-                    {c._count.questionnaires} cuestionario(s) · {responses} respuesta(s)
-                  </p>
-                  <ul className="mt-2 text-sm text-slate-600">
-                    {c.locations.length === 0 && (
-                      <li className="text-slate-400">Sin sedes.</li>
-                    )}
-                    {c.locations.map((l) => (
-                      <li key={l.id}>
-                        • {l.name} {l.city && `· ${l.city}`}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <CompanyActions
-                  id={c.id}
-                  name={c.name}
-                  active={c.active}
-                  canDelete={canDelete}
-                />
-              </div>
-            </div>
-          );
-        })}
-        {companies.length === 0 && (
-          <p className="text-slate-400">
-            Aún no hay empresas. Usa el botón + para crear la primera.
-          </p>
-        )}
-      </div>
+      {companies.length === 0 ? (
+        <p className="text-slate-400">
+          Aún no hay empresas. Usa el botón + para crear la primera.
+        </p>
+      ) : (
+        <>
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Vigentes
+            </h2>
+            {activeCompanies.length === 0 ? (
+              <p className="text-sm text-slate-400">Sin empresas vigentes.</p>
+            ) : (
+              <div className="space-y-3">{activeCompanies.map(companyCard)}</div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              No vigentes
+            </h2>
+            {inactiveCompanies.length === 0 ? (
+              <p className="text-sm text-slate-400">Sin empresas no vigentes.</p>
+            ) : (
+              <div className="space-y-3">{inactiveCompanies.map(companyCard)}</div>
+            )}
+          </section>
+        </>
+      )}
 
       <Fab title="Crear">
         <div className="space-y-5">

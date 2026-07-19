@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import SeasonPicker from "@/components/SeasonPicker";
+import AsqAirportMapper from "@/components/AsqAirportMapper";
 
 function pct(done: number, target: number) {
   return target > 0 ? Math.min(100, Math.round((done / target) * 100)) : 0;
@@ -63,11 +64,20 @@ export default async function CompliancePage({
       ? searchParams.season
       : seasons[0].seasonLabel;
 
-  const runs = await prisma.asqComplianceRun.findMany({
-    where: { seasonLabel: active },
-    include: { rows: { orderBy: { airlineDestination: "asc" } } },
-    orderBy: { airport: "asc" },
-  });
+  const [runs, companies, mappings] = await Promise.all([
+    prisma.asqComplianceRun.findMany({
+      where: { seasonLabel: active },
+      include: { rows: { orderBy: { airlineDestination: "asc" } } },
+      orderBy: { airport: "asc" },
+    }),
+    prisma.company.findMany({
+      where: { active: true },
+      select: { id: true, name: true, locations: { select: { id: true, name: true }, orderBy: { name: "asc" } } },
+      orderBy: { name: "asc" },
+    }),
+    prisma.asqAirportMapping.findMany(),
+  ]);
+  const mapByAirport = new Map(mappings.map((m) => [m.airport, m]));
 
   const perAirport = runs.map((r) => {
     const target = r.rows.reduce((a, b) => a + b.target, 0);
@@ -131,6 +141,17 @@ export default async function CompliancePage({
               <span className="text-sm text-slate-500">
                 {collected} / {target || "—"} · <Pct done={collected} target={target} />
               </span>
+            </div>
+
+            {/* Empresa + sede asociada a este aeropuerto */}
+            <div className="flex flex-col gap-2 rounded-md bg-slate-50 p-2 sm:flex-row sm:items-center">
+              <span className="shrink-0 text-sm text-slate-500 sm:w-36">Empresa · sede:</span>
+              <AsqAirportMapper
+                airport={run.airport}
+                companyId={mapByAirport.get(run.airport)?.companyId ?? null}
+                locationId={mapByAirport.get(run.airport)?.locationId ?? null}
+                companies={companies}
+              />
             </div>
 
             <div className="overflow-hidden rounded-md border border-slate-200">

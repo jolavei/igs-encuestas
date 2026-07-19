@@ -48,21 +48,24 @@ export default async function DocsAdmin({
       <div className="space-y-6">
         <Header company={company.name} />
         {!gcsConfigured() && <GcsBanner />}
-        <p className="text-slate-500">Elige una sede (o General) para ver sus carpetas.</p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Link href={`/admin/documentos?companyId=${companyId}&loc=general`} className="card hover:border-brand-300">
-            General (toda la empresa)
-          </Link>
-          {company.locations.map((l) => (
-            <Link
-              key={l.id}
-              href={`/admin/documentos?companyId=${companyId}&loc=${l.id}`}
-              className="card hover:border-brand-300"
-            >
-              {l.name}
-            </Link>
-          ))}
-        </div>
+        <p className="text-slate-500">Elige una sede para ver sus carpetas.</p>
+        {company.locations.length === 0 ? (
+          <p className="text-slate-400">
+            Esta empresa aún no tiene sedes. Crea una sede en la página de Empresas.
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {company.locations.map((l) => (
+              <Link
+                key={l.id}
+                href={`/admin/documentos?companyId=${companyId}&loc=${l.id}`}
+                className="card hover:border-brand-300"
+              >
+                {l.name}
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

@@ -39,9 +39,6 @@ export default function NewQuestionnaireForm() {
           onChange={(e) => setTitle(e.target.value)}
         />
       </div>
-      <p className="text-xs text-slate-400">
-        Las empresas se asignan al crear un plan de trabajo con este cuestionario.
-      </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button className="btn" disabled={busy}>
         {busy ? "Creando…" : "Crear cuestionario"}

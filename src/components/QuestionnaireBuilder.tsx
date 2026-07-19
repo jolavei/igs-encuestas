@@ -108,20 +108,21 @@ function OptionsEditor({
   return (
     <div className="space-y-2">
       {list.map((opt, i) => (
-        <div key={i} className="flex items-center gap-2">
+        <div key={i} className="flex flex-wrap items-center gap-2">
           <span className="w-5 shrink-0 text-center text-slate-400">
             {type === "DROPDOWN" ? `${i + 1}.` : marker}
           </span>
           <input
-            className="input flex-1"
+            className="input min-w-0 flex-1"
             placeholder={`Opción ${i + 1}`}
             value={opt.label}
             onChange={(e) => setAt(i, { label: e.target.value })}
           />
           {showRouting && (
             <select
-              className="input shrink-0 text-sm"
-              style={{ width: "11rem" }}
+              // En móvil baja a línea propia a ancho completo (order-last + w-full);
+              // en escritorio vuelve a la misma fila con ancho fijo.
+              className="input order-last w-full text-sm sm:order-none sm:w-44 sm:shrink-0"
               value={opt.goto}
               onChange={(e) => setAt(i, { goto: e.target.value })}
               title="A dónde lleva esta opción"
@@ -704,7 +705,7 @@ export default function QuestionnaireBuilder({
       </button>
 
       <div>
-        <label className="label">Comentario del cambio (qué cambió y por qué)</label>
+        <label className="label">Comentario del cambio</label>
         <textarea
           className="input"
           rows={2}

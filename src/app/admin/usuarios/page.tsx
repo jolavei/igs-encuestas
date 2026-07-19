@@ -1,85 +1,125 @@
 import { prisma } from "@/lib/prisma";
-import UserRow from "@/components/UserRow";
-import PostForm from "@/components/PostForm";
-import Fab from "@/components/Fab";
 import { getSessionUser } from "@/lib/rbac";
+import UserEditor, { type EditorUser } from "@/components/UserEditor";
+import UserActiveToggle from "@/components/UserActiveToggle";
+
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: "Administrador",
+  SURVEYOR: "Encuestador",
+  CLIENT: "Cliente",
+};
 
 export default async function UsuariosPage() {
   const [me, users, companies] = await Promise.all([
     getSessionUser(),
-    prisma.user.findMany({ orderBy: [{ active: "desc" }, { createdAt: "asc" }] }),
+    prisma.user.findMany({
+      orderBy: [{ active: "desc" }, { createdAt: "asc" }],
+      include: {
+        assignedLocations: {
+          select: { id: true, name: true, company: { select: { name: true } } },
+          orderBy: { name: "asc" },
+        },
+      },
+    }),
     prisma.company.findMany({
       where: { active: true },
-      include: { locations: { orderBy: { name: "asc" } } },
+      select: {
+        id: true,
+        name: true,
+        locations: { select: { id: true, name: true }, orderBy: { name: "asc" } },
+      },
       orderBy: { name: "asc" },
     }),
   ]);
 
-  return (
-    <div className="space-y-6 pb-24">
-      <h1 className="text-2xl font-bold">Usuarios y roles</h1>
-      <p className="text-slate-500">
-        Agrega usuarios por correo (mantienen rol y empresa al iniciar sesión). Los
-        usuarios desactivados no pueden ingresar pero conservan su historial.
-      </p>
+  const vigentes = users.filter((u) => u.active);
+  const noVigentes = users.filter((u) => !u.active);
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Email</th>
-              <th className="px-4 py-2">Rol</th>
-              <th className="px-4 py-2">Empresa</th>
-              <th className="px-4 py-2">Sede (cliente)</th>
-              <th className="px-4 py-2">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <UserRow
-                key={u.id}
-                user={{
-                  id: u.id,
-                  email: u.email,
-                  role: u.role,
-                  companyId: u.companyId,
-                  locationId: u.locationId,
-                  active: u.active,
-                }}
-                companies={companies}
-                isSelf={u.id === me?.id}
-              />
-            ))}
-          </tbody>
-        </table>
+  function userCard(u: (typeof users)[number]) {
+    const fullName = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.name || "—";
+    const editorUser: EditorUser = {
+      id: u.id,
+      email: u.email,
+      role: u.role,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      phone: u.phone,
+      address: u.address,
+      rut: u.rut,
+      birthDate: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
+      emergencyName: u.emergencyName,
+      emergencyPhone: u.emergencyPhone,
+      locationIds: u.assignedLocations.map((l) => l.id),
+    };
+    return (
+      <div key={u.id} className={`card ${!u.active ? "bg-slate-50 opacity-75" : ""}`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold">{fullName}</h3>
+              <span className="rounded bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                {ROLE_LABEL[u.role] ?? u.role}
+              </span>
+              {!u.active && (
+                <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Desactivado
+                </span>
+              )}
+            </div>
+            <p className="break-all text-sm text-slate-500">{u.email}</p>
+            <p className="text-xs text-slate-500">
+              {u.assignedLocations.length > 0
+                ? u.assignedLocations
+                    .map((l) => `${l.company.name} · ${l.name}`)
+                    .join("  |  ")
+                : "Sin sedes asignadas"}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-start gap-2">
+            <UserEditor companies={companies} user={editorUser} triggerLabel="Editar" />
+            <UserActiveToggle id={u.id} active={u.active} isSelf={u.id === me?.id} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8 pb-12">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Usuarios y roles</h1>
+          <p className="mt-1 max-w-2xl text-slate-500">
+            Agrega usuarios por correo (mantienen rol, datos y sedes al iniciar sesión). Los
+            desactivados no pueden ingresar pero conservan su historial.
+          </p>
+        </div>
+        <UserEditor
+          companies={companies}
+          triggerLabel="+ Agregar usuario"
+          triggerClass="btn shrink-0"
+        />
       </div>
 
-      <Fab title="Agregar usuario por correo">
-        <PostForm
-          endpoint="/api/users"
-          submitLabel="Agregar"
-          fields={[
-            { name: "email", label: "Correo", required: true, placeholder: "persona@empresa.cl" },
-            {
-              name: "role",
-              label: "Rol",
-              type: "select",
-              required: true,
-              options: [
-                { value: "SURVEYOR", label: "Encuestador" },
-                { value: "CLIENT", label: "Cliente" },
-                { value: "ADMIN", label: "Administrador" },
-              ],
-            },
-            {
-              name: "companyId",
-              label: "Empresa (solo si es Cliente)",
-              type: "select",
-              options: companies.map((c) => ({ value: c.id, label: c.name })),
-            },
-          ]}
-        />
-      </Fab>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Vigentes</h2>
+        {vigentes.length === 0 ? (
+          <p className="text-sm text-slate-400">Sin usuarios vigentes.</p>
+        ) : (
+          <div className="space-y-3">{vigentes.map(userCard)}</div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          No vigentes
+        </h2>
+        {noVigentes.length === 0 ? (
+          <p className="text-sm text-slate-400">Sin usuarios no vigentes.</p>
+        ) : (
+          <div className="space-y-3">{noVigentes.map(userCard)}</div>
+        )}
+      </section>
     </div>
   );
 }

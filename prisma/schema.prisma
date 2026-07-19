@@ -21,12 +21,22 @@ datasource db {
 
 model User {
   id            String    @id @default(cuid())
-  name          String?
+  name          String? // nombre del proveedor OAuth (fallback); el mostrado usa firstName+lastName
+  firstName     String? // Nombre (definido por admin en la página Usuarios)
+  lastName      String? // Apellidos
   email         String    @unique
   emailVerified DateTime?
   image         String?
   role          String    @default("SURVEYOR")
   active        Boolean   @default(true) // false = usuario antiguo desactivado (no puede entrar)
+  // Datos personales (todos opcionales; los completa el admin).
+  phone          String?
+  address        String?
+  rut            String?
+  birthDate      DateTime?
+  emergencyName  String? // contacto de emergencia: nombre
+  emergencyPhone String? // contacto de emergencia: teléfono
+  // Empresa/sede "principal" (compatibilidad): se sincroniza con la 1ª sede asignada.
   companyId     String?
   company       Company?  @relation(fields: [companyId], references: [id])
   locationId    String? // si CLIENT: sede específica que puede consultar (documentos)
@@ -38,6 +48,8 @@ model User {
   workPlans   WorkPlan[]    @relation("WorkPlanSurveyors")
   responses   ResponseSet[] @relation("SurveyorResponses")
   auditLogs   AuditLog[]
+  // Sedes asignadas (multi-selección). Un usuario puede ver varias empresas/sedes.
+  assignedLocations Location[] @relation("UserAssignedLocations")
 
   @@index([companyId])
 }
@@ -93,6 +105,7 @@ model Company {
   workPlans      WorkPlan[]
   folders        Folder[]
   documents      Document[]
+  asqMappings    AsqAirportMapping[]
 }
 
 model Location {
@@ -108,8 +121,10 @@ model Location {
   responses   ResponseSet[]
   workPlans   WorkPlan[]
   clients     User[]        @relation("ClientLocation")
+  assignedUsers User[]      @relation("UserAssignedLocations")
   folders     Folder[]
   documents   Document[]
+  asqMappings AsqAirportMapping[]
 
   @@index([companyId])
 }
@@ -119,6 +134,7 @@ model Location {
 model Questionnaire {
   id        String   @id @default(cuid())
   title     String
+  active    Boolean  @default(true) // false = no vigente (se conserva histórico)
   createdAt DateTime @default(now())
 
   companies   Company[]              @relation("CompanyQuestionnaires")
@@ -378,6 +394,20 @@ model AsqComplianceRun {
 
   @@unique([airport, seasonLabel]) // clave de upsert: solo el más reciente
   @@index([seasonLabel])
+}
+
+// Asocia cada aeropuerto del portal ASQ (código PMC, IQQ, CJC, ...) a una empresa
+// + sede. Permite que los perfiles Encuestador/Cliente vean el ASQ de su sede.
+model AsqAirportMapping {
+  airport    String    @id // código ASQ del desplegable (PMC, IQQ, ...)
+  companyId  String?
+  company    Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  updatedAt  DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([locationId])
 }
 
 model AsqComplianceRow {

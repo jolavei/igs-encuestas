@@ -110,6 +110,20 @@ export const ChevronLeftIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
+export const ChevronDownIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg width={16} height={16} {...p}>
+    <path d="m6 9 6 6 6-6" />
+  </Svg>
+);
+
+// Usuario individual (perfil)
+export const UserIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </Svg>
+);
+
 export const MenuIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path d="M4 6h16M4 12h16M4 18h16" />

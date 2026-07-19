@@ -70,15 +70,12 @@ export default function DataformPanel({ questionnaireId }: { questionnaireId: st
 
   return (
     <div className="card space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="font-semibold">Tabla en BigQuery (Dataform)</h2>
-          <p className="text-sm text-slate-500">
-            Genera la definición de la tabla ancha de este cuestionario. Commitéala en tu
-            repo Dataform conectado a BigQuery.
-          </p>
+          <p className="text-sm text-slate-500">Tabla ancha del cuestionario para tu repo Dataform.</p>
         </div>
-        <button className="btn" disabled={busy} onClick={generate}>
+        <button className="btn shrink-0" disabled={busy} onClick={generate}>
           {busy ? "Generando…" : "Generar definición"}
         </button>
       </div>

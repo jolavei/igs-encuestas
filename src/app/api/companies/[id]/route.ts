@@ -4,9 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 
-const patchSchema = z.object({ active: z.boolean() });
+const patchSchema = z.object({
+  active: z.boolean().optional(),
+  name: z.string().min(1).optional(),
+  kind: z.string().min(1).optional(),
+});
 
-// Activar / desactivar empresa (soft). Conserva todo el histórico.
+// Editar empresa (nombre/tipo) y/o activar-desactivar (soft). Conserva histórico.
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string } }
@@ -17,16 +21,22 @@ export async function PATCH(
   const parsed = patchSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
 
+  const { active, name, kind } = parsed.data;
   const company = await prisma.company.update({
     where: { id: params.id },
-    data: { active: parsed.data.active },
+    data: {
+      ...(active !== undefined ? { active } : {}),
+      ...(name !== undefined ? { name } : {}),
+      ...(kind !== undefined ? { kind } : {}),
+    },
   });
-  await audit(
-    user.id,
-    parsed.data.active ? "company.activate" : "company.deactivate",
-    "Company",
-    company.id
-  );
+  const action =
+    active === false
+      ? "company.deactivate"
+      : active === true
+      ? "company.activate"
+      : "company.update";
+  await audit(user.id, action, "Company", company.id, parsed.data);
   return NextResponse.json({ id: company.id, active: company.active });
 }
 
