@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import QuestionInput, { type ClientSection } from "./QuestionInput";
+import SurveyFooter from "./SurveyFooter";
 import { validateAnswers, type RawAnswer } from "@/lib/questionTypes";
 
 const QUEUE_KEY = "igs.offlineQueue";
@@ -79,6 +80,24 @@ function nextIndex(
   return sections.findIndex((s) => s.order === targetOrder); // -1 si no existe => enviar
 }
 
+// Cuenta cuántas secciones faltan desde `startIdx` hasta ENVIAR, siguiendo el ruteo
+// POR DEFECTO de cada sección (con respuestas vacías). Al ignorar las respuestas, el
+// porcentaje de avance no cambia mientras el encuestado responde la sección actual;
+// solo se recalcula al pasar de sección (donde el salto real ya quedó en el historial).
+function stepsToSubmit(sections: ClientSection[], startIdx: number): number {
+  let idx = startIdx;
+  let count = 0;
+  const seen = new Set<number>();
+  while (idx >= 0 && !seen.has(idx)) {
+    seen.add(idx);
+    const nxt = nextIndex(sections, idx, {}); // {} = sin respuestas => ruteo por defecto
+    if (nxt < 0) break; // corresponde ENVIAR
+    count++;
+    idx = nxt;
+  }
+  return count;
+}
+
 export default function SurveyRunner({
   sections,
   endpoint,
@@ -114,6 +133,15 @@ export default function SurveyRunner({
   const section = sections[curIdx];
   const multi = sections.length > 1 || !!section?.title;
   const goesToSubmit = section ? nextIndex(sections, curIdx, answers) < 0 : true;
+
+  // Barra de progreso: solo para cuestionarios con varias secciones.
+  // Avance = secciones recorridas / (recorridas + faltantes proyectadas). Las
+  // faltantes se proyectan por ruteo por defecto (ver stepsToSubmit), así el % no
+  // se mueve al elegir una opción; se ajusta recién al pasar a la siguiente sección.
+  const multiSection = sections.length > 1;
+  const visitedSteps = history.length;
+  const remainingSteps = multiSection ? stepsToSubmit(sections, curIdx) : 0;
+  const progressPct = Math.round((visitedSteps / (visitedSteps + remainingSteps)) * 100);
 
   function validateCurrent(): boolean {
     const qs = visible(section);
@@ -194,16 +222,17 @@ export default function SurveyRunner({
 
   if (status === "ok" || status === "queued") {
     return (
-      <div className="card text-center">
+      <div className="my-6 rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm sm:px-8">
         <h2 className="text-lg font-semibold">¡Gracias!</h2>
-        <p className="text-slate-600">
+        <p className="mt-1 text-sm text-slate-600">
           {status === "ok"
             ? "Respuesta registrada."
             : "Sin conexión: respuesta guardada y se sincronizará automáticamente."}
         </p>
-        <button className="btn mt-4" onClick={reset}>
+        <button className="btn mt-6" onClick={reset}>
           Nueva respuesta
         </button>
+        <SurveyFooter />
       </div>
     );
   }
@@ -211,62 +240,87 @@ export default function SurveyRunner({
   if (!section) return null;
 
   return (
-    <div className="space-y-4">
+    <div className="my-6 rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-sm sm:px-8">
       {title && (
-        <div>
-          <h1 className="text-xl font-bold">{title}</h1>
-          {subtitle && <p className="text-slate-600">{subtitle}</p>}
+        <div className="pb-2">
+          <h1 className="text-xl font-bold text-slate-900">{title}</h1>
+          {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+        </div>
+      )}
+
+      {multiSection && (
+        <div className="pb-4 pt-1">
+          <div className="mb-1.5 text-right text-xs font-medium text-slate-500">
+            {progressPct}%
+          </div>
+          <div
+            className="h-2 w-full overflow-hidden rounded-full bg-slate-100"
+            role="progressbar"
+            aria-valuenow={progressPct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full bg-brand-600 transition-[width] duration-300 ease-out"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
         </div>
       )}
 
       {offline && pending > 0 && (
-        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="pb-2 text-sm text-amber-700">
           {pending} respuesta(s) pendiente(s) de sincronizar.
         </p>
       )}
 
       {multi && (section.title || section.description) && (
-        <div className="rounded-md border-l-4 border-brand-500 bg-brand-50/50 px-3 py-2">
-          {section.title && <h2 className="font-semibold text-brand-800">{section.title}</h2>}
+        <div className="pb-1 pt-3">
+          {section.title && (
+            <h2 className="text-base font-semibold text-slate-900">{section.title}</h2>
+          )}
           {section.description && (
-            <p className="text-sm text-slate-600">{section.description}</p>
+            <p className="mt-0.5 text-sm text-slate-500">{section.description}</p>
           )}
         </div>
       )}
 
-      {visible(section)
-        .slice()
-        .sort((a, b) => a.order - b.order)
-        .map((q, i, arr) => {
-          const prev = arr[i - 1];
-          const prevDatetime =
-            prev && prev.type === "DATETIME" && q.type === "DATETIME"
-              ? answers[prev.id]?.valueText ?? undefined
-              : undefined;
-          return (
-            <QuestionInput
-              key={q.id}
-              q={q}
-              value={answers[q.id] ?? { questionId: q.id }}
-              error={errors[q.id]}
-              canUpload={allowFileUpload}
-              prevDatetime={prevDatetime}
-              onChange={(v) => setAnswers((s) => ({ ...s, [q.id]: v }))}
-            />
-          );
-        })}
+      {/* Las preguntas van sobre el mismo fondo blanco, separadas solo por una línea fina. */}
+      <div className="divide-y divide-slate-100 border-t border-slate-100">
+        {visible(section)
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .map((q, i, arr) => {
+            const prev = arr[i - 1];
+            const prevDatetime =
+              prev && prev.type === "DATETIME" && q.type === "DATETIME"
+                ? answers[prev.id]?.valueText ?? undefined
+                : undefined;
+            return (
+              <QuestionInput
+                key={q.id}
+                q={q}
+                value={answers[q.id] ?? { questionId: q.id }}
+                error={errors[q.id]}
+                canUpload={allowFileUpload}
+                prevDatetime={prevDatetime}
+                onChange={(v) => setAnswers((s) => ({ ...s, [q.id]: v }))}
+              />
+            );
+          })}
+      </div>
 
       {status === "error" && (
-        <p className="text-sm text-red-600">Error al enviar. Intenta de nuevo.</p>
+        <p className="pt-4 text-sm text-red-600">Error al enviar. Intenta de nuevo.</p>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex justify-center gap-3 pt-6">
         {history.length > 1 && (
           <button className="btn-secondary" onClick={onBack} disabled={status === "sending"}>
             ← Atrás
           </button>
         )}
-        <button className="btn flex-1" disabled={status === "sending"} onClick={onNext}>
+        <button className="btn w-1/2" disabled={status === "sending"} onClick={onNext}>
           {status === "sending"
             ? "Enviando…"
             : goesToSubmit
@@ -274,6 +328,8 @@ export default function SurveyRunner({
             : "Siguiente →"}
         </button>
       </div>
+
+      <SurveyFooter />
     </div>
   );
 }

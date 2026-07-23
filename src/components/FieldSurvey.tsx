@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import SurveyRunner from "@/components/SurveyRunner";
+import SurveyFooter from "@/components/SurveyFooter";
 import type { ClientSection } from "@/components/QuestionInput";
 
 // Levantamiento ligado a un plan. Si el plan no fija sede, se elige aquí.
@@ -22,10 +23,12 @@ export default function FieldSurvey({
 
   if (needsLocation && !locationId) {
     return (
-      <div className="card space-y-3">
-        <h1 className="text-xl font-bold">{title}</h1>
-        <div>
-          <label className="label">Elige la sede para comenzar</label>
+      <div className="my-6 rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-sm sm:px-8">
+        <h1 className="text-xl font-bold text-slate-900">{title}</h1>
+        <div className="pt-5">
+          <label className="mb-1 block text-[15px] font-medium text-slate-800">
+            Elige la sede para comenzar
+          </label>
           <select
             className="input"
             value={locationId}
@@ -39,6 +42,7 @@ export default function FieldSurvey({
             ))}
           </select>
         </div>
+        <SurveyFooter />
       </div>
     );
   }

@@ -22,8 +22,8 @@ export type Draft = {
   maxStars?: number; // RATING
   maxLength?: number; // TEXT / PARAGRAPH
   afterKey?: string; // DATETIME: debe ser posterior a esta otra pregunta
-  min?: number; // legado
-  max?: number; // legado
+  min?: number; // LIKERT: valor inicial de la escala (NUMBER legado)
+  max?: number; // LIKERT: valor final de la escala (NUMBER legado)
   bqColumnName?: string;
   bqType?: BqType;
   bqDescription?: string;
@@ -236,9 +236,59 @@ function AnswerPreview({
         </div>
       );
     case "NPS":
-      return <p className="text-sm text-slate-400">Escala NPS 0–10 (tipo histórico).</p>;
-    case "LIKERT":
-      return <p className="text-sm text-slate-400">Escala Likert (tipo histórico).</p>;
+      return (
+        <div className="flex flex-wrap gap-1">
+          {Array.from({ length: 11 }, (_, i) => i).map((n) => (
+            <span
+              key={n}
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-sm text-slate-400"
+            >
+              {n}
+            </span>
+          ))}
+        </div>
+      );
+    case "LIKERT": {
+      const min = d.min ?? 1;
+      const max = d.max ?? 5;
+      const range = max >= min ? Array.from({ length: max - min + 1 }, (_, i) => min + i) : [];
+      return (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+            <label className="flex items-center gap-2">
+              Desde
+              <input
+                className="input shrink-0"
+                style={{ width: "5rem" }}
+                type="number"
+                value={min}
+                onChange={(e) => onChange({ min: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              Hasta
+              <input
+                className="input shrink-0"
+                style={{ width: "5rem" }}
+                type="number"
+                value={max}
+                onChange={(e) => onChange({ max: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {range.map((n) => (
+              <span
+                key={n}
+                className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-sm text-slate-400"
+              >
+                {n}
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    }
     case "NUMBER":
       return <input className="input" type="number" disabled placeholder="Número" />;
     default:

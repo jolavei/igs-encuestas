@@ -42,19 +42,19 @@ export default async function PublicSurvey({
   const sections = buildClientSections(version.questions, version.sections);
 
   return (
-    <main className="mx-auto max-w-lg space-y-4 p-4">
-      <div className="flex justify-center py-2">
+    <main className="mx-auto min-h-screen max-w-lg bg-slate-50 px-4">
+      <div className="flex justify-center pt-6">
         <Logo variant="full" className="h-12 w-auto" />
       </div>
+      <p className="px-5 pt-3 text-center text-xs text-slate-400 sm:px-8">
+        Tus respuestas son anónimas y se usan para mejorar el servicio.
+      </p>
       <SurveyRunner
         sections={sections}
         endpoint={`/api/public/${params.token}`}
         title={qr.questionnaire.title}
         subtitle={`${qr.location.name}`}
       />
-      <p className="text-center text-xs text-slate-400">
-        Tus respuestas son anónimas y se usan para mejorar el servicio.
-      </p>
     </main>
   );
 }

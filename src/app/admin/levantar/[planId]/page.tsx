@@ -19,10 +19,11 @@ export default async function AdminLevantar({ params }: { params: { planId: stri
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-4">
+    <div className="mx-auto max-w-2xl">
       <Link href="/admin/levantar" className="text-sm text-brand-600">
         ← Planes
       </Link>
+      {/* El levantamiento vive en un contenedor blanco redondeado con margen vertical. */}
       <FieldSurvey
         workPlanId={data.plan.id}
         title={data.plan.questionnaire.title}

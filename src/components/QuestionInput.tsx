@@ -45,19 +45,21 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
   }
 
   return (
-    <div className="card space-y-3">
-      <label className="label">
+    <div className="space-y-3 py-5">
+      <label className="block text-[15px] font-medium leading-snug text-slate-800">
         {q.text} {q.required && <span className="text-red-500">*</span>}
       </label>
 
       {q.type === "NPS" && (
-        <div className="flex flex-wrap gap-1">
+        // Los 11 botones (0–10) se reparten el ancho disponible para que siempre
+        // quepan en una línea sin desplazamiento horizontal (importante en el QR móvil).
+        <div className="flex justify-center gap-1 sm:gap-1.5">
           {Array.from({ length: 11 }, (_, i) => i).map((n) => (
             <button
               key={n}
               type="button"
               onClick={() => set({ valueNumber: n })}
-              className={`h-9 w-9 rounded-md border text-sm ${
+              className={`flex aspect-square min-w-0 max-w-[2.75rem] flex-1 items-center justify-center rounded-md border text-xs sm:text-sm ${
                 value.valueNumber === n
                   ? "border-brand-600 bg-brand-600 text-white"
                   : "border-slate-300 bg-white"
@@ -75,21 +77,23 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
           const max = cfg.max ?? 5;
           const range = Array.from({ length: max - min + 1 }, (_, i) => min + i);
           return (
-            <div className="flex flex-wrap gap-2">
-              {range.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => set({ valueNumber: n })}
-                  className={`h-10 w-10 rounded-md border text-sm ${
-                    value.valueNumber === n
-                      ? "border-brand-600 bg-brand-600 text-white"
-                      : "border-slate-300 bg-white"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
+            <div className="overflow-x-auto">
+              <div className="flex w-max min-w-full justify-center gap-2">
+                {range.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => set({ valueNumber: n })}
+                    className={`h-10 w-10 shrink-0 rounded-md border text-sm ${
+                      value.valueNumber === n
+                        ? "border-brand-600 bg-brand-600 text-white"
+                        : "border-slate-300 bg-white"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
           );
         })()}
@@ -136,38 +140,40 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
           const na = value.valueText === "N/A";
           const current = na ? 0 : value.valueNumber ?? 0;
           return (
-            <div className="flex flex-wrap items-start justify-center gap-3 py-2">
-              <button
-                type="button"
-                onClick={() => set({ valueText: "N/A", valueNumber: null })}
-                className="flex flex-col items-center gap-1"
-                aria-label="No aplica"
-              >
-                <span className="text-xs text-slate-500">N/A</span>
-                <span
-                  className={`h-3.5 w-3.5 rounded border ${
-                    na ? "border-brand-600 bg-brand-600" : "border-slate-300 bg-white"
-                  }`}
-                />
-              </button>
-              {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
+            <div className="overflow-x-auto py-2">
+              <div className="flex w-max min-w-full items-start justify-center gap-3">
                 <button
-                  key={n}
                   type="button"
-                  onClick={() => set({ valueNumber: n, valueText: null })}
-                  className="flex flex-col items-center gap-1"
-                  aria-label={`${n} de ${max}`}
+                  onClick={() => set({ valueText: "N/A", valueNumber: null })}
+                  className="flex shrink-0 flex-col items-center gap-1"
+                  aria-label="No aplica"
                 >
-                  <span className="text-xs text-slate-500">{n}</span>
+                  <span className="text-xs text-slate-500">N/A</span>
                   <span
-                    className={`text-3xl leading-none ${
-                      !na && n <= current ? "text-amber-400" : "text-slate-300"
+                    className={`h-3.5 w-3.5 rounded border ${
+                      na ? "border-brand-600 bg-brand-600" : "border-slate-300 bg-white"
                     }`}
-                  >
-                    ★
-                  </span>
+                  />
                 </button>
-              ))}
+                {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => set({ valueNumber: n, valueText: null })}
+                    className="flex shrink-0 flex-col items-center gap-1"
+                    aria-label={`${n} de ${max}`}
+                  >
+                    <span className="text-xs text-slate-500">{n}</span>
+                    <span
+                      className={`text-3xl leading-none ${
+                        !na && n <= current ? "text-amber-400" : "text-slate-300"
+                      }`}
+                    >
+                      ★
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           );
         })()}

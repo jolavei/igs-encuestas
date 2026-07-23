@@ -11,10 +11,10 @@ export type QuestionType =
   | "FILE_UPLOAD" // Carga de archivos (a Drive/GCS)
   | "RATING" // Calificación (estrellas)
   | "DATETIME" // Fecha-Hora-Minuto-Segundo
-  // Legado: NO se ofrecen en el constructor nuevo; se conservan para leer/mostrar
-  // versiones históricas y sus dashboards (NPS/CSAT).
-  | "NPS"
-  | "LIKERT"
+  | "NPS" // Escala NPS (0-10)
+  | "LIKERT" // Escala Likert (min-max)
+  // Legado: NO se ofrece en el constructor nuevo; se conserva para leer/mostrar
+  // versiones históricas y sus dashboards.
   | "NUMBER";
 
 export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
@@ -41,6 +41,8 @@ export const BUILDER_QUESTION_TYPES: QuestionType[] = [
   "DROPDOWN",
   "FILE_UPLOAD",
   "RATING",
+  "NPS",
+  "LIKERT",
   "DATETIME",
 ];
 

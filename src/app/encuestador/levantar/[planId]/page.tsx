@@ -25,10 +25,11 @@ export default async function Levantar({ params }: { params: { planId: string } 
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-4">
+    <div className="mx-auto max-w-2xl">
       <Link href="/encuestador" className="text-sm text-brand-600">
         ← Mi plan de trabajo
       </Link>
+      {/* El levantamiento vive en un contenedor blanco redondeado con margen vertical. */}
       <FieldSurvey
         workPlanId={data.plan.id}
         title={data.plan.questionnaire.title}
