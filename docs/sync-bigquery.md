@@ -64,10 +64,28 @@ Con los datos crudos ya en BigQuery:
      el `definitions/<cuestionario>.sqlx` a tu workspace de Dataform.
 3. En Dataform: **Start execution / Run** → crea la tabla ancha en el dataset `encuestas`,
    con una columna por pregunta y `company_name` para comparar empresas.
-4. (Opcional) **Looker Studio** → conéctate a `encuestas` para los dashboards.
+4. **Commit + Push a la rama predeterminada** desde el panel de Git del workspace.
+5. (Opcional) **Looker Studio** → conéctate a `encuestas` para los dashboards.
 
 > El script de sync deja los datos crudos al día; Dataform los transforma. Si agregas
-> preguntas o cuestionarios, regenera el `.sqlx` desde la app y vuelve a ejecutar Dataform.
+> preguntas o cuestionarios, regenera el `.sqlx` desde la app y haz push a `main`.
+
+### Ejecución automática
+
+El workflow dispara Dataform por API apenas termina de cargar los datos crudos, así que las
+tablas anchas se reconstruyen en la misma corrida (cada 6 horas). Requisitos:
+
+- El dataset de salida `encuestas` debe existir (multirregión **US**). Dataform no siempre
+  logra crearlo solo:
+  ```sql
+  CREATE SCHEMA IF NOT EXISTS `<proyecto>.encuestas` OPTIONS(location = 'US');
+  ```
+- La cuenta de servicio del sync necesita **`roles/dataform.editor`** además de los roles de
+  BigQuery del Paso 2.
+- Se compila la rama **`main`** del repo Dataform: lo que quede sin push en un workspace de
+  desarrollo no se ejecuta.
+- Solo corren las acciones con el tag `encuestas` (el generador se lo pone a todas las
+  tablas por cuestionario).
 
 ---
 

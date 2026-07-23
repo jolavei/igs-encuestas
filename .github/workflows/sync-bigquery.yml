@@ -27,3 +27,41 @@ jobs:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
           BQ_DATASET: raw_postgres
           BQ_LOCATION: US
+
+      # Con los datos crudos ya al día, Dataform reconstruye las tablas anchas.
+      - name: Autenticar en Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          token_format: access_token
+
+      - name: Ejecutar Dataform
+        env:
+          TOKEN: ${{ steps.auth.outputs.access_token }}
+          PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: us-central1
+          REPO: igs-encuestas
+          BRANCH: main
+        run: |
+          set -euo pipefail
+          API="https://dataform.googleapis.com/v1beta1/projects/$PROJECT/locations/$REGION/repositories/$REPO"
+
+          # 1. Compila la rama por defecto (lo que esté commiteado, no el workspace).
+          COMPILATION=$(curl -sS -X POST "$API/compilationResults" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"gitCommitish\":\"$BRANCH\"}" | jq -r '.name // empty')
+
+          if [ -z "$COMPILATION" ]; then
+            echo "No se pudo compilar el repo Dataform (revisa permisos o errores de compilación)."
+            exit 1
+          fi
+          echo "Compilación: $COMPILATION"
+
+          # 2. Ejecuta solo las acciones etiquetadas 'encuestas' (las tablas por cuestionario).
+          curl -sS -X POST "$API/workflowInvocations" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"compilationResult\":\"$COMPILATION\",\"invocationConfig\":{\"includedTags\":[\"encuestas\"]}}" \
+            | jq -r '.name, .state'
