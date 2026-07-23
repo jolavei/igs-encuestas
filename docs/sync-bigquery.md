@@ -1,8 +1,12 @@
 # Sincronizar Neon → BigQuery (script automático)
 
 El workflow `.github/workflows/sync-bigquery.yml` corre `scripts/sync-bigquery.mjs`
-cada 6 horas (y a mano cuando quieras) para copiar las tablas de Neon a BigQuery.
-Luego Dataform arma la tabla ancha por cuestionario.
+a las **00:00, 06:00, 12:00 y 18:00 hora de Chile** (y a mano cuando quieras) para copiar
+las tablas de Neon a BigQuery. Luego Dataform arma la tabla ancha por cuestionario.
+
+> El cron se escribe en UTC (`0 4,10,16,22 * * *`) porque GitHub no soporta zonas horarias
+> ni ajusta el horario de verano. Entre septiembre y abril (UTC-3) las corridas caen una
+> hora más tarde en hora local.
 
 Solo se sincronizan las tablas de negocio. Se **excluyen** `Account`, `Session` y
 `VerificationToken` (tienen tokens de login) y las tablas internas (`_*`).
