@@ -110,7 +110,28 @@ export default async function AdminHome() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-bold">¡Bienvenido {firstName}! 👋</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">¡Bienvenido {firstName}! 👋</h1>
+
+        {/* Burbuja de estado: última sincronización con BigQuery */}
+        {lastSync ? (
+          <span
+            title={`${lastSync.tables} tablas, ${lastSync.rows} filas`}
+            className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            Última sincronización: {fmtDateTime(lastSync.syncedAt)}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500">
+            <span className="inline-flex h-2 w-2 rounded-full bg-slate-400" />
+            Aún sin sincronizar
+          </span>
+        )}
+      </div>
 
       {/* Resumen */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -133,21 +154,6 @@ export default async function AdminHome() {
         <h2 className="font-semibold">Avance de planes de trabajo vigentes</h2>
         <PlanesVigentesTable rows={rows} />
       </section>
-
-      {/* Última actualización en BigQuery */}
-      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
-        <span className="text-slate-500">Última actualización en BigQuery: </span>
-        {lastSync ? (
-          <span className="font-medium text-slate-900">
-            {fmtDateTime(lastSync.syncedAt)}
-            <span className="ml-1 font-normal text-slate-400">
-              ({lastSync.tables} tablas, {lastSync.rows} filas)
-            </span>
-          </span>
-        ) : (
-          <span className="text-slate-500">aún sin sincronizar.</span>
-        )}
-      </div>
     </div>
   );
 }
