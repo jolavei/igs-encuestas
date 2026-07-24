@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
+import { chileDayToUtc } from "@/lib/dates";
 
 const schema = z.object({
   email: z.string().email(),
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
       phone: d.phone ?? null,
       address: d.address ?? null,
       rut: d.rut ?? null,
-      birthDate: d.birthDate ? new Date(d.birthDate) : null,
+      birthDate: d.birthDate ? chileDayToUtc(d.birthDate) : null,
       emergencyName: d.emergencyName ?? null,
       emergencyPhone: d.emergencyPhone ?? null,
       ...(primary?.companyId ? { company: { connect: { id: primary.companyId } } } : {}),

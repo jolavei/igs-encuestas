@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
+import { chileDayToUtc } from "@/lib/dates";
 
 const schema = z.object({
   role: z.enum(["ADMIN", "SURVEYOR", "CLIENT"]).optional(),
@@ -43,7 +44,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (d.phone !== undefined) data.phone = d.phone;
   if (d.address !== undefined) data.address = d.address;
   if (d.rut !== undefined) data.rut = d.rut;
-  if (d.birthDate !== undefined) data.birthDate = d.birthDate ? new Date(d.birthDate) : null;
+  if (d.birthDate !== undefined) data.birthDate = d.birthDate ? chileDayToUtc(d.birthDate) : null;
   if (d.emergencyName !== undefined) data.emergencyName = d.emergencyName;
   if (d.emergencyPhone !== undefined) data.emergencyPhone = d.emergencyPhone;
 

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/rbac";
 import UserEditor, { type EditorUser } from "@/components/UserEditor";
+import { utcToChileDay } from "@/lib/dates";
 import UserActiveToggle from "@/components/UserActiveToggle";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -46,7 +47,7 @@ export default async function UsuariosPage() {
       phone: u.phone,
       address: u.address,
       rut: u.rut,
-      birthDate: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
+      birthDate: u.birthDate ? utcToChileDay(u.birthDate) : null,
       emergencyName: u.emergencyName,
       emergencyPhone: u.emergencyPhone,
       locationIds: u.assignedLocations.map((l) => l.id),

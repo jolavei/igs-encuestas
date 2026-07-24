@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
+import { chileDayToUtc } from "@/lib/dates";
 
 const schema = z.object({
   companyId: z.string(),
@@ -38,9 +39,11 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
   const d = parsed.data;
 
-  const start = new Date(d.windowStart);
-  const end = new Date(d.windowEnd);
-  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+  // La ventana se define en días chilenos: desde las 00:00 del inicio hasta las
+  // 23:59:59 del fin, para que el último día del plan siga vigente completo.
+  const start = chileDayToUtc(d.windowStart, "start");
+  const end = chileDayToUtc(d.windowEnd, "end");
+  if (!start || !end || end < start) {
     return NextResponse.json({ error: "Ventana de fechas inválida." }, { status: 400 });
   }
 
