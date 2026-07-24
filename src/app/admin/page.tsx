@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/rbac";
 import { getPlanProgress } from "@/lib/planProgress";
 import PlanesVigentesTable, { type PlanRow } from "@/components/PlanesVigentesTable";
+import SyncBubble from "@/components/SyncBubble";
 
 function fmtDateTime(d: Date) {
   // No se puede mezclar dateStyle con hour/minute: se usan componentes individuales.
@@ -114,23 +115,10 @@ export default async function AdminHome() {
         <h1 className="text-2xl font-bold">¡Bienvenido {firstName}! 👋</h1>
 
         {/* Burbuja de estado: última sincronización con BigQuery */}
-        {lastSync ? (
-          <span
-            title={`${lastSync.tables} tablas, ${lastSync.rows} filas`}
-            className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            </span>
-            Última sincronización: {fmtDateTime(lastSync.syncedAt)}
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500">
-            <span className="inline-flex h-2 w-2 rounded-full bg-slate-400" />
-            Aún sin sincronizar
-          </span>
-        )}
+        <SyncBubble
+          syncedAt={lastSync?.syncedAt ?? null}
+          title={lastSync ? `${lastSync.tables} tablas, ${lastSync.rows} filas` : undefined}
+        />
       </div>
 
       {/* Resumen */}

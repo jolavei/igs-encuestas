@@ -14,7 +14,7 @@ export type AsqAirportView = {
 // `mapped` = tiene aeropuertos asociados aunque aún no haya datos del scraper.
 export async function getScopedAsq(locationIds: string[], companyIds: string[]) {
   if (locationIds.length === 0 && companyIds.length === 0) {
-    return { airports: [] as AsqAirportView[], season: null, mapped: false };
+    return { airports: [] as AsqAirportView[], season: null, mapped: false, lastScraped: null };
   }
 
   const mappings = await prisma.asqAirportMapping.findMany({
@@ -24,7 +24,7 @@ export async function getScopedAsq(locationIds: string[], companyIds: string[]) 
     include: { location: true, company: true },
   });
   if (mappings.length === 0) {
-    return { airports: [] as AsqAirportView[], season: null, mapped: false };
+    return { airports: [] as AsqAirportView[], season: null, mapped: false, lastScraped: null };
   }
 
   const airportCodes = mappings.map((m) => m.airport);
@@ -37,7 +37,7 @@ export async function getScopedAsq(locationIds: string[], companyIds: string[]) 
     orderBy: [{ year: "desc" }, { season: "desc" }],
   });
   if (seasons.length === 0) {
-    return { airports: [] as AsqAirportView[], season: null, mapped: true };
+    return { airports: [] as AsqAirportView[], season: null, mapped: true, lastScraped: null };
   }
   const season = seasons[0].seasonLabel;
 
@@ -70,5 +70,11 @@ export async function getScopedAsq(locationIds: string[], companyIds: string[]) 
     };
   });
 
-  return { airports, season, mapped: true };
+  // Momento del último scraping entre los aeropuertos del usuario.
+  const lastScraped = runs.reduce<Date | null>(
+    (acc, r) => (!acc || r.scrapedAt > acc ? r.scrapedAt : acc),
+    null
+  );
+
+  return { airports, season, mapped: true, lastScraped };
 }

@@ -1,26 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import SeasonPicker from "@/components/SeasonPicker";
 import AsqAirportMapper from "@/components/AsqAirportMapper";
+import SyncBubble from "@/components/SyncBubble";
 
 function pct(done: number, target: number) {
   return target > 0 ? Math.min(100, Math.round((done / target) * 100)) : 0;
-}
-
-// "07-07-26, 19:49"
-function fmtUpdated(d: Date) {
-  const date = new Intl.DateTimeFormat("es-CL", {
-    timeZone: "America/Santiago",
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-  }).format(d);
-  const time = new Intl.DateTimeFormat("es-CL", {
-    timeZone: "America/Santiago",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(d);
-  return `${date}, ${time}`;
 }
 
 function Pct({ done, target }: { done: number; target: number }) {
@@ -49,7 +33,10 @@ export default async function CompliancePage({
   if (seasons.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold">Encuestas ASQ</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold">Encuestas ASQ</h1>
+          <SyncBubble syncedAt={null} />
+        </div>
         <p className="max-w-2xl text-slate-500">
           Aún no hay datos. Corre el scraper con{" "}
           <code className="rounded bg-slate-100 px-1.5 py-0.5 text-sm">npm run scrape:asq</code>{" "}
@@ -93,11 +80,9 @@ export default async function CompliancePage({
     <div className="space-y-6 pb-12">
       {/* Encabezado */}
       <div className="space-y-3">
-        <div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-bold">Encuestas ASQ</h1>
-          <p className="text-sm text-slate-500">
-            Última actualización: {lastScraped ? fmtUpdated(lastScraped) : "—"}
-          </p>
+          <SyncBubble syncedAt={lastScraped} />
         </div>
         <SeasonPicker seasons={seasons} active={active} />
       </div>
