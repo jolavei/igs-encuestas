@@ -15,17 +15,18 @@ const asPlain = (a: (typeof AIRPORTS)[number]): DashboardAirport => ({
 /**
  * Aeropuertos del dashboard "Mediciones de tiempos" visibles para el usuario.
  * - ADMIN: todos.
- * - SURVEYOR / CLIENT: los aeropuertos de su alcance donde el cuestionario está
- *   VIGENTE (Questionnaire.active = true). El alcance se arma con dos señales
- *   (unión), porque cada rol se acota distinto en la app:
- *     · sedes asignadas al usuario (assignedLocations) + su sede/empresa principal;
- *     · planes de trabajo ACTIVOS del cuestionario en los que el usuario participa
- *       (encuestador: asignado al plan; cliente: plan de su empresa/sede).
- *   Si el cuestionario se marca no vigente, o el plan deja de estar activo / se
- *   quita la sede, el aeropuerto deja de mostrarse.
+ * - SURVEYOR / CLIENT: SOLO los aeropuertos de sus SEDES ASIGNADAS
+ *   (assignedLocations + su sede principal por compatibilidad), y siempre que el
+ *   cuestionario esté VIGENTE (Questionnaire.active = true; título
+ *   case-insensitive). Si el cuestionario se marca no vigente, o se le quita la
+ *   sede al usuario, el aeropuerto deja de mostrarse.
  *
- * El cruce con los aeropuertos del dashboard es por NOMBRE de sede
- * (Location.name = location_name en BigQuery).
+ * El alcance es por ASIGNACIÓN de sede, no por planes de trabajo: un plan que
+ * toque otro aeropuerto NO habilita ese aeropuerto para el usuario.
+ *
+ * Cruce sede -> aeropuerto tolerante a variantes de nombre (Location.name puede
+ * ser "Aeropuerto Diego Aracena", "Diego Aracena", "... - Iquique", etc.); las
+ * queries a BigQuery usan siempre el nombre canónico de AIRPORTS.
  */
 export async function getScopedTiemposAirports(user: {
   id: string;
@@ -33,58 +34,28 @@ export async function getScopedTiemposAirports(user: {
 }): Promise<DashboardAirport[]> {
   if (user.role === "ADMIN") return AIRPORTS.map(asPlain);
 
-  // El cuestionario debe existir y estar vigente (tolerante a mayúsculas/acentos base).
+  // El cuestionario debe existir y estar vigente.
   const q = await prisma.questionnaire.findFirst({
     where: { title: { equals: TIEMPOS_TITLE, mode: "insensitive" }, active: true },
     select: { id: true },
   });
   if (!q) return [];
 
-  // Alcance del usuario: sedes asignadas + sede/empresa principal (compatibilidad).
+  // Sedes asignadas al usuario + su sede principal (compatibilidad).
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },
     select: {
-      companyId: true,
-      locationId: true,
       location: { select: { name: true } },
-      assignedLocations: { select: { id: true, name: true, companyId: true } },
+      assignedLocations: { select: { name: true } },
     },
   });
 
   const names = new Set<string>();
-  const locationIds = new Set<string>();
-  const companyIds = new Set<string>();
-  for (const l of dbUser?.assignedLocations ?? []) {
-    names.add(l.name);
-    locationIds.add(l.id);
-    companyIds.add(l.companyId);
-  }
+  for (const l of dbUser?.assignedLocations ?? []) names.add(l.name);
   if (dbUser?.location?.name) names.add(dbUser.location.name);
-  if (dbUser?.locationId) locationIds.add(dbUser.locationId);
-  if (dbUser?.companyId) companyIds.add(dbUser.companyId);
-
-  // Planes ACTIVOS del cuestionario donde el usuario participa.
-  const plans = await prisma.workPlan.findMany({
-    where: {
-      status: "ACTIVE",
-      questionnaireId: q.id,
-      ...(user.role === "SURVEYOR"
-        ? { surveyors: { some: { id: user.id } } }
-        : { OR: [{ locationId: { in: [...locationIds] } }, { companyId: { in: [...companyIds] } }] }),
-    },
-    select: {
-      location: { select: { name: true } },
-      company: { select: { locations: { select: { name: true } } } },
-    },
-  });
-  for (const p of plans) {
-    if (p.location) names.add(p.location.name);
-    else for (const l of p.company.locations) names.add(l.name); // plan a nivel empresa
-  }
 
   // Cruce robusto sede -> aeropuerto: nombre exacto, o que el nombre contenga el
-  // identificador del aeropuerto (p.ej. "Diego Aracena"), tolerando variantes
-  // como "Aeropuerto Diego Aracena" o "Aeropuerto Diego Aracena - Iquique".
+  // identificador del aeropuerto ("Diego Aracena" / "El Loa" / "El Tepual").
   const allowed = new Set<string>();
   for (const raw of names) {
     const n = raw.toLowerCase();
