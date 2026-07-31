@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiUser } from "@/lib/rbac";
 import { bqQuery, bqProjectId, BigQueryCredentialsError } from "@/lib/bigquery";
 import { PROCESOS, FASES, AIRPORTS, AIRLINES, hasAirline, hasFase } from "@/lib/dashboardTiempos";
+import { getScopedTiemposAirports } from "@/lib/dashboardTiemposScope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ type Serie = { ym: string } & Omit<Agg, "name">;
 const num = (v: unknown): number => (v == null ? 0 : Number((v as { value?: unknown }).value ?? v));
 
 export async function GET(req: Request) {
-  const { user, status } = await apiUser(["ADMIN"]);
+  const { user, status } = await apiUser(["ADMIN", "SURVEYOR", "CLIENT"]);
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status });
 
   const url = new URL(req.url);
@@ -59,6 +60,15 @@ export async function GET(req: Request) {
   }
   const { proceso, airport, desde, hasta, fase, airline } = parsed.data;
 
+  // Alcance: encuestador/cliente sólo pueden consultar los aeropuertos donde el
+  // cuestionario está habilitado y vigente para su usuario (ADMIN ve todos).
+  const allowed = await getScopedTiemposAirports({ id: user.id, role: user.role });
+  const allowedNames = allowed.map((a) => a.name);
+  if (!allowedNames.includes(airport)) {
+    return NextResponse.json({ error: "Aeropuerto fuera de tu alcance." }, { status: 403 });
+  }
+  const isAdmin = user.role === "ADMIN";
+
   const durExpr =
     proceso === "Retiro de equipajes" ? DUR_RETIRO[hasFase(proceso) ? fase ?? "espera" : "espera"] : DUR[proceso];
 
@@ -66,6 +76,8 @@ export async function GET(req: Request) {
   const useAirline = hasAirline(proceso) && !!airline;
   const airlineCol = proceso === "Check in" ? "checkin_airline" : "baggage_claim_airline";
   const airlineClause = useAirline ? ` AND ${airlineCol} = @airline` : "";
+  // Para no-admin, el resumen por aeropuerto se limita a sus aeropuertos.
+  const airportFilter = isAdmin ? "" : " AND location_name IN UNNEST(@airports)";
 
   const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
   const common =
@@ -77,7 +89,7 @@ export async function GET(req: Request) {
     SELECT location_name AS name, COUNT(*) AS n, AVG(dur) AS prom,
       APPROX_QUANTILES(dur, 100)[OFFSET(50)] AS med,
       APPROX_QUANTILES(dur, 100)[OFFSET(90)] AS p90
-    FROM (SELECT location_name, ${durExpr} AS dur FROM ${table} WHERE ${common})
+    FROM (SELECT location_name, ${durExpr} AS dur FROM ${table} WHERE ${common}${airportFilter})
     WHERE dur > 0 AND dur <= @cap
     GROUP BY name`;
 
@@ -92,6 +104,7 @@ export async function GET(req: Request) {
 
   const params: Record<string, unknown> = { proceso, desde, hasta, airport, cap: CAP_MIN };
   if (useAirline) params.airline = airline;
+  if (!isAdmin) params.airports = allowedNames;
 
   try {
     const [byAirportRaw, seriesRaw] = await Promise.all([

@@ -17,7 +17,6 @@ import {
 } from "recharts";
 import {
   PROCESOS,
-  AIRPORTS,
   AIRLINES,
   metaFor,
   hasAirline,
@@ -41,6 +40,8 @@ const SELECT_CLS =
 type Agg = { name: string; n: number; prom: number; med: number; p90: number };
 type Serie = { ym: string; n: number; prom: number; med: number; p90: number };
 type ApiData = { byAirport: Agg[]; series: Serie[] };
+// Aeropuerto ya filtrado por alcance/vigencia en el servidor (subconjunto de AIRPORTS).
+type DashboardAirport = { code: string; name: string; short: string };
 
 const nf0 = new Intl.NumberFormat("es-CL");
 // Duración (minutos decimales) -> "MM:SS" (minutos:segundos).
@@ -55,12 +56,12 @@ function hexA(hex: string, a: number) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
-export default function TiemposDashboard() {
+export default function TiemposDashboard({ airports }: { airports: DashboardAirport[] }) {
   const presets = useMemo(() => periodPresets(new Date()), []);
   const [proceso, setProceso] = useState<Proceso>("Check in");
   const [airline, setAirline] = useState<string>("Todas");
   const [fase, setFase] = useState<Fase>("espera");
-  const [airportCode, setAirportCode] = useState<string>(AIRPORTS[0].code);
+  const [airportCode, setAirportCode] = useState<string>(() => airports[0]?.code ?? "");
   const [periodo, setPeriodo] = useState<Periodo>(presets[1]); // temporada actual
   const [showMeta, setShowMeta] = useState(false);
 
@@ -68,11 +69,15 @@ export default function TiemposDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<{ msg: string; code?: string } | null>(null);
 
-  const airport = AIRPORTS.find((a) => a.code === airportCode)!;
+  const airport = airports.find((a) => a.code === airportCode) ?? airports[0] ?? null;
   const meta = metaFor(proceso, airline);
 
   const reqId = useRef(0);
   useEffect(() => {
+    if (!airport) {
+      setLoading(false);
+      return;
+    }
     const id = ++reqId.current;
     const qs = new URLSearchParams({
       proceso,
@@ -100,9 +105,9 @@ export default function TiemposDashboard() {
       .finally(() => {
         if (id === reqId.current) setLoading(false);
       });
-  }, [proceso, airline, fase, airport.name, periodo]);
+  }, [proceso, airline, fase, airport?.name, periodo]);
 
-  const selAgg = data?.byAirport.find((r) => r.name === airport.name) ?? null;
+  const selAgg = airport ? data?.byAirport.find((r) => r.name === airport.name) ?? null : null;
 
   // Serie mensual continua (rellena los meses sin datos con null).
   const chartData = useMemo(() => {
@@ -123,7 +128,7 @@ export default function TiemposDashboard() {
 
   const barData = useMemo(
     () =>
-      AIRPORTS.map((a) => {
+      airports.map((a) => {
         const r = data?.byAirport.find((x) => x.name === a.name);
         return { code: a.code, prom: r ? r.prom : 0 };
       }),
@@ -133,6 +138,15 @@ export default function TiemposDashboard() {
   const dataMax = Math.max(0, ...chartData.map((d) => d.p90 ?? 0), ...barData.map((d) => d.prom));
   const yMax = showMeta && meta ? Math.max(dataMax, meta) * 1.12 : undefined;
   const yDomain: [number, number | "auto"] = [0, yMax ?? "auto"];
+
+  if (airports.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
+        No tienes aeropuertos con el cuestionario &ldquo;Mediciones de tiempos&rdquo; vigente. Cuando un
+        administrador lo habilite para tu aeropuerto, aparecerá aquí.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -183,7 +197,7 @@ export default function TiemposDashboard() {
 
         <Field label="Aeropuerto">
           <div className="flex gap-2">
-            {AIRPORTS.map((a) => (
+            {airports.map((a) => (
               <Pill key={a.code} on={a.code === airportCode} onClick={() => setAirportCode(a.code)}>
                 {a.code}
               </Pill>
@@ -223,7 +237,7 @@ export default function TiemposDashboard() {
             <p className="text-xs text-slate-400">
               &ldquo;{proceso}&rdquo;
               {hasFase(proceso) ? ` · ${fase === "espera" ? "espera 1ª maleta" : "descarga de correa"}` : ""}
-              {hasAirline(proceso) && airline !== "Todas" ? ` · ${airline}` : ""} · {airport.short}
+              {hasAirline(proceso) && airline !== "Todas" ? ` · ${airline}` : ""} · {airport?.short}
             </p>
           </div>
           {meta != null && (
@@ -320,7 +334,7 @@ export default function TiemposDashboard() {
               </tr>
             </thead>
             <tbody>
-              {AIRPORTS.map((a) => {
+              {airports.map((a) => {
                 const r = data?.byAirport.find((x) => x.name === a.name);
                 const sel = a.code === airportCode;
                 const under = meta != null && r ? r.prom <= meta : null;
