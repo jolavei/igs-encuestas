@@ -42,9 +42,13 @@ type Agg = { name: string; n: number; prom: number; med: number; p90: number };
 type Serie = { ym: string; n: number; prom: number; med: number; p90: number };
 type ApiData = { byAirport: Agg[]; series: Serie[] };
 
-const nf1 = new Intl.NumberFormat("es-CL", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const nf0 = new Intl.NumberFormat("es-CL");
-const fmt = (v: number | null | undefined) => (v == null ? "—" : nf1.format(v));
+// Duración (minutos decimales) -> "MM:SS" (minutos:segundos).
+function fmt(v: number | null | undefined): string {
+  if (v == null) return "—";
+  const total = Math.round(v * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
 
 function hexA(hex: string, a: number) {
   const n = parseInt(hex.slice(1), 16);
@@ -200,9 +204,9 @@ export default function TiemposDashboard() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Kpi label="Promedio global" value={fmt(selAgg?.prom)} unit="min" />
-        <Kpi label="P90" value={fmt(selAgg?.p90)} unit="min" />
-        <Kpi label="Mediana" value={fmt(selAgg?.med)} unit="min" />
+        <Kpi label="Promedio" value={fmt(selAgg?.prom)} unit="mm:ss" />
+        <Kpi label="P90" value={fmt(selAgg?.p90)} unit="mm:ss" />
+        <Kpi label="Mediana" value={fmt(selAgg?.med)} unit="mm:ss" />
         {meta != null ? (
           <MarginKpi meta={meta} prom={selAgg?.prom ?? null} />
         ) : (
@@ -233,21 +237,23 @@ export default function TiemposDashboard() {
           <LegendItem color={COL.prom} label="Promedio" />
           <LegendItem color={COL.med} label="Mediana" dashed />
           <LegendItem color={COL.p90} label="p90 (banda)" />
-          {showMeta && meta != null && <LegendItem color={COL.meta} label={`Meta ${meta} min`} dashed />}
+          {showMeta && meta != null && <LegendItem color={COL.meta} label={`Meta ${fmt(meta)}`} dashed />}
         </div>
 
         <ChartFrame loading={loading} error={error} empty={!loading && !error && chartData.every((d) => d.prom == null)}>
           <ResponsiveContainer width="100%" height={280}>
-            <ComposedChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 8 }}>
               <CartesianGrid stroke="#eef2f6" vertical={false} />
               <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 12 }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
               <YAxis
                 domain={yDomain}
+                tickFormatter={fmt}
+                allowDecimals={false}
                 tick={{ fill: "#94a3b8", fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
-                width={44}
-                label={{ value: "minutos", angle: -90, position: "insideLeft", fill: "#94a3b8", fontSize: 11, dy: 30 }}
+                width={56}
+                label={{ value: "mm:ss", angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "#94a3b8", fontSize: 11 } }}
               />
               <Tooltip content={<ChartTooltip />} />
               {/* Banda mediana → p90 (dos áreas apiladas: base invisible + delta con relleno) */}
@@ -271,11 +277,20 @@ export default function TiemposDashboard() {
           </div>
           <ChartFrame loading={loading} error={error} empty={!loading && !error && barData.every((d) => d.prom === 0)}>
             <ResponsiveContainer width="100%" height={230}>
-              <BarChart data={barData} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
+              <BarChart data={barData} margin={{ top: 8, right: 12, bottom: 4, left: 8 }}>
                 <CartesianGrid stroke="#eef2f6" vertical={false} />
                 <XAxis dataKey="code" tick={{ fill: "#475569", fontSize: 12 }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
-                <YAxis domain={yDomain} tick={{ fill: "#94a3b8", fontSize: 12 }} tickLine={false} axisLine={false} width={44} />
-                <Tooltip formatter={(v) => [`${fmt(Number(v))} min`, "Promedio"]} cursor={{ fill: "rgba(0,49,82,0.04)" }} />
+                <YAxis
+                  domain={yDomain}
+                  tickFormatter={fmt}
+                  allowDecimals={false}
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={56}
+                  label={{ value: "mm:ss", angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "#94a3b8", fontSize: 11 } }}
+                />
+                <Tooltip formatter={(v) => [fmt(Number(v)), "Promedio"]} cursor={{ fill: "rgba(0,49,82,0.04)" }} />
                 <Bar dataKey="prom" radius={[4, 4, 0, 0]} maxBarSize={56}>
                   {barData.map((d) => (
                     <Cell
@@ -389,9 +404,9 @@ function MarginKpi({ meta, prom }: { meta: number; prom: number | null }) {
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="text-[11px] uppercase tracking-wide text-slate-400">Margen vs meta</div>
       <div className={`mt-1 text-2xl font-bold leading-tight ${cls}`}>
-        {mg == null ? "—" : `${mg >= 0 ? "−" : "+"}${nf1.format(Math.abs(mg))}`}{" "}
+        {mg == null ? "—" : `${mg >= 0 ? "−" : "+"}${fmt(Math.abs(mg))}`}{" "}
         <span className={`text-xs font-normal ${cls}`}>
-          {mg == null ? `meta ${meta} min` : `${ok ? "bajo" : "sobre"} meta ${meta} min`}
+          {mg == null ? `meta ${fmt(meta)}` : `${ok ? "bajo" : "sobre"} meta ${fmt(meta)}`}
         </span>
       </div>
     </div>
@@ -427,7 +442,7 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
             <div key={n} className="flex items-center gap-2">
               <span className="inline-block h-2 w-2 rounded-sm" style={{ background: c }} />
               <span className="text-slate-500">{n}:</span>
-              <span className="font-medium text-slate-800">{fmt(v)} min</span>
+              <span className="font-medium text-slate-800">{fmt(v)}</span>
             </div>
           )
       )}
