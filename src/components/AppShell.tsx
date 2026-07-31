@@ -19,6 +19,7 @@ type NavItem = { href: string; label: string; icon: IconName; exact?: boolean };
 const NAV: Record<Role, NavItem[]> = {
   ADMIN: [
     { href: "/admin", label: "Inicio", icon: "home", exact: true },
+    { href: "/admin/dashboard", label: "Dashboard", icon: "dashboard" },
     { href: "/admin/cuestionarios", label: "Cuestionarios", icon: "questionnaire" },
     { href: "/admin/planes", label: "Planes de trabajo", icon: "assignment" },
     { href: "/admin/levantar", label: "Levantar encuesta", icon: "workplan" },

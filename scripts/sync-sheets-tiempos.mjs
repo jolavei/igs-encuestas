@@ -58,6 +58,7 @@ export const FIELDS = [
   { name: "avsec_t1", type: "TIMESTAMP" },
   { name: "avsec_t2", type: "TIMESTAMP" },
   { name: "avsec_comments", type: "STRING" },
+  { name: "baggage_claim_airline", type: "STRING" },
   { name: "baggage_claim_t1", type: "TIMESTAMP" },
   { name: "baggage_claim_t2", type: "TIMESTAMP" },
   { name: "baggage_claim_t3", type: "TIMESTAMP" },
@@ -260,9 +261,11 @@ export function transformSede(sede, rows) {
       o.baggage_claim_t2 = iso(t2);
       o.baggage_claim_t3 = iso(t3);
       const rawAir = get(row, "retiro_airline");
-      const air = normalizeAirline(rawAir) || (rawAir && rawAir.trim()) || null;
+      const air = normalizeAirline(rawAir); // enum de la app (o null): columna estructurada para filtrar
+      if (rawAir && rawAir.trim() && !air) stats.aerolineaDesconocida.add(rawAir.trim());
+      o.baggage_claim_airline = air;
       o.baggage_claim_comments = joinComments(
-        air ? `Aerolínea: ${air}` : null,
+        rawAir && rawAir.trim() ? `Aerolínea (orig): ${rawAir.trim()}` : null,
         invalid ? `⚠ horas fuera de rango (orig ${t1raw || "?"}–${t2raw || "?"}–${t3raw || "?"})` : null,
         get(row, "obs")
       );
