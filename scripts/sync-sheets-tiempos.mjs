@@ -119,17 +119,31 @@ function buildTs(measDate, timeStr) {
   if (!t) return null;
   return chileWallToUtc(measDate.y, measDate.mo, measDate.d, t.hh, t.mm, t.ss);
 }
-/** Asegura orden cronológico: cada instante posterior >= al previo (+24h si cruzó medianoche). */
-function chain(instants) {
+/**
+ * Ordena cronológicamente y corrige cruces de medianoche (+24h) SOLO cuando el
+ * resultado es plausible (salto <= maxGapMin). Un "fin < inicio" que tras el +24h
+ * daría un salto enorme es casi siempre un error de captura (horas invertidas):
+ * en ese caso se descarta ese hito (null) para no inventar duraciones de ~24h.
+ * Devuelve { times, invalid }.
+ */
+function chainClean(instants, maxGapMin = 360) {
   const out = [];
   let prev = null;
-  for (const cur of instants) {
-    let x = cur;
-    while (x && prev && x.getTime() < prev.getTime()) x = new Date(x.getTime() + 86400000);
-    out.push(x);
-    if (x) prev = x;
+  let invalid = false;
+  for (let cur of instants) {
+    if (!cur) { out.push(null); continue; }
+    if (prev) {
+      while (cur.getTime() < prev.getTime()) cur = new Date(cur.getTime() + 86400000);
+      if (cur.getTime() - prev.getTime() > maxGapMin * 60000) {
+        out.push(null); // salto implausible -> probable error de captura
+        invalid = true;
+        continue; // no se usa como ancla para los hitos siguientes
+      }
+    }
+    out.push(cur);
+    prev = cur;
   }
-  return out;
+  return { times: out, invalid };
 }
 const joinComments = (...parts) => {
   const p = parts.filter((x) => x != null && String(x).trim() !== "");
@@ -177,6 +191,7 @@ export function transformSede(sede, rows) {
     porProceso: { "Check in": 0, AVSEC: 0, "Retiro de equipajes": 0 },
     excluidas: 0,
     stampInvalida: 0,
+    invalidos: 0,
     aerolineaDesconocida: new Set(),
   };
   if (rows.length < 2) return { out: [], stats, missing: ["(hoja vacía)"] };
@@ -208,7 +223,9 @@ export function transformSede(sede, rows) {
       const rawAir = get(row, "checkin_airline");
       const air = normalizeAirline(rawAir);
       if (rawAir && rawAir.trim() && !air) stats.aerolineaDesconocida.add(rawAir.trim());
-      const [t1, t2] = chain([buildTs(measDate, get(row, "checkin_t1")), buildTs(measDate, get(row, "checkin_t2"))]);
+      const t1raw = get(row, "checkin_t1"), t2raw = get(row, "checkin_t2");
+      const { times: [t1, t2], invalid } = chainClean([buildTs(measDate, t1raw), buildTs(measDate, t2raw)]);
+      if (invalid) stats.invalidos++;
       o.checkin_airline = air;
       o.checkin_t1 = iso(t1);
       o.checkin_t2 = iso(t2);
@@ -216,28 +233,39 @@ export function transformSede(sede, rows) {
       o.checkin_comments = joinComments(
         counters ? `N° counters: ${counters}` : null,
         rawAir && rawAir.trim() ? `Aerolínea (orig): ${rawAir.trim()}` : null,
+        invalid ? `⚠ horas fuera de rango (orig ${t1raw || "?"}–${t2raw || "?"})` : null,
         get(row, "obs")
       );
       stats.porProceso["Check in"]++;
     } else if (process === "AVSEC") {
-      const [t1, t2] = chain([buildTs(measDate, get(row, "avsec_t1")), buildTs(measDate, get(row, "avsec_t2"))]);
+      const t1raw = get(row, "avsec_t1"), t2raw = get(row, "avsec_t2");
+      const { times: [t1, t2], invalid } = chainClean([buildTs(measDate, t1raw), buildTs(measDate, t2raw)]);
+      if (invalid) stats.invalidos++;
       o.avsec_t1 = iso(t1);
       o.avsec_t2 = iso(t2);
       const xray = get(row, "avsec_xray");
-      o.avsec_comments = joinComments(xray ? `Máquinas rayos X: ${xray}` : null, get(row, "obs"));
+      o.avsec_comments = joinComments(
+        xray ? `Máquinas rayos X: ${xray}` : null,
+        invalid ? `⚠ horas fuera de rango (orig ${t1raw || "?"}–${t2raw || "?"})` : null,
+        get(row, "obs")
+      );
       stats.porProceso.AVSEC++;
     } else if (process === "Retiro de equipajes") {
-      const [t1, t2, t3] = chain([
-        buildTs(measDate, get(row, "baggage_t1")),
-        buildTs(measDate, get(row, "baggage_t2")),
-        buildTs(measDate, get(row, "baggage_t3")),
+      const t1raw = get(row, "baggage_t1"), t2raw = get(row, "baggage_t2"), t3raw = get(row, "baggage_t3");
+      const { times: [t1, t2, t3], invalid } = chainClean([
+        buildTs(measDate, t1raw), buildTs(measDate, t2raw), buildTs(measDate, t3raw),
       ]);
+      if (invalid) stats.invalidos++;
       o.baggage_claim_t1 = iso(t1);
       o.baggage_claim_t2 = iso(t2);
       o.baggage_claim_t3 = iso(t3);
       const rawAir = get(row, "retiro_airline");
       const air = normalizeAirline(rawAir) || (rawAir && rawAir.trim()) || null;
-      o.baggage_claim_comments = joinComments(air ? `Aerolínea: ${air}` : null, get(row, "obs"));
+      o.baggage_claim_comments = joinComments(
+        air ? `Aerolínea: ${air}` : null,
+        invalid ? `⚠ horas fuera de rango (orig ${t1raw || "?"}–${t2raw || "?"}–${t3raw || "?"})` : null,
+        get(row, "obs")
+      );
       stats.porProceso["Retiro de equipajes"]++;
     }
 
@@ -277,7 +305,8 @@ async function main() {
     console.log(
       `  mapeadas: ${out.length} | Check-in: ${stats.porProceso["Check in"]}, ` +
         `AVSEC: ${stats.porProceso.AVSEC}, Retiro: ${stats.porProceso["Retiro de equipajes"]} | ` +
-        `excluidas: ${stats.excluidas}, timestamp inválido: ${stats.stampInvalida}`
+        `excluidas: ${stats.excluidas}, timestamp inválido: ${stats.stampInvalida}, ` +
+        `horas fuera de rango: ${stats.invalidos}`
     );
     if (stats.aerolineaDesconocida.size)
       console.warn(`  ⚠ aerolíneas sin normalizar: ${[...stats.aerolineaDesconocida].join(" | ")}`);
