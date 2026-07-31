@@ -56,6 +56,19 @@ function hexA(hex: string, a: number) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
+// Escala Y "bonita": tope y ticks en pasos redondos de minutos, para que el eje
+// (en mm:ss) muestre 00:00, 05:00, 10:00… en vez de un tope raro (22:24).
+function niceScale(rawMax: number): { max: number; ticks: number[] } {
+  const STEPS = [1, 2, 5, 10, 15, 20, 30, 60, 120];
+  const safe = rawMax > 0 ? rawMax : 1;
+  const step = STEPS.find((s) => s >= safe / 4) ?? 120;
+  let max = Math.ceil(safe / step) * step;
+  if (max <= safe) max += step; // deja aire sobre el valor máximo / el estándar
+  const ticks: number[] = [];
+  for (let t = 0; t <= max + 1e-6; t += step) ticks.push(t);
+  return { max, ticks };
+}
+
 export default function TiemposDashboard({ airports }: { airports: DashboardAirport[] }) {
   const presets = useMemo(() => periodPresets(new Date()), []);
   const [proceso, setProceso] = useState<Proceso>("Check in");
@@ -136,8 +149,8 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
   );
 
   const dataMax = Math.max(0, ...chartData.map((d) => d.p90 ?? 0), ...barData.map((d) => d.prom));
-  const yMax = showMeta && meta ? Math.max(dataMax, meta) * 1.12 : undefined;
-  const yDomain: [number, number | "auto"] = [0, yMax ?? "auto"];
+  const rawMax = showMeta && meta ? Math.max(dataMax, meta) : dataMax;
+  const { max: yTop, ticks: yTicks } = niceScale(rawMax);
 
   if (airports.length === 0) {
     return (
@@ -224,7 +237,7 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
         {meta != null ? (
           <MarginKpi meta={meta} prom={selAgg?.prom ?? null} />
         ) : (
-          <Kpi label="Meta" value="—" unit="sin estándar" />
+          <Kpi label="Estándar IATA" value="—" unit="sin estándar" />
         )}
         <Kpi label="N° de mediciones" value={selAgg ? nf0.format(selAgg.n) : "—"} unit="en el filtro" />
       </div>
@@ -242,7 +255,7 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
           </div>
           {meta != null && (
             <Pill on={showMeta} onClick={() => setShowMeta((v) => !v)}>
-              {showMeta ? "Ocultar meta" : "Mostrar meta"}
+              {showMeta ? "Ocultar Estándar IATA" : "Mostrar Estándar IATA"}
             </Pill>
           )}
         </div>
@@ -251,7 +264,7 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
           <LegendItem color={COL.prom} label="Promedio" />
           <LegendItem color={COL.med} label="Mediana" dashed />
           <LegendItem color={COL.p90} label="p90 (banda)" />
-          {showMeta && meta != null && <LegendItem color={COL.meta} label={`Meta ${fmt(meta)}`} dashed />}
+          {showMeta && meta != null && <LegendItem color={COL.meta} label={`Estándar IATA ${fmt(meta)}`} dashed />}
         </div>
 
         <ChartFrame loading={loading} error={error} empty={!loading && !error && chartData.every((d) => d.prom == null)}>
@@ -260,9 +273,9 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
               <CartesianGrid stroke="#eef2f6" vertical={false} />
               <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 12 }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
               <YAxis
-                domain={yDomain}
+                domain={[0, yTop]}
+                ticks={yTicks}
                 tickFormatter={fmt}
-                allowDecimals={false}
                 tick={{ fill: "#94a3b8", fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
@@ -295,9 +308,9 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
                 <CartesianGrid stroke="#eef2f6" vertical={false} />
                 <XAxis dataKey="code" tick={{ fill: "#475569", fontSize: 12 }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
                 <YAxis
-                  domain={yDomain}
+                  domain={[0, yTop]}
+                  ticks={yTicks}
                   tickFormatter={fmt}
-                  allowDecimals={false}
                   tick={{ fill: "#94a3b8", fontSize: 12 }}
                   tickLine={false}
                   axisLine={false}
@@ -330,7 +343,7 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
                 <th className="py-1.5 text-right font-normal">Prom</th>
                 <th className="py-1.5 text-right font-normal">Med</th>
                 <th className="py-1.5 text-right font-normal">p90</th>
-                <th className="py-1.5 text-right font-normal">Meta</th>
+                <th className="py-1.5 text-right font-normal">Est. IATA</th>
               </tr>
             </thead>
             <tbody>
@@ -363,10 +376,6 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
         </div>
       </div>
 
-      <p className="text-xs leading-relaxed text-slate-400">
-        La duración se calcula desde las columnas de hora de cada proceso (t2 − t1; retiro de equipajes en dos fases).
-        Se descartan capturas con horas invertidas o mayores a 6 h. Los tiempos se agrupan en hora de Chile.
-      </p>
     </div>
   );
 }
@@ -416,11 +425,11 @@ function MarginKpi({ meta, prom }: { meta: number; prom: number | null }) {
   const cls = mg == null ? "text-slate-400" : ok ? "text-green-700" : "text-red-700";
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-[11px] uppercase tracking-wide text-slate-400">Margen vs meta</div>
+      <div className="text-[11px] uppercase tracking-wide text-slate-400">Margen vs Estándar IATA</div>
       <div className={`mt-1 text-2xl font-bold leading-tight ${cls}`}>
         {mg == null ? "—" : `${mg >= 0 ? "−" : "+"}${fmt(Math.abs(mg))}`}{" "}
         <span className={`text-xs font-normal ${cls}`}>
-          {mg == null ? `meta ${fmt(meta)}` : `${ok ? "bajo" : "sobre"} meta ${fmt(meta)}`}
+          {mg == null ? `Est. IATA ${fmt(meta)}` : `${ok ? "bajo" : "sobre"} Est. IATA ${fmt(meta)}`}
         </span>
       </div>
     </div>

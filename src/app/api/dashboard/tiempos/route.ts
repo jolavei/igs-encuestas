@@ -24,9 +24,8 @@ const DUR_RETIRO: Record<string, string> = {
   descarga: "TIMESTAMP_DIFF(baggage_claim_t3, baggage_claim_t2, SECOND) / 60.0",
 };
 
-// Se descartan duraciones no positivas (horas invertidas) y absurdas (> 6 h),
-// coherente con el manejo de cruce de medianoche del histórico.
-const CAP_MIN = 360;
+// Se descartan duraciones no positivas (horas invertidas) y absurdas (> 2 h).
+const CAP_MIN = 120;
 
 const schema = z.object({
   proceso: z.enum(PROCESOS),
