@@ -4,6 +4,7 @@ out
 .env
 .env.local
 .env.neon
+.env.prod
 *.log
 .DS_Store
 next-env.d.ts

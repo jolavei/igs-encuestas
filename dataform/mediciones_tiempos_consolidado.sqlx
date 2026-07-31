@@ -1,0 +1,65 @@
+config {
+  type: "table",
+  schema: "encuestas",
+  name: "mediciones_tiempos_consolidado",
+  description: "Mediciones de tiempos de procesos consolidadas: histórico de los Google Forms (Google Sheets IQQ/CJC/PMC) + levantamiento desde la app. Una fila por medición. Fuente del futuro Dashboard.",
+  columns: {
+    origen: "Origen del dato: 'app' (levantamiento en la app) | 'form_historico' (Google Forms)",
+    response_id: "ID único de la medición",
+    company_name: "Empresa / aeropuerto",
+    location_name: "Sede",
+    source: "Origen fino (FIELD/QR_PUBLIC en la app; GOOGLE_FORM en el histórico)",
+    responded_at: "Fecha y hora del registro (hora Chile en UTC)",
+    version_number: "Versión del cuestionario (NULL en el histórico)",
+    process: "Proceso medido (Check in | AVSEC | Retiro de equipajes | ...)",
+    checkin_airline: "Aerolínea del check-in",
+    checkin_t1: "Check-in: hora de inicio",
+    checkin_t2: "Check-in: hora de fin",
+    checkin_comments: "Check-in: comentarios (incluye N° counters y aerolínea original del histórico)",
+    avsec_t1: "AVSEC: hora de inicio",
+    avsec_t2: "AVSEC: hora de fin",
+    avsec_comments: "AVSEC: comentarios (incluye N° máquinas de rayos X del histórico)",
+    baggage_claim_t1: "Retiro de equipaje: llegada primer pasajero",
+    baggage_claim_t2: "Retiro de equipaje: salida primera maleta",
+    baggage_claim_t3: "Retiro de equipaje: salida última maleta",
+    baggage_claim_comments: "Retiro de equipaje: comentarios (incluye aerolínea del histórico)",
+    passport_outbound_t1: "Pasaporte emigración: inicio",
+    passport_outbound_t2: "Pasaporte emigración: fin",
+    passport_outbound_comments: "Pasaporte emigración: comentarios",
+    passport_inbound_t1: "Pasaporte inmigración: inicio",
+    passport_inbound_t2: "Pasaporte inmigración: fin",
+    passport_inbound_comments: "Pasaporte inmigración: comentarios",
+    border_protection_t1: "Control aduana / SAG: inicio",
+    border_protection_t2: "Control aduana / SAG: fin",
+    border_protection_comments: "Control aduana / SAG: comentarios"
+  },
+  tags: ["encuestas"]
+}
+
+-- Unión del levantamiento en la app + el histórico de los Google Forms.
+-- Ambas tablas comparten exactamente el mismo esquema (el script del histórico
+-- se construye a imagen de mediciones_de_tiempos), así que el UNION ALL es directo.
+
+SELECT
+  "app" AS origen,
+  response_id, company_name, location_name, source, responded_at, version_number,
+  process, checkin_airline, checkin_t1, checkin_t2, checkin_comments,
+  avsec_t1, avsec_t2, avsec_comments,
+  baggage_claim_t1, baggage_claim_t2, baggage_claim_t3, baggage_claim_comments,
+  passport_outbound_t1, passport_outbound_t2, passport_outbound_comments,
+  passport_inbound_t1, passport_inbound_t2, passport_inbound_comments,
+  border_protection_t1, border_protection_t2, border_protection_comments
+FROM ${ref("mediciones_de_tiempos")}
+
+UNION ALL
+
+SELECT
+  "form_historico" AS origen,
+  response_id, company_name, location_name, source, responded_at, version_number,
+  process, checkin_airline, checkin_t1, checkin_t2, checkin_comments,
+  avsec_t1, avsec_t2, avsec_comments,
+  baggage_claim_t1, baggage_claim_t2, baggage_claim_t3, baggage_claim_comments,
+  passport_outbound_t1, passport_outbound_t2, passport_outbound_comments,
+  passport_inbound_t1, passport_inbound_t2, passport_inbound_comments,
+  border_protection_t1, border_protection_t2, border_protection_comments
+FROM ${ref("mediciones_sheets")}

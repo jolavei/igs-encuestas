@@ -31,6 +31,16 @@ jobs:
           BQ_DATASET: raw_postgres
           BQ_LOCATION: US
 
+      # Histórico de tiempos desde los Google Sheets (Google Forms IQQ/CJC/PMC).
+      # Deja tiempos_procesos.mediciones_sheets al día ANTES de correr Dataform.
+      - name: Consolidar Google Sheets de tiempos -> BigQuery
+        run: node scripts/sync-sheets-tiempos.mjs
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          BQ_DATASET: tiempos_procesos
+          BQ_LOCATION: US
+
       # Con los datos crudos ya al día, Dataform reconstruye las tablas anchas.
       - name: Autenticar en Google Cloud
         id: auth
