@@ -58,23 +58,57 @@ jobs:
           BRANCH: main
         run: |
           set -euo pipefail
-          API="https://dataform.googleapis.com/v1beta1/projects/$PROJECT/locations/$REGION/repositories/$REPO"
+          BASE="https://dataform.googleapis.com/v1beta1"
+          API="$BASE/projects/$PROJECT/locations/$REGION/repositories/$REPO"
+          auth=(-H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json")
 
           # 1. Compila la rama por defecto (lo que esté commiteado, no el workspace).
-          COMPILATION=$(curl -sS -X POST "$API/compilationResults" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"gitCommitish\":\"$BRANCH\"}" | jq -r '.name // empty')
-
+          COMP_RESP=$(curl -sS -X POST "$API/compilationResults" "${auth[@]}" \
+            -d "{\"gitCommitish\":\"$BRANCH\"}")
+          COMPILATION=$(echo "$COMP_RESP" | jq -r '.name // empty')
           if [ -z "$COMPILATION" ]; then
-            echo "No se pudo compilar el repo Dataform (revisa permisos o errores de compilación)."
+            echo "No se pudo crear la compilación. Respuesta:"
+            echo "$COMP_RESP" | jq .
             exit 1
           fi
           echo "Compilación: $COMPILATION"
 
-          # 2. Ejecuta solo las acciones etiquetadas 'encuestas' (las tablas por cuestionario).
-          curl -sS -X POST "$API/workflowInvocations" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"compilationResult\":\"$COMPILATION\",\"invocationConfig\":{\"includedTags\":[\"encuestas\"]}}" \
-            | jq -r '.name, .state'
+          # 1b. Una compilación puede devolver nombre y AUN ASÍ traer errores de código
+          #     (p.ej. un ref() sin resolver). En ese caso no se puede invocar: aborta claro.
+          CERR=$(curl -sS "$BASE/$COMPILATION" "${auth[@]}" -X GET \
+            | jq -r '.compilationErrors // [] | length')
+          if [ "${CERR:-0}" != "0" ]; then
+            echo "La compilación de '$BRANCH' tiene $CERR error(es) de código:"
+            curl -sS "$BASE/$COMPILATION" "${auth[@]}" -X GET \
+              | jq -r '.compilationErrors[] | "- \(.message)  [\(.actionTarget.name // "?")]"'
+            echo "Revisa que sources_tiempos.js y los .sqlx estén todos en la rama '$BRANCH'."
+            exit 1
+          fi
+
+          # 2. Ejecuta solo las acciones etiquetadas 'encuestas' (+ sus dependencias).
+          INV_RESP=$(curl -sS -X POST "$API/workflowInvocations" "${auth[@]}" \
+            -d "{\"compilationResult\":\"$COMPILATION\",\"invocationConfig\":{\"includedTags\":[\"encuestas\"],\"transitiveDependenciesIncluded\":true}}")
+          INVOCATION=$(echo "$INV_RESP" | jq -r '.name // empty')
+          if [ -z "$INVOCATION" ]; then
+            echo "No se pudo crear la invocación. Respuesta:"
+            echo "$INV_RESP" | jq .
+            exit 1
+          fi
+          echo "Invocación: $INVOCATION"
+
+          # 3. Espera a que termine y falla si no queda en SUCCEEDED.
+          for _ in $(seq 1 60); do
+            STATE=$(curl -sS "$BASE/$INVOCATION" "${auth[@]}" -X GET | jq -r '.state')
+            echo "Estado: $STATE"
+            case "$STATE" in
+              SUCCEEDED) echo "Dataform reconstruyó las tablas correctamente."; exit 0 ;;
+              FAILED|CANCELLED|CANCELING)
+                echo "La invocación terminó en $STATE. Detalle por acción:"
+                curl -sS "$BASE/$INVOCATION:query" "${auth[@]}" -X GET \
+                  | jq -r '.workflowInvocationActions[]? | "- \(.target.name): \(.state) \(.failureReason // "")"'
+                exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "Timeout esperando a Dataform (sigue en $STATE)."
+          exit 1
