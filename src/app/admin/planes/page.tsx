@@ -100,140 +100,156 @@ export default async function PlanesPage() {
     plans.map((p) => getPlanProgress(p.id, { totalTarget: p.totalTarget, segments: p.segments }))
   );
 
-  // Vigentes (ACTIVE) arriba, cancelados/no vigentes abajo. El sort es estable, así que
-  // dentro de cada grupo se conserva el orden por createdAt desc. Emparejamos el progreso
-  // con su plan antes de ordenar porque `progress` está alineado por índice con `plans`.
-  const items = plans
-    .map((p, i) => ({ p, prog: progress[i] }))
-    .sort((a, b) => Number(b.p.status === "ACTIVE") - Number(a.p.status === "ACTIVE"));
+  // Emparejamos cada plan con su progreso (alineado por índice con `plans`) y separamos en
+  // vigentes (ACTIVE) y no vigentes. `plans` ya viene ordenado por createdAt desc, así que
+  // dentro de cada grupo se conserva ese orden.
+  const paired = plans.map((p, i) => ({ p, prog: progress[i] }));
+  const vigentes = paired.filter(({ p }) => p.status === "ACTIVE");
+  const noVigentes = paired.filter(({ p }) => p.status !== "ACTIVE");
+
+  // Misma tarjeta para vigentes y no vigentes.
+  function planCard({ p, prog }: (typeof paired)[number]) {
+    const active = p.status === "ACTIVE";
+    // Valores actuales del plan para precargar el formulario de edición.
+    const segTargets: Record<string, number> = {};
+    const seg2Targets: Record<string, number> = {};
+    for (const s of p.segments) {
+      if (s.parentValue == null) segTargets[s.value] = s.target;
+      else seg2Targets[`${s.parentValue}|${s.value}`] = s.target;
+    }
+    const initial = {
+      id: p.id,
+      companyId: p.companyId,
+      questionnaireId: p.questionnaireId,
+      locationId: p.locationId ?? "",
+      windowStart: utcToChileDay(p.windowStart),
+      windowEnd: utcToChileDay(p.windowEnd),
+      totalTarget: p.totalTarget,
+      segEqKey: p.segmentKey ?? "",
+      seg2EqKey: p.segment2Key ?? "",
+      segTargets,
+      seg2Targets,
+      surveyorIds: p.surveyors.map((s) => s.id),
+      comment: p.comment ?? "",
+    };
+    return (
+      <div
+        key={p.id}
+        id={`plan-${p.id}`}
+        className={`card space-y-3 scroll-mt-20 ${active ? "" : "opacity-60"}`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 className="flex flex-wrap items-center gap-2 font-semibold">
+              {p.questionnaire.title}
+              {!active && (
+                <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                  Cancelado
+                </span>
+              )}
+            </h3>
+            <p className="text-sm text-slate-500">
+              {p.company.name}
+              {p.location && ` · ${p.location.name}`} · {fmtDate(p.windowStart)} –{" "}
+              {fmtDate(p.windowEnd)}
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+              {p.surveyors.length} encuestador(es)
+            </span>
+            <div className="flex items-center gap-2">
+              <EditPlanButton
+                companies={companyOptions}
+                questionnaires={questionnaires}
+                surveyors={surveyorOptions}
+                initial={initial}
+              />
+              <PlanStatusToggle planId={p.id} active={active} />
+            </div>
+          </div>
+        </div>
+
+        <Bar done={prog.done} target={prog.total} label="Total" />
+
+        {prog.levels.length > 0 && (
+          <div className="overflow-hidden rounded-md border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">
+                    {p.segmentLabel || "Segmento"}
+                    {p.segment2Label && ` / ${p.segment2Label}`}
+                  </th>
+                  <th className="px-3 py-2 text-right">Realizadas</th>
+                  <th className="px-3 py-2 text-right">Meta</th>
+                  <th className="px-3 py-2 text-right">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {prog.levels.map((l1) => (
+                  <Fragment key={l1.value}>
+                    <tr className="border-t border-slate-200 bg-slate-50/60 font-medium">
+                      <td className="px-3 py-2">{l1.label}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{l1.done}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{l1.target}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Estado done={l1.done} target={l1.target} />
+                      </td>
+                    </tr>
+                    {l1.children.map((c) => (
+                      <tr key={c.value} className="border-t border-slate-100 text-slate-600">
+                        <td className="px-3 py-2 pl-7">↳ {c.label}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{c.done}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{c.target}</td>
+                        <td className="px-3 py-2 text-right">
+                          <Estado done={c.done} target={c.target} />
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+                {prog.otros > 0 && (
+                  <tr className="border-t border-slate-100 text-slate-500">
+                    <td className="px-3 py-2 italic">Otros (fuera de segmentos)</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{prog.otros}</td>
+                    <td className="px-3 py-2 text-right">—</td>
+                    <td className="px-3 py-2"></td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {p.comment && <p className="text-sm text-slate-600">📋 {p.comment}</p>}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-24">
       <h1 className="text-2xl font-bold">Planes de trabajo</h1>
 
-      <div className="space-y-4">
-        {items.map(({ p, prog }) => {
-          const active = p.status === "ACTIVE";
-          // Valores actuales del plan para precargar el formulario de edición.
-          const segTargets: Record<string, number> = {};
-          const seg2Targets: Record<string, number> = {};
-          for (const s of p.segments) {
-            if (s.parentValue == null) segTargets[s.value] = s.target;
-            else seg2Targets[`${s.parentValue}|${s.value}`] = s.target;
-          }
-          const initial = {
-            id: p.id,
-            companyId: p.companyId,
-            questionnaireId: p.questionnaireId,
-            locationId: p.locationId ?? "",
-            windowStart: utcToChileDay(p.windowStart),
-            windowEnd: utcToChileDay(p.windowEnd),
-            totalTarget: p.totalTarget,
-            segEqKey: p.segmentKey ?? "",
-            seg2EqKey: p.segment2Key ?? "",
-            segTargets,
-            seg2Targets,
-            surveyorIds: p.surveyors.map((s) => s.id),
-            comment: p.comment ?? "",
-          };
-          return (
-            <div
-              key={p.id}
-              id={`plan-${p.id}`}
-              className={`card space-y-3 scroll-mt-20 ${active ? "" : "opacity-60"}`}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 className="flex flex-wrap items-center gap-2 font-semibold">
-                    {p.questionnaire.title}
-                    {!active && (
-                      <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
-                        Cancelado
-                      </span>
-                    )}
-                  </h3>
-                  <p className="text-sm text-slate-500">
-                    {p.company.name}
-                    {p.location && ` · ${p.location.name}`} · {fmtDate(p.windowStart)} –{" "}
-                    {fmtDate(p.windowEnd)}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                    {p.surveyors.length} encuestador(es)
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <EditPlanButton
-                      companies={companyOptions}
-                      questionnaires={questionnaires}
-                      surveyors={surveyorOptions}
-                      initial={initial}
-                    />
-                    <PlanStatusToggle planId={p.id} active={active} />
-                  </div>
-                </div>
-              </div>
-
-              <Bar done={prog.done} target={prog.total} label="Total" />
-
-              {prog.levels.length > 0 && (
-                <div className="overflow-hidden rounded-md border border-slate-200">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="px-3 py-2">
-                          {p.segmentLabel || "Segmento"}
-                          {p.segment2Label && ` / ${p.segment2Label}`}
-                        </th>
-                        <th className="px-3 py-2 text-right">Realizadas</th>
-                        <th className="px-3 py-2 text-right">Meta</th>
-                        <th className="px-3 py-2 text-right">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {prog.levels.map((l1) => (
-                        <Fragment key={l1.value}>
-                          <tr className="border-t border-slate-200 bg-slate-50/60 font-medium">
-                            <td className="px-3 py-2">{l1.label}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">{l1.done}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">{l1.target}</td>
-                            <td className="px-3 py-2 text-right">
-                              <Estado done={l1.done} target={l1.target} />
-                            </td>
-                          </tr>
-                          {l1.children.map((c) => (
-                            <tr key={c.value} className="border-t border-slate-100 text-slate-600">
-                              <td className="px-3 py-2 pl-7">↳ {c.label}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{c.done}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{c.target}</td>
-                              <td className="px-3 py-2 text-right">
-                                <Estado done={c.done} target={c.target} />
-                              </td>
-                            </tr>
-                          ))}
-                        </Fragment>
-                      ))}
-                      {prog.otros > 0 && (
-                        <tr className="border-t border-slate-100 text-slate-500">
-                          <td className="px-3 py-2 italic">Otros (fuera de segmentos)</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{prog.otros}</td>
-                          <td className="px-3 py-2 text-right">—</td>
-                          <td className="px-3 py-2"></td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {p.comment && <p className="text-sm text-slate-600">📋 {p.comment}</p>}
-            </div>
-          );
-        })}
-        {plans.length === 0 && (
-          <p className="text-slate-400">Aún no hay planes. Usa el botón + para crear uno.</p>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Vigentes</h2>
+        {vigentes.length === 0 ? (
+          <p className="text-sm text-slate-400">Sin planes vigentes.</p>
+        ) : (
+          <div className="space-y-4">{vigentes.map(planCard)}</div>
         )}
-      </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          No vigentes
+        </h2>
+        {noVigentes.length === 0 ? (
+          <p className="text-sm text-slate-400">Sin planes no vigentes.</p>
+        ) : (
+          <div className="space-y-4">{noVigentes.map(planCard)}</div>
+        )}
+      </section>
 
       <Fab title="Nuevo plan de trabajo">
         <NewWorkPlanForm
