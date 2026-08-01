@@ -52,3 +52,19 @@ export async function bqQuery<T = Record<string, unknown>>(
   });
   return rows as T[];
 }
+
+/**
+ * Última modificación de una tabla (cuándo se reescribió por última vez, p. ej.
+ * al correr Dataform). Es una llamada a metadatos (sin costo de consulta).
+ * Devuelve `null` si la tabla no existe o si la metadata no trae la marca.
+ * Propaga BigQueryCredentialsError cuando faltan credenciales.
+ */
+export async function bqTableLastModified(
+  datasetId: string,
+  tableId: string
+): Promise<Date | null> {
+  const client = await getClient();
+  const [metadata] = await client.dataset(datasetId).table(tableId).getMetadata();
+  const ms = Number(metadata?.lastModifiedTime);
+  return Number.isFinite(ms) && ms > 0 ? new Date(ms) : null;
+}
