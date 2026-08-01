@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiUser } from "@/lib/rbac";
 import { bqQuery, bqProjectId, BigQueryCredentialsError } from "@/lib/bigquery";
-import { PROCESOS, FASES, AIRPORTS, AIRLINES, hasAirline, hasFase } from "@/lib/dashboardTiempos";
+import { PROCESOS, FASES, AIRPORTS, AIRLINES, hasAirline, hasFase, seasonFromAnchor } from "@/lib/dashboardTiempos";
 import { getScopedTiemposAirports } from "@/lib/dashboardTiemposScope";
 
 export const runtime = "nodejs";
@@ -101,14 +101,31 @@ export async function GET(req: Request) {
     WHERE dur > 0 AND dur <= @cap
     GROUP BY ym ORDER BY ym`;
 
+  // Temporadas CON datos para este aeropuerto (independiente de proceso/periodo):
+  // fecha ancla de cada temporada (1 abr = verano, 1 oct = invierno), más reciente
+  // primero. Alimenta el desplegable de periodo.
+  const seasonsSql = `
+    SELECT DISTINCT
+      CASE
+        WHEN EXTRACT(MONTH FROM DATETIME(responded_at, 'America/Santiago')) BETWEEN 4 AND 9
+          THEN DATE(EXTRACT(YEAR FROM DATETIME(responded_at, 'America/Santiago')), 4, 1)
+        WHEN EXTRACT(MONTH FROM DATETIME(responded_at, 'America/Santiago')) BETWEEN 10 AND 12
+          THEN DATE(EXTRACT(YEAR FROM DATETIME(responded_at, 'America/Santiago')), 10, 1)
+        ELSE DATE(EXTRACT(YEAR FROM DATETIME(responded_at, 'America/Santiago')) - 1, 10, 1)
+      END AS anchor
+    FROM ${table}
+    WHERE location_name = @airport AND responded_at IS NOT NULL
+    ORDER BY anchor DESC`;
+
   const params: Record<string, unknown> = { proceso, desde, hasta, airport, cap: CAP_MIN };
   if (useAirline) params.airline = airline;
   if (!isAdmin) params.airports = allowedNames;
 
   try {
-    const [byAirportRaw, seriesRaw] = await Promise.all([
+    const [byAirportRaw, seriesRaw, seasonsRaw] = await Promise.all([
       bqQuery<Record<string, unknown>>(byAirportSql, params),
       bqQuery<Record<string, unknown>>(seriesSql, params),
+      bqQuery<Record<string, unknown>>(seasonsSql, { airport }),
     ]);
 
     const byAirport: Agg[] = byAirportRaw.map((r) => ({
@@ -126,7 +143,16 @@ export async function GET(req: Request) {
       p90: num(r.p90),
     }));
 
-    return NextResponse.json({ byAirport, series });
+    const anchorStr = (r: Record<string, unknown>): string => {
+      const a = r.anchor as { value?: unknown } | string | null;
+      return String((a && typeof a === "object" ? a.value : a) ?? "");
+    };
+    const seasons = seasonsRaw
+      .map(anchorStr)
+      .filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s))
+      .map(seasonFromAnchor);
+
+    return NextResponse.json({ byAirport, series, seasons });
   } catch (e) {
     if (e instanceof BigQueryCredentialsError) {
       return NextResponse.json({ error: e.message, code: e.code }, { status: 503 });

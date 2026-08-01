@@ -85,13 +85,14 @@ export function seasonOf(d: Date): Periodo {
   };
 }
 
-// Temporada anterior, actual (índice 1) y siguiente, como chips de periodo.
-export function periodPresets(today: Date): Periodo[] {
-  const prev = new Date(today);
-  prev.setMonth(prev.getMonth() - 6);
-  const next = new Date(today);
-  next.setMonth(next.getMonth() + 6);
-  return [seasonOf(prev), seasonOf(today), seasonOf(next)];
+// Construye la temporada a partir de su fecha ancla (1 abr = verano, 1 oct =
+// invierno), tal como la devuelve la consulta de temporadas con datos en BigQuery.
+export function seasonFromAnchor(anchor: string): Periodo {
+  const [ys, ms] = anchor.split("-");
+  const y = Number(ys);
+  if (Number(ms) === 4) return { label: `Verano ${y}`, from: `${y}-04-01`, to: `${y}-09-30` };
+  const y2 = y + 1;
+  return { label: `Invierno ${y}-${String(y2).slice(2)}`, from: `${y}-10-01`, to: `${y2}-03-31` };
 }
 
 // Lista de meses 'YYYY-MM' entre dos fechas 'YYYY-MM-DD' (inclusive).

@@ -22,7 +22,7 @@ import {
   hasAirline,
   hasFase,
   ymLabel,
-  periodPresets,
+  seasonOf,
   monthsBetween,
   type Proceso,
   type Fase,
@@ -37,7 +37,7 @@ const SELECT_CLS =
 
 type Agg = { name: string; n: number; prom: number; med: number; p90: number };
 type Serie = { ym: string; n: number; prom: number; med: number; p90: number };
-type ApiData = { byAirport: Agg[]; series: Serie[] };
+type ApiData = { byAirport: Agg[]; series: Serie[]; seasons: Periodo[] };
 // Aeropuerto ya filtrado por alcance/vigencia en el servidor (subconjunto de AIRPORTS).
 type DashboardAirport = { code: string; name: string; short: string };
 
@@ -63,12 +63,12 @@ function niceScale(rawMax: number): { max: number; ticks: number[] } {
 }
 
 export default function TiemposDashboard({ airports }: { airports: DashboardAirport[] }) {
-  const presets = useMemo(() => periodPresets(new Date()), []);
   const [proceso, setProceso] = useState<Proceso>("Check in");
   const [airline, setAirline] = useState<string>("Todas");
   const [fase, setFase] = useState<Fase>("espera");
   const [airportCode, setAirportCode] = useState<string>(() => airports[0]?.code ?? "");
-  const [periodo, setPeriodo] = useState<Periodo>(presets[1]); // temporada actual
+  const [periodo, setPeriodo] = useState<Periodo>(() => seasonOf(new Date())); // estimación inicial
+  const [seasons, setSeasons] = useState<Periodo[]>([]); // temporadas con datos del aeropuerto
   const [showMeta, setShowMeta] = useState(false);
 
   const [data, setData] = useState<ApiData | null>(null);
@@ -103,7 +103,14 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
         return j as ApiData;
       })
       .then((j) => {
-        if (id === reqId.current) setData(j);
+        if (id !== reqId.current) return;
+        setData(j);
+        setSeasons(j.seasons);
+        // Ajusta a la temporada más reciente CON datos de este aeropuerto si la
+        // seleccionada no existe para él (p. ej. al cambiar de aeropuerto).
+        if (j.seasons.length && !j.seasons.some((s) => s.from === periodo.from)) {
+          setPeriodo(j.seasons[0]);
+        }
       })
       .catch((e: Error & { code?: string }) => {
         if (id === reqId.current) setError({ msg: e.message, code: e.code });
@@ -212,13 +219,20 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
         </Field>
 
         <Field label="Periodo">
-          <div className="flex flex-wrap gap-2">
-            {presets.map((p) => (
-              <Pill key={p.label} on={p.from === periodo.from && p.to === periodo.to} onClick={() => setPeriodo(p)}>
-                {p.label}
-              </Pill>
+          <select
+            className={SELECT_CLS}
+            value={periodo.from}
+            onChange={(e) => {
+              const s = seasons.find((x) => x.from === e.target.value);
+              if (s) setPeriodo(s);
+            }}
+          >
+            {(seasons.length ? seasons : [periodo]).map((s) => (
+              <option key={s.from} value={s.from}>
+                {s.label}
+              </option>
             ))}
-          </div>
+          </select>
         </Field>
       </div>
 
