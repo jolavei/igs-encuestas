@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { QuestionConfig, QuestionType, RawAnswer } from "@/lib/questionTypes";
 
 export type ClientQuestion = {
@@ -179,53 +179,7 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
         })()}
 
       {q.type === "DATETIME" && (
-        <>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              className="input min-w-[15rem]"
-              type="datetime-local"
-              step="1"
-              value={value.valueText ?? ""}
-              onChange={(e) => set({ valueText: e.target.value, valueDate: e.target.value })}
-            />
-            <button
-              type="button"
-              className="btn-secondary whitespace-nowrap"
-              title="Usar la hora actual"
-              onClick={() => {
-                const now = new Date();
-                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-                const v = now.toISOString().slice(0, 19); // YYYY-MM-DDTHH:MM:SS local
-                set({ valueText: v, valueDate: v });
-              }}
-            >
-              Ahora
-            </button>
-          </div>
-          {prevDatetime &&
-            value.valueText &&
-            (() => {
-              const d0 = new Date(prevDatetime).getTime();
-              const d1 = new Date(value.valueText).getTime();
-              if (isNaN(d0) || isNaN(d1)) return null;
-              const secs = Math.round((d1 - d0) / 1000);
-              const negative = secs < 0;
-              const over = secs > 7200;
-              return (
-                <p
-                  className={`text-sm ${
-                    negative || over ? "font-medium text-red-600" : "text-slate-600"
-                  }`}
-                >
-                  {negative
-                    ? "Duración de medición negativa"
-                    : `Duración de medición: ${fmtDur(secs)}${
-                        over ? " — excede las 2 horas, corrige para continuar" : ""
-                      }`}
-                </p>
-              );
-            })()}
-        </>
+        <DateTimeInput value={value} onChange={set} prevDatetime={prevDatetime} />
       )}
 
       {q.type === "SINGLE_CHOICE" && (
@@ -295,6 +249,118 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
 
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
+  );
+}
+
+// Fecha-hora-minuto-SEGUNDO. El control nativo `datetime-local` no muestra los
+// segundos en Safari iOS/iPadOS (ignora step="1"), así que usamos el picker nativo
+// solo para fecha + hora:minuto y un campo aparte para los segundos, garantizando
+// que se vean y se puedan editar en todos los dispositivos. Se guarda el string
+// "YYYY-MM-DDTHH:MM:SS" en valueText/valueDate (formato sin cambios).
+function DateTimeInput({
+  value,
+  onChange,
+  prevDatetime,
+}: {
+  value: RawAnswer;
+  onChange: (patch: Partial<RawAnswer>) => void;
+  prevDatetime?: string;
+}) {
+  const full = value.valueText ?? ""; // "YYYY-MM-DDTHH:MM:SS"
+  const minutePart = full.slice(0, 16); // "YYYY-MM-DDTHH:MM" ("" si vacío)
+  const [sec, setSec] = useState<string>("");
+
+  // valueText es la fuente de verdad (el botón "Ahora" y "Nueva respuesta" la cambian
+  // desde afuera). Sincroniza los segundos locales solo ante cambios externos reales
+  // para no pisar lo que el usuario está tecleando.
+  useEffect(() => {
+    const s = full.length >= 19 ? String(Number(full.slice(17, 19))) : "";
+    setSec((prev) =>
+      Number(prev || "0") === Number(s || "0") && (prev === "") === (s === "") ? prev : s
+    );
+  }, [full]);
+
+  // Construye y guarda "YYYY-MM-DDTHH:MM:SS" a partir de minuto + segundos.
+  function commit(minP: string, secStr: string) {
+    if (!minP) {
+      onChange({ valueText: "", valueDate: "" });
+      return;
+    }
+    const ss = String(Math.max(0, Math.min(59, Number(secStr) || 0))).padStart(2, "0");
+    const v = `${minP}:${ss}`;
+    onChange({ valueText: v, valueDate: v });
+  }
+
+  return (
+    <>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input
+          className="input sm:flex-1"
+          type="datetime-local"
+          value={minutePart}
+          onChange={(e) => commit(e.target.value, sec)}
+        />
+        <div className="flex items-center gap-2">
+          <input
+            className="input shrink-0"
+            style={{ width: "5.5rem" }}
+            type="number"
+            min={0}
+            max={59}
+            step={1}
+            inputMode="numeric"
+            placeholder="seg"
+            aria-label="Segundos"
+            value={sec}
+            onChange={(e) => {
+              const clean =
+                e.target.value === ""
+                  ? ""
+                  : String(Math.max(0, Math.min(59, Number(e.target.value))));
+              setSec(clean);
+              if (minutePart) commit(minutePart, clean === "" ? "0" : clean);
+            }}
+          />
+          <span className="text-sm text-slate-500">seg</span>
+          <button
+            type="button"
+            className="btn-secondary whitespace-nowrap"
+            title="Usar la hora actual"
+            onClick={() => {
+              const now = new Date();
+              now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+              const v = now.toISOString().slice(0, 19); // YYYY-MM-DDTHH:MM:SS local
+              onChange({ valueText: v, valueDate: v });
+            }}
+          >
+            Ahora
+          </button>
+        </div>
+      </div>
+      {prevDatetime &&
+        value.valueText &&
+        (() => {
+          const d0 = new Date(prevDatetime).getTime();
+          const d1 = new Date(value.valueText).getTime();
+          if (isNaN(d0) || isNaN(d1)) return null;
+          const secs = Math.round((d1 - d0) / 1000);
+          const negative = secs < 0;
+          const over = secs > 7200;
+          return (
+            <p
+              className={`text-sm ${
+                negative || over ? "font-medium text-red-600" : "text-slate-600"
+              }`}
+            >
+              {negative
+                ? "Duración de medición negativa"
+                : `Duración de medición: ${fmtDur(secs)}${
+                    over ? " — excede las 2 horas, corrige para continuar" : ""
+                  }`}
+            </p>
+          );
+        })()}
+    </>
   );
 }
 
