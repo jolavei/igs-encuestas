@@ -293,24 +293,27 @@ function DateTimeInput({
 
   return (
     <>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <input
-          className="input sm:flex-1"
-          type="datetime-local"
-          value={minutePart}
-          onChange={(e) => commit(e.target.value, sec)}
-        />
-        <div className="flex items-center gap-2">
+      {/* Un solo contenedor (un borde): fecha+hora:minuto, segundos y "Ahora".
+          En móvil se apila (segundos junto a la hora, "Ahora" como fila inferior);
+          desde sm queda todo en una fila. */}
+      <div className="flex flex-col overflow-hidden rounded-md border border-slate-300 bg-white focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500 sm:flex-row sm:items-stretch">
+        <div className="flex min-w-0 items-center sm:flex-1">
           <input
-            className="input shrink-0"
-            style={{ width: "5.5rem" }}
+            className="min-w-0 flex-1 appearance-none border-0 bg-transparent py-2.5 pl-3 pr-2 text-sm text-slate-900 outline-none focus:ring-0"
+            type="datetime-local"
+            value={minutePart}
+            onChange={(e) => commit(e.target.value, sec)}
+          />
+          <input
+            className="w-9 appearance-none border-0 bg-transparent py-2.5 text-right text-sm text-slate-900 outline-none focus:ring-0 [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             type="number"
             min={0}
             max={59}
             step={1}
             inputMode="numeric"
-            placeholder="seg"
+            placeholder="00"
             aria-label="Segundos"
+            title="Segundos"
             value={sec}
             onChange={(e) => {
               const clean =
@@ -321,21 +324,21 @@ function DateTimeInput({
               if (minutePart) commit(minutePart, clean === "" ? "0" : clean);
             }}
           />
-          <span className="text-sm text-slate-500">seg</span>
-          <button
-            type="button"
-            className="btn-secondary whitespace-nowrap"
-            title="Usar la hora actual"
-            onClick={() => {
-              const now = new Date();
-              now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-              const v = now.toISOString().slice(0, 19); // YYYY-MM-DDTHH:MM:SS local
-              onChange({ valueText: v, valueDate: v });
-            }}
-          >
-            Ahora
-          </button>
+          <span className="flex items-center pl-0.5 pr-2.5 text-xs text-slate-400">s</span>
         </div>
+        <button
+          type="button"
+          className="whitespace-nowrap border-0 border-t border-slate-200 bg-slate-50 py-2 text-[13px] font-semibold text-brand-700 hover:bg-slate-100 sm:border-l sm:border-t-0 sm:px-4 sm:py-0"
+          title="Usar la hora actual"
+          onClick={() => {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            const v = now.toISOString().slice(0, 19); // YYYY-MM-DDTHH:MM:SS local
+            onChange({ valueText: v, valueDate: v });
+          }}
+        >
+          Ahora
+        </button>
       </div>
       {prevDatetime &&
         value.valueText &&
