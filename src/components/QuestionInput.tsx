@@ -180,9 +180,9 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
 
       {q.type === "DATETIME" && (
         <>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <input
-              className="input"
+              className="input min-w-[15rem]"
               type="datetime-local"
               step="1"
               value={value.valueText ?? ""}
