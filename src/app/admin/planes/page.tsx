@@ -100,13 +100,19 @@ export default async function PlanesPage() {
     plans.map((p) => getPlanProgress(p.id, { totalTarget: p.totalTarget, segments: p.segments }))
   );
 
+  // Vigentes (ACTIVE) arriba, cancelados/no vigentes abajo. El sort es estable, así que
+  // dentro de cada grupo se conserva el orden por createdAt desc. Emparejamos el progreso
+  // con su plan antes de ordenar porque `progress` está alineado por índice con `plans`.
+  const items = plans
+    .map((p, i) => ({ p, prog: progress[i] }))
+    .sort((a, b) => Number(b.p.status === "ACTIVE") - Number(a.p.status === "ACTIVE"));
+
   return (
     <div className="space-y-6 pb-24">
       <h1 className="text-2xl font-bold">Planes de trabajo</h1>
 
       <div className="space-y-4">
-        {plans.map((p, i) => {
-          const prog = progress[i];
+        {items.map(({ p, prog }) => {
           const active = p.status === "ACTIVE";
           // Valores actuales del plan para precargar el formulario de edición.
           const segTargets: Record<string, number> = {};
