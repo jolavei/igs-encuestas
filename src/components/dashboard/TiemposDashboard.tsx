@@ -165,6 +165,33 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
     <div className="space-y-5">
       {/* Barra de filtros */}
       <div className="flex flex-wrap items-end gap-x-5 gap-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <Field label="Aeropuerto">
+          <div className="flex gap-2">
+            {airports.map((a) => (
+              <Pill key={a.code} on={a.code === airportCode} onClick={() => setAirportCode(a.code)}>
+                {a.code}
+              </Pill>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Periodo">
+          <select
+            className={SELECT_CLS}
+            value={periodo.from}
+            onChange={(e) => {
+              const s = seasons.find((x) => x.from === e.target.value);
+              if (s) setPeriodo(s);
+            }}
+          >
+            {(seasons.length ? seasons : [periodo]).map((s) => (
+              <option key={s.from} value={s.from}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         <Field label="Proceso">
           <select
             className={SELECT_CLS}
@@ -207,33 +234,6 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
             </div>
           </Field>
         )}
-
-        <Field label="Aeropuerto">
-          <div className="flex gap-2">
-            {airports.map((a) => (
-              <Pill key={a.code} on={a.code === airportCode} onClick={() => setAirportCode(a.code)}>
-                {a.code}
-              </Pill>
-            ))}
-          </div>
-        </Field>
-
-        <Field label="Periodo">
-          <select
-            className={SELECT_CLS}
-            value={periodo.from}
-            onChange={(e) => {
-              const s = seasons.find((x) => x.from === e.target.value);
-              if (s) setPeriodo(s);
-            }}
-          >
-            {(seasons.length ? seasons : [periodo]).map((s) => (
-              <option key={s.from} value={s.from}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </Field>
       </div>
 
       {/* KPIs */}
