@@ -30,8 +30,6 @@ import {
 } from "@/lib/dashboardTiempos";
 
 const COL = { prom: "#003152", med: "#3d7593", p90: "#a9b2bf", meta: "#D9B300", band: "rgba(0,49,82,0.06)" };
-// Tonos de la paleta de marca para los 3 aeropuertos (barras / tabla).
-const AIR_COLOR: Record<string, string> = { IQQ: "#1a5374", CJC: "#2f7d92", PMC: "#6f9cb6" };
 
 // Estilo de <select> alineado a los controles de la app (borde marcado para verse sobre slate-50).
 const SELECT_CLS =
@@ -49,11 +47,6 @@ function fmt(v: number | null | undefined): string {
   if (v == null) return "—";
   const total = Math.round(v * 60);
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-}
-
-function hexA(hex: string, a: number) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
 // Escala Y "bonita": tope y ticks en pasos redondos de minutos, para que el eje
@@ -164,7 +157,7 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
   return (
     <div className="space-y-5">
       {/* Barra de filtros */}
-      <div className="flex flex-wrap items-end gap-x-5 gap-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-end gap-x-5 gap-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <Field label="Proceso">
           <select
             className={SELECT_CLS}
@@ -320,10 +313,7 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
                 <Tooltip formatter={(v) => [fmt(Number(v)), "Promedio"]} cursor={{ fill: "rgba(0,49,82,0.04)" }} />
                 <Bar dataKey="prom" radius={[4, 4, 0, 0]} maxBarSize={56}>
                   {barData.map((d) => (
-                    <Cell
-                      key={d.code}
-                      fill={d.code === airportCode ? AIR_COLOR[d.code] : hexA(AIR_COLOR[d.code], 0.35)}
-                    />
+                    <Cell key={d.code} fill={d.code === airportCode ? "#003152" : "#cbd5e1"} />
                   ))}
                 </Bar>
                 {showMeta && meta != null && <ReferenceLine y={meta} stroke={COL.meta} strokeDasharray="4 4" strokeWidth={1.5} />}
