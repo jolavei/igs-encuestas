@@ -5,6 +5,9 @@ import type { QuestionConfig } from "@/lib/questionTypes";
 import { getPlanProgress } from "@/lib/planProgress";
 import Fab from "@/components/Fab";
 import NewWorkPlanForm from "@/components/NewWorkPlanForm";
+import PlanStatusToggle from "@/components/PlanStatusToggle";
+import EditPlanButton from "@/components/EditPlanButton";
+import { utcToChileDay } from "@/lib/dates";
 
 function fmtDate(d: Date) {
   return new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", dateStyle: "medium" }).format(d);
@@ -60,7 +63,7 @@ export default async function PlanesPage() {
         questionnaire: true,
         location: true,
         segments: true,
-        surveyors: { select: { email: true } },
+        surveyors: { select: { id: true, email: true } },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -85,6 +88,14 @@ export default async function PlanesPage() {
         })),
     }));
 
+  // Opciones para el formulario (crear y editar): se calculan una vez y se reusan.
+  const companyOptions = companies.map((c) => ({
+    id: c.id,
+    name: c.name,
+    locations: c.locations.map((l) => ({ id: l.id, name: l.name })),
+  }));
+  const surveyorOptions = surveyors.map((s) => ({ id: s.id, email: s.email }));
+
   const progress = await Promise.all(
     plans.map((p) => getPlanProgress(p.id, { totalTarget: p.totalTarget, segments: p.segments }))
   );
@@ -96,20 +107,65 @@ export default async function PlanesPage() {
       <div className="space-y-4">
         {plans.map((p, i) => {
           const prog = progress[i];
+          const active = p.status === "ACTIVE";
+          // Valores actuales del plan para precargar el formulario de edición.
+          const segTargets: Record<string, number> = {};
+          const seg2Targets: Record<string, number> = {};
+          for (const s of p.segments) {
+            if (s.parentValue == null) segTargets[s.value] = s.target;
+            else seg2Targets[`${s.parentValue}|${s.value}`] = s.target;
+          }
+          const initial = {
+            id: p.id,
+            companyId: p.companyId,
+            questionnaireId: p.questionnaireId,
+            locationId: p.locationId ?? "",
+            windowStart: utcToChileDay(p.windowStart),
+            windowEnd: utcToChileDay(p.windowEnd),
+            totalTarget: p.totalTarget,
+            segEqKey: p.segmentKey ?? "",
+            seg2EqKey: p.segment2Key ?? "",
+            segTargets,
+            seg2Targets,
+            surveyorIds: p.surveyors.map((s) => s.id),
+            comment: p.comment ?? "",
+          };
           return (
-            <div key={p.id} id={`plan-${p.id}`} className="card space-y-3 scroll-mt-20">
+            <div
+              key={p.id}
+              id={`plan-${p.id}`}
+              className={`card space-y-3 scroll-mt-20 ${active ? "" : "opacity-60"}`}
+            >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h3 className="font-semibold">{p.questionnaire.title}</h3>
+                  <h3 className="flex flex-wrap items-center gap-2 font-semibold">
+                    {p.questionnaire.title}
+                    {!active && (
+                      <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                        Cancelado
+                      </span>
+                    )}
+                  </h3>
                   <p className="text-sm text-slate-500">
                     {p.company.name}
                     {p.location && ` · ${p.location.name}`} · {fmtDate(p.windowStart)} –{" "}
                     {fmtDate(p.windowEnd)}
                   </p>
                 </div>
-                <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                  {p.surveyors.length} encuestador(es)
-                </span>
+                <div className="flex flex-col items-end gap-2">
+                  <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                    {p.surveyors.length} encuestador(es)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <EditPlanButton
+                      companies={companyOptions}
+                      questionnaires={questionnaires}
+                      surveyors={surveyorOptions}
+                      initial={initial}
+                    />
+                    <PlanStatusToggle planId={p.id} active={active} />
+                  </div>
+                </div>
               </div>
 
               <Bar done={prog.done} target={prog.total} label="Total" />
@@ -175,13 +231,9 @@ export default async function PlanesPage() {
 
       <Fab title="Nuevo plan de trabajo">
         <NewWorkPlanForm
-          companies={companies.map((c) => ({
-            id: c.id,
-            name: c.name,
-            locations: c.locations.map((l) => ({ id: l.id, name: l.name })),
-          }))}
+          companies={companyOptions}
           questionnaires={questionnaires}
-          surveyors={surveyors.map((s) => ({ id: s.id, email: s.email }))}
+          surveyors={surveyorOptions}
         />
       </Fab>
     </div>

@@ -2,42 +2,65 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-type Company = { id: string; name: string; locations: { id: string; name: string }[] };
+export type Company = { id: string; name: string; locations: { id: string; name: string }[] };
 type SegmentQuestion = {
   equivalenceKey: string;
   text: string;
   options: { value: string; label: string }[];
 };
-type Questionnaire = {
+export type Questionnaire = {
   id: string;
   title: string;
   companyIds: string[];
   segmentQuestions: SegmentQuestion[];
 };
-type Surveyor = { id: string; email: string };
+export type Surveyor = { id: string; email: string };
+
+// Valores iniciales para editar un plan existente. Si no se pasa, el formulario
+// crea un plan nuevo.
+export type PlanInitial = {
+  id: string;
+  companyId: string;
+  questionnaireId: string;
+  locationId: string;
+  windowStart: string; // "YYYY-MM-DD" (día chileno)
+  windowEnd: string;
+  totalTarget: number;
+  segEqKey: string;
+  seg2EqKey: string;
+  segTargets: Record<string, number>;
+  seg2Targets: Record<string, number>;
+  surveyorIds: string[];
+  comment: string;
+};
 
 export default function NewWorkPlanForm({
   companies,
   questionnaires,
   surveyors,
+  initial,
+  onDone,
 }: {
   companies: Company[];
   questionnaires: Questionnaire[];
   surveyors: Surveyor[];
+  initial?: PlanInitial;
+  onDone?: () => void;
 }) {
   const router = useRouter();
-  const [companyId, setCompanyId] = useState("");
-  const [questionnaireId, setQuestionnaireId] = useState("");
-  const [locationId, setLocationId] = useState("");
-  const [windowStart, setWindowStart] = useState("");
-  const [windowEnd, setWindowEnd] = useState("");
-  const [totalTarget, setTotalTarget] = useState<number | "">("");
-  const [segEqKey, setSegEqKey] = useState(""); // primario
-  const [seg2EqKey, setSeg2EqKey] = useState(""); // secundario (opcional)
-  const [segTargets, setSegTargets] = useState<Record<string, number>>({}); // nivel 1
-  const [seg2Targets, setSeg2Targets] = useState<Record<string, number>>({}); // "pval|sval"
-  const [surveyorIds, setSurveyorIds] = useState<Set<string>>(new Set());
-  const [comment, setComment] = useState("");
+  const editing = !!initial;
+  const [companyId, setCompanyId] = useState(initial?.companyId ?? "");
+  const [questionnaireId, setQuestionnaireId] = useState(initial?.questionnaireId ?? "");
+  const [locationId, setLocationId] = useState(initial?.locationId ?? "");
+  const [windowStart, setWindowStart] = useState(initial?.windowStart ?? "");
+  const [windowEnd, setWindowEnd] = useState(initial?.windowEnd ?? "");
+  const [totalTarget, setTotalTarget] = useState<number | "">(initial?.totalTarget ?? "");
+  const [segEqKey, setSegEqKey] = useState(initial?.segEqKey ?? ""); // primario
+  const [seg2EqKey, setSeg2EqKey] = useState(initial?.seg2EqKey ?? ""); // secundario (opcional)
+  const [segTargets, setSegTargets] = useState<Record<string, number>>(initial?.segTargets ?? {}); // nivel 1
+  const [seg2Targets, setSeg2Targets] = useState<Record<string, number>>(initial?.seg2Targets ?? {}); // "pval|sval"
+  const [surveyorIds, setSurveyorIds] = useState<Set<string>>(new Set(initial?.surveyorIds ?? []));
+  const [comment, setComment] = useState(initial?.comment ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,8 +115,8 @@ export default function NewWorkPlanForm({
         }
       }
 
-      const r = await fetch("/api/workplans", {
-        method: "POST",
+      const r = await fetch(editing ? `/api/workplans/${initial!.id}` : "/api/workplans", {
+        method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyId,
@@ -113,6 +136,10 @@ export default function NewWorkPlanForm({
       });
       if (!r.ok) throw new Error((await r.json()).error ?? "Error");
       router.refresh();
+      if (editing) {
+        onDone?.();
+        return;
+      }
       setCompanyId("");
       setQuestionnaireId("");
       setLocationId("");
@@ -367,7 +394,7 @@ export default function NewWorkPlanForm({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button className="btn w-full" disabled={busy || !questionnaireId}>
-        {busy ? "Creando…" : "Crear plan de trabajo"}
+        {busy ? "Guardando…" : editing ? "Guardar cambios" : "Crear plan de trabajo"}
       </button>
     </form>
   );

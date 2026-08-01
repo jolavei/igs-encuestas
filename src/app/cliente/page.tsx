@@ -72,6 +72,7 @@ export default async function ClienteHome() {
   const now = new Date();
   const plans = await prisma.workPlan.findMany({
     where: {
+      status: "ACTIVE",
       windowStart: { lte: now },
       windowEnd: { gte: now },
       OR: [

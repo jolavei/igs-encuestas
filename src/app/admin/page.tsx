@@ -63,9 +63,10 @@ export default async function AdminHome() {
     getSessionUser(),
     prisma.company.count({ where: { active: true } }),
     prisma.questionnaire.count(),
-    // Planes vigentes: hoy cae dentro de su ventana.
+    // Planes vigentes: activos y con hoy dentro de su ventana (los desactivados
+    // quedan "no vigentes" y no cuentan aquí).
     prisma.workPlan.findMany({
-      where: { windowStart: { lte: now }, windowEnd: { gte: now } },
+      where: { status: "ACTIVE", windowStart: { lte: now }, windowEnd: { gte: now } },
       include: { company: true, questionnaire: true, location: true, segments: true },
       orderBy: { windowEnd: "asc" },
     }),
