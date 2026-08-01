@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { QuestionConfig, QuestionType, RawAnswer } from "@/lib/questionTypes";
 
 export type ClientQuestion = {
@@ -252,11 +252,54 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
   );
 }
 
-// Fecha-hora-minuto-SEGUNDO. El control nativo `datetime-local` no muestra los
-// segundos en Safari iOS/iPadOS (ignora step="1"), así que usamos el picker nativo
-// solo para fecha + hora:minuto y un campo aparte para los segundos, garantizando
-// que se vean y se puedan editar en todos los dispositivos. Se guarda el string
-// "YYYY-MM-DDTHH:MM:SS" en valueText/valueDate (formato sin cambios).
+// Fecha-hora-minuto-SEGUNDO. Los controles de hora nativos (datetime-local / time)
+// NO muestran los segundos en Safari iOS/iPadOS (ignoran step="1"). Para lograr un
+// campo continuo "DD-MM-AAAA HH:MM:SS" que se vea y edite igual en todos los
+// dispositivos, usamos un campo segmentado propio (sin control nativo). Se guarda el
+// string "YYYY-MM-DDTHH:MM:SS" en valueText/valueDate (formato sin cambios).
+type SegKey = "d" | "mo" | "y" | "h" | "mi" | "s";
+type Seg = Record<SegKey, string>;
+const SEG_ORDER: SegKey[] = ["d", "mo", "y", "h", "mi", "s"];
+const SEG_LEN: Record<SegKey, number> = { d: 2, mo: 2, y: 4, h: 2, mi: 2, s: 2 };
+const SEG_MAX: Record<SegKey, number> = { d: 31, mo: 12, y: 9999, h: 23, mi: 59, s: 59 };
+const SEG_PH: Record<SegKey, string> = { d: "dd", mo: "mm", y: "aaaa", h: "hh", mi: "mm", s: "ss" };
+const SEG_LABEL: Record<SegKey, string> = {
+  d: "Día",
+  mo: "Mes",
+  y: "Año",
+  h: "Hora",
+  mi: "Minuto",
+  s: "Segundo",
+};
+const EMPTY_SEG: Seg = { d: "", mo: "", y: "", h: "", mi: "", s: "" };
+
+// "YYYY-MM-DDTHH:MM:SS" -> segmentos.
+function parseSeg(full: string): Seg {
+  if (full.length >= 16) {
+    return {
+      y: full.slice(0, 4),
+      mo: full.slice(5, 7),
+      d: full.slice(8, 10),
+      h: full.slice(11, 13),
+      mi: full.slice(14, 16),
+      s: full.length >= 19 ? full.slice(17, 19) : "00",
+    };
+  }
+  return { ...EMPTY_SEG };
+}
+
+// segmentos -> "YYYY-MM-DDTHH:MM:SS" (o "" si falta fecha u hora). Segundos opcional (00).
+function buildSeg(s: Seg): string {
+  if (!s.d || !s.mo || s.y.length < 4 || !s.h || !s.mi) return "";
+  const yy = s.y;
+  const mm = s.mo.padStart(2, "0");
+  const dd = s.d.padStart(2, "0");
+  const hh = s.h.padStart(2, "0");
+  const mn = s.mi.padStart(2, "0");
+  const ss = (s.s || "0").padStart(2, "0");
+  return `${yy}-${mm}-${dd}T${hh}:${mn}:${ss}`;
+}
+
 function DateTimeInput({
   value,
   onChange,
@@ -267,75 +310,115 @@ function DateTimeInput({
   prevDatetime?: string;
 }) {
   const full = value.valueText ?? ""; // "YYYY-MM-DDTHH:MM:SS"
-  const minutePart = full.slice(0, 16); // "YYYY-MM-DDTHH:MM" ("" si vacío)
-  const [sec, setSec] = useState<string>("");
+  const [seg, setSeg] = useState<Seg>(() => parseSeg(full));
+  const segRef = useRef(seg);
+  segRef.current = seg;
+  const refs = useRef<Array<HTMLInputElement | null>>([]);
 
-  // valueText es la fuente de verdad (el botón "Ahora" y "Nueva respuesta" la cambian
-  // desde afuera). Sincroniza los segundos locales solo ante cambios externos reales
-  // para no pisar lo que el usuario está tecleando.
+  // valueText es la fuente de verdad: el botón "Ahora" y "Nueva respuesta" la cambian
+  // desde afuera. Sincroniza los segmentos solo ante cambios externos reales (no cuando
+  // el propio tecleo ya coincide con lo guardado), para no pisar lo que se escribe.
   useEffect(() => {
-    const s = full.length >= 19 ? String(Number(full.slice(17, 19))) : "";
-    setSec((prev) =>
-      Number(prev || "0") === Number(s || "0") && (prev === "") === (s === "") ? prev : s
-    );
+    if (buildSeg(segRef.current) === full) return;
+    setSeg(parseSeg(full));
   }, [full]);
 
-  // Construye y guarda "YYYY-MM-DDTHH:MM:SS" a partir de minuto + segundos.
-  function commit(minP: string, secStr: string) {
-    if (!minP) {
-      onChange({ valueText: "", valueDate: "" });
-      return;
+  function focusIdx(i: number) {
+    const el = refs.current[i];
+    if (el) {
+      el.focus();
+      el.select();
     }
-    const ss = String(Math.max(0, Math.min(59, Number(secStr) || 0))).padStart(2, "0");
-    const v = `${minP}:${ss}`;
+  }
+
+  function onSegChange(key: SegKey, raw: string) {
+    const digits = raw.replace(/\D/g, "").slice(0, SEG_LEN[key]);
+    let next = digits;
+    if (next !== "" && Number(next) > SEG_MAX[key]) next = String(SEG_MAX[key]);
+    // "Completo" = el segmento ya no admite otro dígito (por longitud o rango, ej. mes 3).
+    const canExtend = next.length < SEG_LEN[key] && Number(next + "0") <= SEG_MAX[key];
+    const complete = next !== "" && !canExtend;
+    if (complete && key !== "y") next = next.padStart(SEG_LEN[key], "0"); // "3" -> "03"
+    const newSeg = { ...seg, [key]: next };
+    setSeg(newSeg);
+    const built = buildSeg(newSeg);
+    onChange({ valueText: built, valueDate: built });
+    // Auto-avanza al siguiente segmento cuando ya está completo.
+    const idx = SEG_ORDER.indexOf(key);
+    if (complete && idx < SEG_ORDER.length - 1) focusIdx(idx + 1);
+  }
+
+  // Al salir de un segmento con un solo dígito, lo rellena con cero ("7" -> "07").
+  function onSegBlur(key: SegKey) {
+    if (key === "y") return;
+    const cur = segRef.current[key];
+    if (cur.length !== 1) return;
+    const newSeg = { ...segRef.current, [key]: cur.padStart(2, "0") };
+    setSeg(newSeg);
+    const built = buildSeg(newSeg);
+    onChange({ valueText: built, valueDate: built });
+  }
+
+  function onSegKey(key: SegKey, e: React.KeyboardEvent<HTMLInputElement>) {
+    const idx = SEG_ORDER.indexOf(key);
+    if (e.key === "Backspace" && seg[key] === "" && idx > 0) {
+      e.preventDefault();
+      focusIdx(idx - 1);
+    } else if (e.key === "ArrowLeft" && idx > 0) {
+      focusIdx(idx - 1);
+    } else if (e.key === "ArrowRight" && idx < SEG_ORDER.length - 1) {
+      focusIdx(idx + 1);
+    }
+  }
+
+  function setNow() {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    const v = now.toISOString().slice(0, 19); // YYYY-MM-DDTHH:MM:SS local
     onChange({ valueText: v, valueDate: v });
   }
 
+  const renderSeg = (key: SegKey, widthClass: string) => (
+    <input
+      ref={(el) => {
+        refs.current[SEG_ORDER.indexOf(key)] = el;
+      }}
+      className={`${widthClass} appearance-none border-0 bg-transparent p-0 text-center text-sm tabular-nums text-slate-900 outline-none placeholder:text-slate-300 focus:ring-0`}
+      type="text"
+      inputMode="numeric"
+      maxLength={SEG_LEN[key]}
+      placeholder={SEG_PH[key]}
+      aria-label={SEG_LABEL[key]}
+      value={seg[key]}
+      onChange={(e) => onSegChange(key, e.target.value)}
+      onKeyDown={(e) => onSegKey(key, e)}
+      onFocus={(e) => e.target.select()}
+      onBlur={() => onSegBlur(key)}
+    />
+  );
+
   return (
     <>
-      {/* Un solo contenedor (un borde): fecha+hora:minuto, segundos y "Ahora".
-          En móvil se apila (segundos junto a la hora, "Ahora" como fila inferior);
-          desde sm queda todo en una fila. */}
-      <div className="flex flex-col overflow-hidden rounded-md border border-slate-300 bg-white focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500 sm:flex-row sm:items-stretch">
-        <div className="flex min-w-0 items-center sm:flex-1">
-          <input
-            className="min-w-0 flex-1 appearance-none border-0 bg-transparent py-2.5 pl-3 pr-2 text-sm text-slate-900 outline-none focus:ring-0"
-            type="datetime-local"
-            value={minutePart}
-            onChange={(e) => commit(e.target.value, sec)}
-          />
-          <input
-            className="w-9 appearance-none border-0 bg-transparent py-2.5 text-right text-sm text-slate-900 outline-none focus:ring-0 [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            type="number"
-            min={0}
-            max={59}
-            step={1}
-            inputMode="numeric"
-            placeholder="00"
-            aria-label="Segundos"
-            title="Segundos"
-            value={sec}
-            onChange={(e) => {
-              const clean =
-                e.target.value === ""
-                  ? ""
-                  : String(Math.max(0, Math.min(59, Number(e.target.value))));
-              setSec(clean);
-              if (minutePart) commit(minutePart, clean === "" ? "0" : clean);
-            }}
-          />
-          <span className="flex items-center pl-0.5 pr-2.5 text-xs text-slate-400">s</span>
+      {/* Campo segmentado continuo "DD-MM-AAAA HH:MM:SS" + "Ahora", en un solo borde. */}
+      <div className="flex items-stretch overflow-hidden rounded-md border border-slate-300 bg-white focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
+        <div className="flex min-w-0 flex-1 items-center py-2.5 pl-3 pr-2">
+          {renderSeg("d", "w-[1.15rem]")}
+          <span className="select-none text-slate-400">-</span>
+          {renderSeg("mo", "w-[1.15rem]")}
+          <span className="select-none text-slate-400">-</span>
+          {renderSeg("y", "w-[2.2rem]")}
+          <span className="w-[0.35rem]" />
+          {renderSeg("h", "w-[1.15rem]")}
+          <span className="select-none text-slate-400">:</span>
+          {renderSeg("mi", "w-[1.15rem]")}
+          <span className="select-none text-slate-400">:</span>
+          {renderSeg("s", "w-[1.15rem]")}
         </div>
         <button
           type="button"
-          className="whitespace-nowrap border-0 border-t border-slate-200 bg-slate-50 py-2 text-[13px] font-semibold text-brand-700 hover:bg-slate-100 sm:border-l sm:border-t-0 sm:px-4 sm:py-0"
-          title="Usar la hora actual"
-          onClick={() => {
-            const now = new Date();
-            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-            const v = now.toISOString().slice(0, 19); // YYYY-MM-DDTHH:MM:SS local
-            onChange({ valueText: v, valueDate: v });
-          }}
+          className="shrink-0 whitespace-nowrap border-0 border-l border-slate-200 bg-slate-50 px-3 text-[13px] font-semibold text-brand-700 hover:bg-slate-100"
+          title="Usar la fecha y hora actual"
+          onClick={setNow}
         >
           Ahora
         </button>
