@@ -37,6 +37,14 @@ config {
   tags: ["encuestas"]
 }
 
+js {
+  // ETAPA DE PRUEBAS: las respuestas de la APP anteriores a esta fecha (hora Chile)
+  // son de prueba y NO se consideran. Al salir a producción de verdad, ajusta
+  // GO_LIVE a la fecha real de puesta en marcha (o ponla en el pasado, p.ej.
+  // "2000-01-01", para incluir todo). El histórico de Google Forms NO se filtra.
+  const GO_LIVE = "2026-08-01";
+}
+
 -- Unión del levantamiento en la app + el histórico de los Google Forms.
 -- Ambas tablas comparten exactamente el mismo esquema (el script del histórico
 -- se construye a imagen de mediciones_de_tiempos), así que el UNION ALL es directo.
@@ -52,6 +60,8 @@ SELECT
   passport_inbound_t1, passport_inbound_t2, passport_inbound_comments,
   border_protection_t1, border_protection_t2, border_protection_comments
 FROM ${ref("mediciones_de_tiempos")}
+-- Excluye las respuestas de prueba de la app (anteriores a la puesta en marcha).
+WHERE responded_at >= TIMESTAMP("${GO_LIVE} 00:00:00", "America/Santiago")
 
 UNION ALL
 
