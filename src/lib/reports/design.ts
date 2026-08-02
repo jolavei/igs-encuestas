@@ -47,3 +47,12 @@ export function fmtMMSS(v: number | null | undefined): string {
 export function pct(done: number, target: number): number {
   return target > 0 ? Math.min(100, Math.round((done / target) * 100)) : 0;
 }
+
+/** Nombre corto de aerolínea para etiquetas compactas de los mini-gráficos. */
+export function shortAirline(a: string): string {
+  return a
+    .replace(/\s*Airlines?\b/i, "")
+    .replace(/^Aerovías\s+/i, "")
+    .replace(/\s+de Aviación$/i, "")
+    .trim();
+}

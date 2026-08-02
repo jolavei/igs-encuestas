@@ -10,13 +10,14 @@ import {
   AIRPORTS,
   PROCESOS,
   metaFor,
+  hasAirline,
   seasonOf,
   ymLabel,
   type Periodo,
   type Proceso,
   type Fase,
 } from "@/lib/dashboardTiempos";
-import { queryTiempos } from "@/lib/reports/tiemposQuery";
+import { queryTiempos, queryTiemposByAirline, type AirlineSerieRow } from "@/lib/reports/tiemposQuery";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -115,13 +116,23 @@ export async function listReportAirports(month: string): Promise<ReportAirportLi
 
 export type AsqRouteRow = { airlineDestination: string; target: number; collected: number };
 
+export type ReportAirlineBreakdown = {
+  airline: string;
+  meta: number | null; // Estándar IATA de esa aerolínea (Check in: quiosco 5 / counter 20)
+  monthProm: number | null; // promedio del mes
+  monthN: number; // mediciones del mes
+  series: { ym: string; label: string; prom: number | null }[]; // evolutivo del promedio
+};
+
 export type ReportProcess = {
   proceso: Proceso;
   fase: Fase | null;
+  faseLabel: string | null; // "Espera 1ª maleta" / "Última maleta" (solo Retiro)
   meta: number | null; // Estándar IATA (min)
   kpi: { n: number; prom: number; med: number; p90: number }; // del mes
   margin: number | null; // meta - prom (min); null si el proceso no tiene estándar
   series: { ym: string; label: string; prom: number | null; med: number | null; p90: number | null }[];
+  byAirline: ReportAirlineBreakdown[]; // vacío si el proceso no distingue aerolínea
 };
 
 export type MonthlyReport = {
@@ -204,28 +215,44 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
   }
 
   // Tiempos: sólo si el aeropuerto tiene equivalente en AIRPORTS (dato en BigQuery).
-  // Se consultan los procesos en paralelo; el informe sólo usa la serie mensual.
+  // Se consultan todos los procesos/fases en paralelo; el informe usa la serie mensual
+  // + (Check in / Retiro) el desglose por aerolínea.
   const seasonMonths = monthsOfSeason(season);
+  // Retiro se informa en 2 fases: espera 1ª maleta y última maleta (descarga de correa).
+  const jobs: { proceso: Proceso; fase: Fase | null; faseLabel: string | null }[] = [];
+  for (const proceso of PROCESOS) {
+    if (proceso === "Retiro de equipajes") {
+      jobs.push({ proceso, fase: "espera", faseLabel: "Espera 1ª maleta" });
+      jobs.push({ proceso, fase: "descarga", faseLabel: "Última maleta" });
+    } else {
+      jobs.push({ proceso, fase: null, faseLabel: null });
+    }
+  }
+
   let processes: ReportProcess[] = [];
   let bqError: string | null = null;
   if (ap) {
     try {
       const results = await Promise.all(
-        PROCESOS.map(async (proceso) => {
-          const fase: Fase | null = proceso === "Retiro de equipajes" ? "espera" : null;
-          const { series } = await queryTiempos({
-            proceso,
-            airport: ap.name,
-            desde: season.from,
-            hasta: season.to,
-            fase: fase ?? undefined,
-            seriesOnly: true,
-          });
-          const monthEntry = series.find((s) => s.ym === month);
+        jobs.map(async ({ proceso, fase, faseLabel }) => {
+          const [main, airlineRows] = await Promise.all([
+            queryTiempos({
+              proceso,
+              airport: ap.name,
+              desde: season.from,
+              hasta: season.to,
+              fase: fase ?? undefined,
+              seriesOnly: true,
+            }),
+            hasAirline(proceso)
+              ? queryTiemposByAirline({ proceso, airport: ap.name, desde: season.from, hasta: season.to, fase: fase ?? undefined })
+              : Promise.resolve([] as AirlineSerieRow[]),
+          ]);
+          const monthEntry = main.series.find((s) => s.ym === month);
           if (!monthEntry || monthEntry.n <= 0) return null; // sólo procesos con actividad en el mes
 
           const meta = metaFor(proceso, "Todas");
-          const byYm = new Map(series.map((s) => [s.ym, s]));
+          const byYm = new Map(main.series.map((s) => [s.ym, s]));
           const evol = seasonMonths.map((ym) => {
             const s = byYm.get(ym);
             return {
@@ -237,18 +264,38 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
             };
           });
 
+          // Desglose por aerolínea (promedio mensual), sólo aerolíneas con datos en el mes.
+          const byAirlineMap = new Map<string, Map<string, number>>();
+          for (const r of airlineRows) {
+            if (!byAirlineMap.has(r.airline)) byAirlineMap.set(r.airline, new Map());
+            byAirlineMap.get(r.airline)!.set(r.ym, r.prom);
+          }
+          const airlineMonthN = new Map<string, number>();
+          for (const r of airlineRows) if (r.ym === month) airlineMonthN.set(r.airline, r.n);
+          const byAirline: ReportAirlineBreakdown[] = [...byAirlineMap.entries()]
+            .map(([airline, m]) => ({
+              airline,
+              meta: metaFor(proceso, airline),
+              monthProm: m.get(month) ?? null,
+              monthN: airlineMonthN.get(airline) ?? 0,
+              series: seasonMonths.map((ym) => ({ ym, label: ymLabel(ym), prom: m.get(ym) ?? null })),
+            }))
+            .filter((x) => x.monthN > 0)
+            .sort((a, b) => b.monthN - a.monthN);
+
           const rp: ReportProcess = {
             proceso,
             fase,
+            faseLabel,
             meta,
             kpi: { n: monthEntry.n, prom: monthEntry.prom, med: monthEntry.med, p90: monthEntry.p90 },
             margin: meta != null ? meta - monthEntry.prom : null,
             series: evol,
+            byAirline,
           };
           return rp;
         })
       );
-      // Mantiene el orden de PROCESOS y descarta los sin datos.
       processes = results.filter((r): r is ReportProcess => r !== null);
     } catch (e) {
       if (e instanceof BigQueryCredentialsError) bqError = e.message;

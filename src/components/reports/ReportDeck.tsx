@@ -12,7 +12,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
-import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct } from "@/lib/reports/design";
+import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct, shortAirline } from "@/lib/reports/design";
 
 // Datos serializables que arma la página (server). Estructuralmente compatible
 // con MonthlyReport de src/lib/reports/monthlyReport.ts.
@@ -33,10 +33,18 @@ export type DeckData = {
   processes: {
     proceso: string;
     fase: string | null;
+    faseLabel: string | null;
     meta: number | null;
     kpi: { n: number; prom: number; med: number; p90: number };
     margin: number | null;
     series: { label: string; prom: number | null; med: number | null; p90: number | null }[];
+    byAirline: {
+      airline: string;
+      meta: number | null;
+      monthProm: number | null;
+      monthN: number;
+      series: { label: string; prom: number | null }[];
+    }[];
   }[];
   bqError: string | null;
 };
@@ -115,7 +123,7 @@ export default function ReportDeck({ data }: { data: DeckData }) {
           </Frame>
         ) : (
           data.processes.map((p) => (
-            <Frame key={p.proceso} scale={scale}>
+            <Frame key={`${p.proceso}-${p.fase ?? ""}`} scale={scale}>
               <ProcesoSlide data={data} p={p} />
             </Frame>
           ))
@@ -123,7 +131,7 @@ export default function ReportDeck({ data }: { data: DeckData }) {
 
         {/* Cierre */}
         <Frame scale={scale}>
-          <Closing />
+          <Closing data={data} />
         </Frame>
       </div>
     </div>
@@ -145,29 +153,62 @@ function Frame({ scale, children }: { scale: number; children: React.ReactNode }
 }
 
 /* ---------- Slides ---------- */
-function Logo() {
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src="/logo.png" alt="Aeródromos IGS" style={{ height: 46, width: "auto" }} />;
+const TINT = "5,94,132"; // #055E84 (tinte azul de la portada, referencia AIGS)
+const CLOSE_BG = "8DB0BB"; // teal del cierre (referencia AIGS)
+
+// Logo en la esquina inferior izquierda de las diapositivas de contenido.
+function BottomLogo() {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/logo.png"
+      alt="Aeródromos IGS"
+      style={{ position: "absolute", left: 48, bottom: 20, height: 30, width: "auto", opacity: 0.9 }}
+    />
+  );
 }
 
 function Cover({ data }: { data: DeckData }) {
   return (
-    <div style={{ position: "absolute", inset: 0, padding: 72, color: hx(AIGS.ink) }}>
-      <div style={{ position: "absolute", top: 56, left: 72 }}>
-        <Logo />
-      </div>
-      <div style={{ position: "absolute", left: 72, top: 300, right: 72 }}>
-        <Badge color={AIGS.blue}>Informe mensual</Badge>
-        <div style={{ fontSize: 60, lineHeight: 1.02, letterSpacing: "-0.02em", marginTop: 16 }}>
-          {data.airport.name}
+    <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+      {/* Foto de terminal + tinte azul */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/report/terminal.jpg"
+        alt=""
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: `linear-gradient(105deg, rgba(${TINT},0.86) 0%, rgba(${TINT},0.62) 45%, rgba(${TINT},0.30) 100%)`,
+        }}
+      />
+      {/* Logo blanco arriba-derecha */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/report/logo-blanco.png"
+        alt="Aeródromos IGS"
+        style={{ position: "absolute", top: 60, right: 72, height: 66, width: "auto" }}
+      />
+      {/* Título + datos */}
+      <div style={{ position: "absolute", left: 84, top: 250, right: 400, color: "#fff" }}>
+        <div style={{ fontSize: 62, fontWeight: 700, lineHeight: 1.05, letterSpacing: "-0.01em" }}>
+          Informe Mensual
+          <br />
+          Encuestas de
+          <br />
+          Calidad de Servicio
         </div>
-        <div style={{ fontSize: 22, color: hx(AIGS.body), marginTop: 20 }}>{data.airport.companyName}</div>
-        <div style={{ fontSize: 16, color: hx(AIGS.muted), marginTop: 8 }}>
-          Cumplimiento de Encuestas ASQ y mediciones de tiempos · {data.monthLabel}
-        </div>
       </div>
-      <div style={{ position: "absolute", left: 72, bottom: 48, fontSize: 13, color: hx(AIGS.muted) }}>
-        Aeródromos IGS · {data.monthLabel}
+      <div style={{ position: "absolute", left: 84, top: 560, right: 84, color: "#fff" }}>
+        <div style={{ fontSize: 24, fontWeight: 600 }}>{data.airport.name}</div>
+        <div style={{ fontSize: 20, marginTop: 4, opacity: 0.95 }}>{data.monthLabel}</div>
+        <div style={{ width: 360, height: 2, background: "rgba(255,255,255,0.8)", margin: "22px 0 14px" }} />
+        <div style={{ fontSize: 14, letterSpacing: "0.02em", opacity: 0.95 }}>
+          Elaborado por AERÓDROMOS.IGS
+        </div>
       </div>
     </div>
   );
@@ -176,9 +217,6 @@ function Cover({ data }: { data: DeckData }) {
 function Section({ module, title }: { module: string; title: string }) {
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <div style={{ position: "absolute", top: 56, left: 72 }}>
-        <Logo />
-      </div>
       <div style={{ position: "absolute", left: 72, top: 300, right: 72 }}>
         <div
           style={{
@@ -193,6 +231,7 @@ function Section({ module, title }: { module: string; title: string }) {
         </div>
         <div style={{ fontSize: 52, letterSpacing: "-0.02em", color: hx(AIGS.ink), marginTop: 10 }}>{title}</div>
       </div>
+      <BottomLogo />
     </div>
   );
 }
@@ -305,19 +344,19 @@ function AsqSlide({ data }: { data: DeckData }) {
           </table>
         </div>
       )}
+      <BottomLogo />
     </div>
   );
 }
 
 function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][number] }) {
   const marginOk = p.margin != null && p.margin >= 0;
-  const faseTxt = p.fase ? " · espera 1ª maleta" : "";
+  const title = `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}`;
+  const hasMini = p.byAirline.length > 0;
+  const cols = Math.min(p.byAirline.length, 6);
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead
-        title={`Mediciones de tiempos — ${p.proceso}`}
-        subtitle={`${data.airport.short ?? data.airport.name}${faseTxt} · ${data.monthLabel}`}
-      />
+      <SlideHead title={title} subtitle={`${data.airport.short ?? data.airport.name} · ${data.monthLabel}`} />
       <div style={{ position: "absolute", top: 150, left: 72, right: 72 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
           <Kpi label="Promedio" value={fmtMMSS(p.kpi.prom)} sub="mm:ss" />
@@ -338,17 +377,85 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
         </div>
       </div>
 
-      <div style={{ position: "absolute", top: 410, left: 72, right: 72, bottom: 56 }}>
+      {/* Evolutivo principal (más chico si hay desglose por aerolínea) */}
+      <div
+        style={
+          hasMini
+            ? { position: "absolute", top: 292, left: 72, right: 72 }
+            : { position: "absolute", top: 410, left: 72, right: 72, bottom: 56 }
+        }
+      >
         <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 6 }}>
           Evolutivo — distribución (mm:ss)
         </div>
-        <ProcesoChart p={p} />
+        <ProcesoChart p={p} height={hasMini ? 150 : 200} />
+      </div>
+
+      {/* Mini-gráficos por aerolínea (Check in / Retiro) */}
+      {hasMini && (
+        <div style={{ position: "absolute", top: 500, left: 72, right: 72, bottom: 74 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 6 }}>
+            Promedio por aerolínea (mm:ss)
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 12 }}>
+            {p.byAirline.slice(0, 6).map((a) => (
+              <MiniAirlineChart key={a.airline} a={a} />
+            ))}
+          </div>
+        </div>
+      )}
+      <BottomLogo />
+    </div>
+  );
+}
+
+function MiniAirlineChart({ a }: { a: DeckData["processes"][number]["byAirline"][number] }) {
+  const chartData = a.series.map((s) => ({ label: s.label, prom: s.prom }));
+  const ok = a.meta != null && a.monthProm != null ? a.monthProm <= a.meta : null;
+  const valColor = ok == null ? AIGS.blue : ok ? AIGS.up : AIGS.down;
+  return (
+    <div
+      style={{
+        border: `1px solid ${hx(AIGS.hairline)}`,
+        borderRadius: 10,
+        background: "#fff",
+        padding: "8px 10px",
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: hx(AIGS.ink),
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {shortAirline(a.airline)}
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <span style={{ fontFamily: FONT.mono, fontSize: 18, fontWeight: 700, color: hx(valColor) }}>
+          {fmtMMSS(a.monthProm)}
+        </span>
+        <span style={{ fontSize: 10, color: hx(AIGS.muted) }}>n={a.monthN}</span>
+      </div>
+      <div style={{ height: 58, marginTop: 2 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={chartData} margin={{ top: 4, right: 2, bottom: 0, left: 2 }}>
+            <YAxis hide domain={[0, "auto"]} />
+            <XAxis dataKey="label" hide />
+            {a.meta != null && <ReferenceLine y={a.meta} stroke={hx(SERIES.meta)} strokeDasharray="3 3" strokeWidth={1} />}
+            <Line type="monotone" dataKey="prom" stroke={hx(SERIES.prom)} strokeWidth={1.75} dot={false} isAnimationActive={false} connectNulls />
+          </ComposedChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );
 }
 
-function ProcesoChart({ p }: { p: DeckData["processes"][number] }) {
+function ProcesoChart({ p, height = 200 }: { p: DeckData["processes"][number]; height?: number }) {
   const chartData = p.series.map((s) => ({
     label: s.label,
     prom: s.prom,
@@ -357,7 +464,7 @@ function ProcesoChart({ p }: { p: DeckData["processes"][number] }) {
     bandDelta: s.med != null && s.p90 != null ? Math.max(0, s.p90 - s.med) : null,
   }));
   return (
-    <ResponsiveContainer width="100%" height={200}>
+    <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={chartData} margin={{ top: 6, right: 16, bottom: 4, left: 8 }}>
         <CartesianGrid stroke="#eef2f6" vertical={false} />
         <XAxis dataKey="label" tick={{ fill: hx(AIGS.muted), fontSize: 12 }} tickLine={false} axisLine={{ stroke: hx(AIGS.hairline) }} />
@@ -397,49 +504,45 @@ function EmptyTiempos({ data }: { data: DeckData }) {
           ? "No se pudieron leer las mediciones de tiempos (credenciales de BigQuery)."
           : "Sin mediciones de tiempos registradas para este mes."}
       </Centered>
+      <BottomLogo />
     </div>
   );
 }
 
-function Closing() {
+function Closing({ data }: { data: DeckData }) {
+  const year = data.month.slice(0, 4);
   return (
-    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <div style={{ position: "absolute", top: 56, left: 72 }}>
-        <Logo />
-      </div>
-      <div style={{ position: "absolute", left: 72, top: 320, right: 72 }}>
-        <div style={{ fontSize: 64, letterSpacing: "-0.03em", color: hx(AIGS.ink) }}>Gracias</div>
-        <div style={{ fontSize: 16, color: hx(AIGS.body), marginTop: 18 }}>
-          Consultas y detalle del levantamiento a disposición.
-        </div>
-        <div style={{ fontSize: 14, color: hx(AIGS.muted), marginTop: 6 }}>
-          jolave@aerodromosigs.cl · aerodromosigs.cl
-        </div>
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: hx(CLOSE_BG),
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/report/logo-blanco.png" alt="Aeródromos IGS" style={{ height: 168, width: "auto" }} />
+      <div
+        style={{
+          position: "absolute",
+          bottom: 110,
+          left: 0,
+          right: 0,
+          textAlign: "center",
+          color: "#fff",
+          fontSize: 18,
+          letterSpacing: "0.01em",
+        }}
+      >
+        contacto@aerodromosigs.cl&nbsp;&nbsp;|&nbsp;&nbsp;Copyright © {year}&nbsp;&nbsp;|&nbsp;&nbsp;Aeródromos IGS
       </div>
     </div>
   );
 }
 
 /* ---------- Piezas ---------- */
-function Badge({ children, color }: { children: React.ReactNode; color: string }) {
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        background: hx(AIGS.surfaceStrong),
-        color: hx(color),
-        fontSize: 12,
-        fontWeight: 700,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        padding: "6px 14px",
-        borderRadius: 999,
-      }}
-    >
-      {children}
-    </span>
-  );
-}
 
 function Kpi({
   label,

@@ -134,3 +134,42 @@ export async function queryTiempos(p: TiemposQueryParams): Promise<TiemposQueryR
 
   return { byAirport, series, seasons };
 }
+
+export type AirlineSerieRow = { airline: string; ym: string; n: number; prom: number };
+
+/**
+ * Serie mensual del PROMEDIO por aerolínea (una consulta agrupada), para los
+ * mini-gráficos por aerolínea de Check in / Retiro. `airlineCol` = checkin_airline
+ * (Check in) o baggage_claim_airline (Retiro).
+ */
+export async function queryTiemposByAirline(p: {
+  proceso: Proceso;
+  airport: string;
+  desde: string;
+  hasta: string;
+  fase?: Fase;
+}): Promise<AirlineSerieRow[]> {
+  const { proceso, airport, desde, hasta, fase } = p;
+  const durExpr =
+    proceso === "Retiro de equipajes" ? DUR_RETIRO[hasFase(proceso) ? fase ?? "espera" : "espera"] : DUR[proceso];
+  const airlineCol = proceso === "Check in" ? "checkin_airline" : "baggage_claim_airline";
+  const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
+
+  const sql = `
+    SELECT airline, FORMAT_TIMESTAMP('%Y-%m', responded_at, 'America/Santiago') AS ym,
+      COUNT(*) AS n, AVG(dur) AS prom
+    FROM (
+      SELECT ${airlineCol} AS airline, responded_at, ${durExpr} AS dur
+      FROM ${table}
+      WHERE process = @proceso
+        AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)
+        AND location_name = @airport
+        AND ${airlineCol} IS NOT NULL AND ${airlineCol} != ''
+    )
+    WHERE dur > 0 AND dur <= @cap
+    GROUP BY airline, ym
+    ORDER BY airline, ym`;
+
+  const rows = await bqQuery<Record<string, unknown>>(sql, { proceso, desde, hasta, airport, cap: CAP_MIN });
+  return rows.map((r) => ({ airline: String(r.airline), ym: String(r.ym), n: num(r.n), prom: num(r.prom) }));
+}
