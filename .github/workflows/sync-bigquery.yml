@@ -52,6 +52,7 @@ jobs:
       - name: Ejecutar Dataform
         env:
           TOKEN: ${{ steps.auth.outputs.access_token }}
+          SA_KEY: ${{ secrets.GCP_SA_KEY }}
           PROJECT: ${{ secrets.GCP_PROJECT_ID }}
           REGION: us-central1
           REPO: igs-encuestas
@@ -61,6 +62,10 @@ jobs:
           BASE="https://dataform.googleapis.com/v1beta1"
           API="$BASE/projects/$PROJECT/locations/$REGION/repositories/$REPO"
           auth=(-H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json")
+
+          # El proyecto exige declarar la cuenta de servicio con la que corre la
+          # invocación ("strict act as checks"). Reusamos la del sync (ya tiene BQ).
+          SA_EMAIL=$(echo "$SA_KEY" | jq -r '.client_email')
 
           # 1. Compila la rama por defecto (lo que esté commiteado, no el workspace).
           COMP_RESP=$(curl -sS -X POST "$API/compilationResults" "${auth[@]}" \
@@ -87,7 +92,7 @@ jobs:
 
           # 2. Ejecuta solo las acciones etiquetadas 'encuestas' (+ sus dependencias).
           INV_RESP=$(curl -sS -X POST "$API/workflowInvocations" "${auth[@]}" \
-            -d "{\"compilationResult\":\"$COMPILATION\",\"invocationConfig\":{\"includedTags\":[\"encuestas\"],\"transitiveDependenciesIncluded\":true}}")
+            -d "{\"compilationResult\":\"$COMPILATION\",\"invocationConfig\":{\"includedTags\":[\"encuestas\"],\"transitiveDependenciesIncluded\":true,\"serviceAccount\":\"$SA_EMAIL\"}}")
           INVOCATION=$(echo "$INV_RESP" | jq -r '.name // empty')
           if [ -z "$INVOCATION" ]; then
             echo "No se pudo crear la invocación. Respuesta:"
