@@ -131,7 +131,7 @@ export default function ReportDeck({ data }: { data: DeckData }) {
 
         {/* Cierre */}
         <Frame scale={scale}>
-          <Closing data={data} />
+          <Closing />
         </Frame>
       </div>
     </div>
@@ -153,8 +153,6 @@ function Frame({ scale, children }: { scale: number; children: React.ReactNode }
 }
 
 /* ---------- Slides ---------- */
-const TINT = "5,94,132"; // #055E84 (tinte azul de la portada, referencia AIGS)
-const CLOSE_BG = "8DB0BB"; // teal del cierre (referencia AIGS)
 
 // Logo en la esquina inferior izquierda de las diapositivas de contenido.
 function BottomLogo() {
@@ -168,47 +166,29 @@ function BottomLogo() {
   );
 }
 
+function Logo() {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/logo.png" alt="Aeródromos IGS" style={{ height: 46, width: "auto" }} />;
+}
+
 function Cover({ data }: { data: DeckData }) {
   return (
-    <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-      {/* Foto de terminal + tinte azul */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/report/terminal.jpg"
-        alt=""
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: `linear-gradient(105deg, rgba(${TINT},0.86) 0%, rgba(${TINT},0.62) 45%, rgba(${TINT},0.30) 100%)`,
-        }}
-      />
-      {/* Logo blanco arriba-derecha */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/report/logo-blanco.png"
-        alt="Aeródromos IGS"
-        style={{ position: "absolute", top: 60, right: 72, height: 66, width: "auto" }}
-      />
-      {/* Título + datos */}
-      <div style={{ position: "absolute", left: 84, top: 250, right: 400, color: "#fff" }}>
-        <div style={{ fontSize: 62, fontWeight: 700, lineHeight: 1.05, letterSpacing: "-0.01em" }}>
-          Informe Mensual
-          <br />
-          Encuestas de
-          <br />
-          Calidad de Servicio
+    <div style={{ position: "absolute", inset: 0, padding: 72, color: hx(AIGS.ink) }}>
+      <div style={{ position: "absolute", top: 56, left: 72 }}>
+        <Logo />
+      </div>
+      <div style={{ position: "absolute", left: 72, top: 300, right: 72 }}>
+        <Badge color={AIGS.blue}>Informe mensual</Badge>
+        <div style={{ fontSize: 60, lineHeight: 1.02, letterSpacing: "-0.02em", marginTop: 16 }}>
+          {data.airport.name}
+        </div>
+        <div style={{ fontSize: 22, color: hx(AIGS.body), marginTop: 20 }}>{data.airport.companyName}</div>
+        <div style={{ fontSize: 16, color: hx(AIGS.muted), marginTop: 8 }}>
+          Cumplimiento de Encuestas ASQ y mediciones de tiempos · {data.monthLabel}
         </div>
       </div>
-      <div style={{ position: "absolute", left: 84, top: 560, right: 84, color: "#fff" }}>
-        <div style={{ fontSize: 24, fontWeight: 600 }}>{data.airport.name}</div>
-        <div style={{ fontSize: 20, marginTop: 4, opacity: 0.95 }}>{data.monthLabel}</div>
-        <div style={{ width: 360, height: 2, background: "rgba(255,255,255,0.8)", margin: "22px 0 14px" }} />
-        <div style={{ fontSize: 14, letterSpacing: "0.02em", opacity: 0.95 }}>
-          Elaborado por AERÓDROMOS.IGS
-        </div>
+      <div style={{ position: "absolute", left: 72, bottom: 48, fontSize: 13, color: hx(AIGS.muted) }}>
+        Aeródromos IGS · {data.monthLabel}
       </div>
     </div>
   );
@@ -509,40 +489,45 @@ function EmptyTiempos({ data }: { data: DeckData }) {
   );
 }
 
-function Closing({ data }: { data: DeckData }) {
-  const year = data.month.slice(0, 4);
+function Closing() {
   return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        background: hx(CLOSE_BG),
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/report/logo-blanco.png" alt="Aeródromos IGS" style={{ height: 168, width: "auto" }} />
-      <div
-        style={{
-          position: "absolute",
-          bottom: 110,
-          left: 0,
-          right: 0,
-          textAlign: "center",
-          color: "#fff",
-          fontSize: 18,
-          letterSpacing: "0.01em",
-        }}
-      >
-        contacto@aerodromosigs.cl&nbsp;&nbsp;|&nbsp;&nbsp;Copyright © {year}&nbsp;&nbsp;|&nbsp;&nbsp;Aeródromos IGS
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <div style={{ position: "absolute", top: 56, left: 72 }}>
+        <Logo />
+      </div>
+      <div style={{ position: "absolute", left: 72, top: 320, right: 72 }}>
+        <div style={{ fontSize: 64, letterSpacing: "-0.03em", color: hx(AIGS.ink) }}>Gracias</div>
+        <div style={{ fontSize: 16, color: hx(AIGS.body), marginTop: 18 }}>
+          Consultas y detalle del levantamiento a disposición.
+        </div>
+        <div style={{ fontSize: 14, color: hx(AIGS.muted), marginTop: 6 }}>
+          jolave@aerodromosigs.cl · aerodromosigs.cl
+        </div>
       </div>
     </div>
   );
 }
 
 /* ---------- Piezas ---------- */
+function Badge({ children, color }: { children: React.ReactNode; color: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        background: hx(AIGS.surfaceStrong),
+        color: hx(color),
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        padding: "6px 14px",
+        borderRadius: 999,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
 
 function Kpi({
   label,

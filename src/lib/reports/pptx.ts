@@ -1,10 +1,9 @@
-// Generador del PPTX editable del informe mensual. Portada y cierre siguen la
-// referencia "Informe Mensual Calidad de Servicio" (foto de terminal + tinte /
-// cierre teal); el resto usa los tokens AIGS con charts nativos.
+// Generador del PPTX editable del informe mensual. Usa los tokens AIGS con charts
+// nativos (portada/cierre sobrios con logo + badge, sin foto de fondo).
 // Server-only (runtime nodejs). Import dinámico para no forzar el bundle.
 
 import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, shortAirline } from "@/lib/reports/design";
-import { LOGO_DATA_URI, LOGO_WHITE_DATA_URI, TERMINAL_DATA_URI } from "@/lib/reports/assets";
+import { LOGO_DATA_URI } from "@/lib/reports/assets";
 import type { MonthlyReport, ReportProcess, ReportAirlineBreakdown } from "@/lib/reports/monthlyReport";
 
 // Lienzo del template: 20" × 11.25" (16:9).
@@ -12,8 +11,6 @@ const W = 20;
 const H = 11.25;
 const MX = 1.1; // margen lateral
 const CONTENT_W = W - MX * 2;
-const TINT = "055E84"; // tinte azul de la portada (referencia AIGS)
-const CLOSE_BG = "8DB0BB"; // teal del cierre (referencia AIGS)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Slide = any;
@@ -25,6 +22,38 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 /** Logo en la esquina inferior izquierda de las diapositivas de contenido. */
 function addBottomLogo(slide: Slide) {
   slide.addImage({ data: LOGO_DATA_URI, x: MX, y: H - 0.7, w: 1.7, h: 0.5, sizing: { type: "contain", w: 1.7, h: 0.5 } });
+}
+
+/** Logo (superior) para portada y cierre. */
+function addLogo(slide: Slide, x = MX, y = 0.7) {
+  slide.addImage({ data: LOGO_DATA_URI, x, y, w: 2.0, h: 0.75, sizing: { type: "contain", w: 2.0, h: 0.75 } });
+}
+
+function addBadge(slide: Slide, pres: Pptx, text: string, x: number, y: number, color: string = AIGS.ink) {
+  const w = 0.16 * text.length + 0.5;
+  slide.addShape(pres.ShapeType.roundRect, {
+    x,
+    y,
+    w,
+    h: 0.42,
+    fill: { color: AIGS.surfaceStrong },
+    line: { type: "none" },
+    rectRadius: 0.21,
+  });
+  slide.addText(text.toUpperCase(), {
+    x,
+    y,
+    w,
+    h: 0.42,
+    align: "center",
+    valign: "middle",
+    fontFace: FONT.face,
+    fontSize: 11,
+    bold: true,
+    color,
+    charSpacing: 1,
+    margin: 0,
+  });
 }
 
 // --- KPI callout ------------------------------------------------------------
@@ -124,37 +153,38 @@ function slideTitle(s: Slide, title: string, subtitle?: string) {
 function coverSlide(pres: Pptx, r: MonthlyReport) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
-  // Foto de terminal a sangre completa + tinte azul.
-  s.addImage({ data: TERMINAL_DATA_URI, x: 0, y: 0, w: W, h: H, sizing: { type: "cover", w: W, h: H } });
-  s.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: W, h: H, fill: { color: TINT, transparency: 38 }, line: { type: "none" } });
-  // Logo blanco arriba-derecha.
-  s.addImage({ data: LOGO_WHITE_DATA_URI, x: W - 4.2, y: 0.9, w: 3.2, h: 1.0, sizing: { type: "contain", w: 3.2, h: 1.0 } });
-  // Título.
-  s.addText("Informe Mensual\nEncuestas de\nCalidad de Servicio", {
-    x: 1.3,
-    y: 3.3,
-    w: 13,
-    h: 3.6,
+  addLogo(s);
+  addBadge(s, pres, "Informe mensual", MX, 4.3, AIGS.blue);
+  s.addText(r.airport.name, {
+    x: MX,
+    y: 4.9,
+    w: CONTENT_W,
+    h: 1.6,
     fontFace: FONT.face,
-    fontSize: 50,
-    bold: true,
-    color: AIGS.white,
+    fontSize: 54,
+    bold: false,
+    color: AIGS.ink,
     charSpacing: -0.5,
-    lineSpacingMultiple: 1.05,
     margin: 0,
   });
-  s.addText(r.airport.name, { x: 1.3, y: 8.2, w: 15, h: 0.6, fontFace: FONT.face, fontSize: 22, bold: true, color: AIGS.white, margin: 0 });
-  s.addText(r.monthLabel, { x: 1.3, y: 8.8, w: 15, h: 0.5, fontFace: FONT.face, fontSize: 18, color: AIGS.white, margin: 0 });
-  s.addShape(pres.ShapeType.rect, { x: 1.35, y: 9.55, w: 5.6, h: 0.03, fill: { color: AIGS.white }, line: { type: "none" } });
-  s.addText("Elaborado por AERÓDROMOS.IGS", {
-    x: 1.3,
-    y: 9.7,
-    w: 15,
+  s.addText(
+    [
+      { text: r.airport.companyName + "\n", options: { fontSize: 22, color: AIGS.body } },
+      {
+        text: `Cumplimiento de Encuestas ASQ y mediciones de tiempos · ${r.monthLabel}`,
+        options: { fontSize: 16, color: AIGS.muted },
+      },
+    ],
+    { x: MX, y: 6.6, w: CONTENT_W, h: 1.4, fontFace: FONT.face, margin: 0, lineSpacingMultiple: 1.2 }
+  );
+  s.addText(`Aeródromos IGS · ${r.monthLabel}`, {
+    x: MX,
+    y: H - 1.1,
+    w: CONTENT_W,
     h: 0.4,
     fontFace: FONT.face,
-    fontSize: 13,
-    color: AIGS.white,
-    charSpacing: 0.5,
+    fontSize: 12,
+    color: AIGS.muted,
     margin: 0,
   });
 }
@@ -444,29 +474,28 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   addBottomLogo(s);
 }
 
-function closingSlide(pres: Pptx, r: MonthlyReport) {
+function closingSlide(pres: Pptx) {
   const s = pres.addSlide();
-  s.background = { color: CLOSE_BG };
-  s.addImage({
-    data: LOGO_WHITE_DATA_URI,
-    x: (W - 5) / 2,
-    y: 3.6,
-    w: 5,
-    h: 2.5,
-    sizing: { type: "contain", w: 5, h: 2.5 },
-  });
-  const year = r.month.slice(0, 4);
-  s.addText(`contacto@aerodromosigs.cl     |     Copyright © ${year}     |     Aeródromos IGS`, {
-    x: 0,
-    y: 8.4,
-    w: W,
-    h: 0.5,
-    align: "center",
+  s.background = { color: AIGS.white };
+  addLogo(s);
+  s.addText("Gracias", {
+    x: MX,
+    y: 4.6,
+    w: CONTENT_W,
+    h: 1.4,
     fontFace: FONT.face,
-    fontSize: 15,
-    color: AIGS.white,
+    fontSize: 60,
+    color: AIGS.ink,
+    charSpacing: -1,
     margin: 0,
   });
+  s.addText(
+    [
+      { text: "Consultas y detalle del levantamiento a disposición.\n", options: { fontSize: 16, color: AIGS.body } },
+      { text: "jolave@aerodromosigs.cl · aerodromosigs.cl", options: { fontSize: 14, color: AIGS.muted } },
+    ],
+    { x: MX, y: 6.2, w: CONTENT_W, h: 1.2, fontFace: FONT.face, margin: 0, lineSpacingMultiple: 1.3 }
+  );
 }
 
 /** Construye el deck completo y devuelve los bytes del .pptx. */
@@ -499,7 +528,7 @@ export async function buildDeck(r: MonthlyReport): Promise<Uint8Array> {
     for (const p of r.processes) procesoSlide(pres, r, p);
   }
 
-  closingSlide(pres, r);
+  closingSlide(pres);
 
   const out = (await pres.write({ outputType: "nodebuffer" })) as Uint8Array;
   return out;
