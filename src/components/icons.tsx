@@ -27,7 +27,8 @@ export type IconName =
   | "workplan"
   | "dashboard"
   | "documents"
-  | "compliance";
+  | "compliance"
+  | "report";
 
 export const HomeIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
@@ -101,6 +102,15 @@ export const DashboardIcon = (p: SVGProps<SVGSVGElement>) => (
 export const ComplianceIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path d="M17.8 19.2 16 11l3.5-3.5a2.12 2.12 0 0 0-3-3L13 8 4.8 6.2a1 1 0 0 0-.9 1.7l4.4 3.1-2 2H3.5a1 1 0 0 0-.7 1.7l2.5 2.5 2.5 2.5a1 1 0 0 0 1.7-.7v-1.8l2-2 3.1 4.4a1 1 0 0 0 1.7-.9z" />
+  </Svg>
+);
+
+// Informes (diapositiva con barras)
+export const ReportIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="13" rx="2" />
+    <path d="M3 20h18" />
+    <path d="M8 13v-2M12 13V9M16 13v-4" />
   </Svg>
 );
 
@@ -190,4 +200,5 @@ export const NAV_ICONS: Record<IconName, (p: SVGProps<SVGSVGElement>) => JSX.Ele
   dashboard: DashboardIcon,
   documents: DocsIcon,
   compliance: ComplianceIcon,
+  report: ReportIcon,
 };

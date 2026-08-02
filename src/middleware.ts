@@ -12,6 +12,7 @@ export default withAuth(
 
     if (
       needs("/admin", ["ADMIN"]) ||
+      needs("/informe", ["ADMIN"]) ||
       needs("/encuestador", ["ADMIN", "SURVEYOR"]) ||
       needs("/cliente", ["ADMIN", "CLIENT"])
     ) {
@@ -27,6 +28,7 @@ export default withAuth(
 
 // Rutas que requieren sesion. Publicas quedan fuera: /, /login, /s/*, /api/public/*, /api/auth/*
 // /perfil no exige rol: cualquier usuario autenticado ve su propio perfil.
+// /informe/* (vista imprimible del informe mensual) es solo ADMIN.
 export const config = {
-  matcher: ["/admin/:path*", "/encuestador/:path*", "/cliente/:path*", "/perfil/:path*"],
+  matcher: ["/admin/:path*", "/informe/:path*", "/encuestador/:path*", "/cliente/:path*", "/perfil/:path*"],
 };
