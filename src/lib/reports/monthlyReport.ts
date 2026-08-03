@@ -18,6 +18,7 @@ import {
   type Fase,
 } from "@/lib/dashboardTiempos";
 import { queryTiempos, queryTiemposByAirline, type AirlineSerieRow } from "@/lib/reports/tiemposQuery";
+import { shortAirline } from "@/lib/reports/design";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -118,19 +119,23 @@ export type AsqRouteRow = { airlineDestination: string; target: number; collecte
 
 export type ReportAirlineBreakdown = {
   airline: string;
+  label: string; // etiqueta a mostrar (Check in: nombre corto; Retiro: nombre completo)
   meta: number | null; // Estándar IATA de esa aerolínea (Check in: quiosco 5 / counter 20)
   monthProm: number | null; // promedio del mes
   monthN: number; // mediciones del mes
   series: { ym: string; label: string; prom: number | null }[]; // evolutivo del promedio
 };
 
+export type TiempoAgg = { n: number; prom: number; med: number; p90: number };
+
 export type ReportProcess = {
   proceso: Proceso;
   fase: Fase | null;
   faseLabel: string | null; // "Espera 1ª maleta" / "Última maleta" (solo Retiro)
   meta: number | null; // Estándar IATA (min)
-  kpi: { n: number; prom: number; med: number; p90: number }; // del mes
-  margin: number | null; // meta - prom (min); null si el proceso no tiene estándar
+  kpi: TiempoAgg; // del mes
+  kpiSeason: TiempoAgg; // del periodo completo (temporada)
+  margin: number | null; // meta - prom del mes (min); null si el proceso no tiene estándar
   series: { ym: string; label: string; prom: number | null; med: number | null; p90: number | null }[];
   byAirline: ReportAirlineBreakdown[]; // vacío si el proceso no distingue aerolínea
 };
@@ -236,13 +241,15 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
       const results = await Promise.all(
         jobs.map(async ({ proceso, fase, faseLabel }) => {
           const [main, airlineRows] = await Promise.all([
+            // scopeAirports acota byAirport (= agregado del periodo) a este aeropuerto.
             queryTiempos({
               proceso,
               airport: ap.name,
               desde: season.from,
               hasta: season.to,
               fase: fase ?? undefined,
-              seriesOnly: true,
+              scopeAirports: [ap.name],
+              skipSeasons: true,
             }),
             hasAirline(proceso)
               ? queryTiemposByAirline({ proceso, airport: ap.name, desde: season.from, hasta: season.to, fase: fase ?? undefined })
@@ -250,6 +257,11 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
           ]);
           const monthEntry = main.series.find((s) => s.ym === month);
           if (!monthEntry || monthEntry.n <= 0) return null; // sólo procesos con actividad en el mes
+
+          const agg = main.byAirport.find((r) => r.name === ap.name);
+          const kpiSeason: TiempoAgg = agg
+            ? { n: agg.n, prom: agg.prom, med: agg.med, p90: agg.p90 }
+            : { n: 0, prom: 0, med: 0, p90: 0 };
 
           const meta = metaFor(proceso, "Todas");
           const byYm = new Map(main.series.map((s) => [s.ym, s]));
@@ -275,6 +287,8 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
           const byAirline: ReportAirlineBreakdown[] = [...byAirlineMap.entries()]
             .map(([airline, m]) => ({
               airline,
+              // Check in muestra el nombre corto (con modalidad); Retiro el nombre completo.
+              label: proceso === "Check in" ? shortAirline(airline) : airline,
               meta: metaFor(proceso, airline),
               monthProm: m.get(month) ?? null,
               monthN: airlineMonthN.get(airline) ?? 0,
@@ -289,6 +303,7 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
             faseLabel,
             meta,
             kpi: { n: monthEntry.n, prom: monthEntry.prom, med: monthEntry.med, p90: monthEntry.p90 },
+            kpiSeason,
             margin: meta != null ? meta - monthEntry.prom : null,
             series: evol,
             byAirline,

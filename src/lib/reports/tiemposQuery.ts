@@ -43,13 +43,16 @@ export type TiemposQueryParams = {
   // Solo la serie mensual (omite byAirport y seasons): usado por el informe, que
   // no necesita el resumen por aeropuerto ni la lista de temporadas.
   seriesOnly?: boolean;
+  // Omite sólo la consulta de temporadas (el informe sí usa byAirport = agregado
+  // del periodo, pero no necesita la lista de temporadas).
+  skipSeasons?: boolean;
 };
 
 export type TiemposQueryResult = { byAirport: Agg[]; series: Serie[]; seasons: Periodo[] };
 
 /** Ejecuta las 3 consultas agregadas (byAirport, series mensual, temporadas con datos). */
 export async function queryTiempos(p: TiemposQueryParams): Promise<TiemposQueryResult> {
-  const { proceso, airport, desde, hasta, fase, airline, scopeAirports, seriesOnly } = p;
+  const { proceso, airport, desde, hasta, fase, airline, scopeAirports, seriesOnly, skipSeasons } = p;
 
   const durExpr =
     proceso === "Retiro de equipajes" ? DUR_RETIRO[hasFase(proceso) ? fase ?? "espera" : "espera"] : DUR[proceso];
@@ -105,7 +108,7 @@ export async function queryTiempos(p: TiemposQueryParams): Promise<TiemposQueryR
   const [byAirportRaw, seriesRaw, seasonsRaw] = await Promise.all([
     seriesOnly ? empty : bqQuery<Record<string, unknown>>(byAirportSql, params),
     bqQuery<Record<string, unknown>>(seriesSql, params),
-    seriesOnly ? empty : bqQuery<Record<string, unknown>>(seasonsSql, { airport }),
+    seriesOnly || skipSeasons ? empty : bqQuery<Record<string, unknown>>(seasonsSql, { airport }),
   ]);
 
   const byAirport: Agg[] = byAirportRaw.map((r) => ({
@@ -152,19 +155,23 @@ export async function queryTiemposByAirline(p: {
   const { proceso, airport, desde, hasta, fase } = p;
   const durExpr =
     proceso === "Retiro de equipajes" ? DUR_RETIRO[hasFase(proceso) ? fase ?? "espera" : "espera"] : DUR[proceso];
-  const airlineCol = proceso === "Check in" ? "checkin_airline" : "baggage_claim_airline";
+  const baseCol = proceso === "Check in" ? "checkin_airline" : "baggage_claim_airline";
+  // En Retiro la aerolínea NO tiene modalidad: se une el sufijo "- Counter/Quiosco"
+  // que arrastra el histórico (LATAM Airlines - Counter -> LATAM Airlines).
+  const airlineExpr =
+    proceso === "Retiro de equipajes" ? `REGEXP_REPLACE(${baseCol}, r' - (Counter|Quiosco)$', '')` : baseCol;
   const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
 
   const sql = `
     SELECT airline, FORMAT_TIMESTAMP('%Y-%m', responded_at, 'America/Santiago') AS ym,
       COUNT(*) AS n, AVG(dur) AS prom
     FROM (
-      SELECT ${airlineCol} AS airline, responded_at, ${durExpr} AS dur
+      SELECT ${airlineExpr} AS airline, responded_at, ${durExpr} AS dur
       FROM ${table}
       WHERE process = @proceso
         AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)
         AND location_name = @airport
-        AND ${airlineCol} IS NOT NULL AND ${airlineCol} != ''
+        AND ${baseCol} IS NOT NULL AND ${baseCol} != ''
     )
     WHERE dur > 0 AND dur <= @cap
     GROUP BY airline, ym

@@ -2,8 +2,8 @@
 // nativos (portada/cierre sobrios con logo + badge, sin foto de fondo).
 // Server-only (runtime nodejs). Import dinámico para no forzar el bundle.
 
-import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, shortAirline } from "@/lib/reports/design";
-import { LOGO_DATA_URI } from "@/lib/reports/assets";
+import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct } from "@/lib/reports/design";
+import { LOGO_DATA_URI, LOGO_TEXT_DATA_URI } from "@/lib/reports/assets";
 import type { MonthlyReport, ReportProcess, ReportAirlineBreakdown } from "@/lib/reports/monthlyReport";
 
 // Lienzo del template: 20" × 11.25" (16:9).
@@ -19,9 +19,21 @@ type Pptx = any;
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
-/** Logo en la esquina inferior izquierda de las diapositivas de contenido. */
+/** Wordmark "AERÓDROMOS.IGS" (solo texto) en la esquina inferior de las diapositivas de contenido. */
 function addBottomLogo(slide: Slide) {
-  slide.addImage({ data: LOGO_DATA_URI, x: MX, y: H - 0.7, w: 1.7, h: 0.5, sizing: { type: "contain", w: 1.7, h: 0.5 } });
+  slide.addImage({ data: LOGO_TEXT_DATA_URI, x: MX, y: H - 0.55, w: 2.0, h: 0.22, sizing: { type: "contain", w: 2.0, h: 0.22 } });
+}
+
+// "Aeropuerto El Loa - Calama" -> "Aeropuerto El Loa, Calama"
+function airportFull(r: MonthlyReport): string {
+  return r.airport.companyName.replace(" - ", ", ");
+}
+
+// Tope "bonito" (minutos) para compartir escala entre el gráfico principal y los mini.
+function niceMax(m: number): number {
+  const steps = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120];
+  const target = Math.max(1, m) * 1.1;
+  return steps.find((s) => s >= target) ?? Math.ceil(target / 30) * 30;
 }
 
 /** Logo (superior) para portada y cierre. */
@@ -224,8 +236,8 @@ function asqSlide(pres: Pptx, r: MonthlyReport) {
   const a = r.asq;
   slideTitle(
     s,
-    "Encuestas ASQ — cumplimiento",
-    a ? `${r.airport.short ?? r.airport.name} · temporada ${a.seasonLabel}` : r.airport.name
+    "Encuestas ACI ASQ",
+    a ? `${airportFull(r)} · ${a.seasonLabel.replace("-", " ")}` : airportFull(r)
   );
 
   if (!a) {
@@ -311,8 +323,17 @@ function asqSlide(pres: Pptx, r: MonthlyReport) {
   addBottomLogo(s);
 }
 
-/** Mini-gráfico de una aerolínea: tarjeta con nombre + promedio del mes + sparkline. */
-function miniAirlineChart(slide: Slide, pres: Pptx, a: ReportAirlineBreakdown, x: number, y: number, w: number, h: number) {
+/** Mini-gráfico de una aerolínea: tarjeta con nombre + promedio del mes + evolutivo con ejes. */
+function miniAirlineChart(
+  slide: Slide,
+  pres: Pptx,
+  a: ReportAirlineBreakdown,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  yMax: number
+) {
   slide.addShape(pres.ShapeType.roundRect, {
     x,
     y,
@@ -322,7 +343,7 @@ function miniAirlineChart(slide: Slide, pres: Pptx, a: ReportAirlineBreakdown, x
     line: { color: AIGS.hairline, width: 0.75 },
     rectRadius: 0.08,
   });
-  slide.addText(shortAirline(a.airline), {
+  slide.addText(a.label, {
     x: x + 0.14,
     y: y + 0.12,
     w: w - 0.28,
@@ -342,7 +363,8 @@ function miniAirlineChart(slide: Slide, pres: Pptx, a: ReportAirlineBreakdown, x
     ],
     { x: x + 0.14, y: y + 0.42, w: w - 0.28, h: 0.34, margin: 0, valign: "middle" }
   );
-  const labels = a.series.map((p) => p.label);
+  // Ejes visibles con la MISMA escala Y (minutos) que el gráfico principal; meses cortos en X.
+  const labels = a.series.map((p) => p.label.split(" ")[0]);
   const series: { name: string; labels: string[]; values: (number | null)[] }[] = [
     { name: "Promedio", labels, values: a.series.map((p) => (p.prom == null ? null : round1(p.prom))) },
   ];
@@ -352,19 +374,24 @@ function miniAirlineChart(slide: Slide, pres: Pptx, a: ReportAirlineBreakdown, x
     colors.push(SERIES.meta);
   }
   slide.addChart(pres.ChartType.line, series, {
-    x: x + 0.08,
+    x: x + 0.06,
     y: y + 0.82,
-    w: w - 0.16,
-    h: h - 0.94,
+    w: w - 0.12,
+    h: h - 0.92,
     chartColors: colors,
     lineSize: 1.75,
     showLegend: false,
     showTitle: false,
     showValue: false,
-    catAxisHidden: true,
-    valAxisHidden: true,
+    catAxisLabelColor: AIGS.muted,
+    catAxisLabelFontFace: FONT.face,
+    catAxisLabelFontSize: 7,
+    valAxisLabelColor: AIGS.muted,
+    valAxisLabelFontFace: FONT.face,
+    valAxisLabelFontSize: 7,
     valAxisMinVal: 0,
-    valGridLine: { style: "none" },
+    valAxisMaxVal: yMax,
+    valGridLine: { color: "F1F5F9", size: 0.5 },
     catGridLine: { style: "none" },
   });
 }
@@ -373,36 +400,38 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
   const title = `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}`;
-  slideTitle(s, title, `${r.airport.short ?? r.airport.name} · ${r.monthLabel}`);
+  slideTitle(s, title, `${airportFull(r)} · ${r.monthLabel}`);
 
   const marginOk = p.margin != null && p.margin >= 0;
+  const seasonMargin = p.meta != null ? p.meta - p.kpiSeason.prom : null;
   const marginCard =
     p.meta == null
       ? { label: "Estándar IATA", value: "—", sub: "sin estándar" }
       : {
           label: "Margen vs Est. IATA",
           value: fmtMMSS(p.margin),
-          sub: `${marginOk ? "bajo" : "sobre"} estándar ${fmtMMSS(p.meta)}`,
+          sub: `Periodo ${fmtMMSS(seasonMargin)}`,
           valueColor: marginOk ? AIGS.up : AIGS.down,
-          subColor: marginOk ? AIGS.up : AIGS.down,
         };
 
+  // KPIs: número del mes en grande + promedio del periodo abajo (pequeño).
   kpiRow(
     s,
     pres,
     [
-      { label: "Promedio", value: fmtMMSS(p.kpi.prom), sub: "mm:ss" },
-      { label: "P90", value: fmtMMSS(p.kpi.p90), sub: "mm:ss" },
-      { label: "Mediana", value: fmtMMSS(p.kpi.med), sub: "mm:ss" },
+      { label: "Promedio", value: fmtMMSS(p.kpi.prom), sub: `Periodo ${fmtMMSS(p.kpiSeason.prom)}` },
+      { label: "P90", value: fmtMMSS(p.kpi.p90), sub: `Periodo ${fmtMMSS(p.kpiSeason.p90)}` },
+      { label: "Mediana", value: fmtMMSS(p.kpi.med), sub: `Periodo ${fmtMMSS(p.kpiSeason.med)}` },
       marginCard,
-      { label: "N° de mediciones", value: fmtInt(p.kpi.n), sub: "en el mes" },
+      { label: "N° de mediciones", value: fmtInt(p.kpi.n), sub: `Periodo ${fmtInt(p.kpiSeason.n)}` },
     ],
     2.1
   );
 
   const hasMini = p.byAirline.length > 0;
+  const yMax = niceMax(Math.max(0, ...p.series.flatMap((x) => [x.prom ?? 0, x.med ?? 0, x.p90 ?? 0]), p.meta ?? 0));
 
-  // Evolutivo principal (más chico si hay desglose por aerolínea).
+  // Evolutivo principal (minutos; misma escala Y que los mini). Legenda abajo.
   const labels = p.series.map((x) => x.label);
   const data: { name: string; labels: string[]; values: (number | null)[] }[] = [
     { name: "Promedio", labels, values: p.series.map((x) => (x.prom == null ? null : round1(x.prom))) },
@@ -448,19 +477,20 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     valAxisLabelFontFace: FONT.face,
     valAxisLabelFontSize: 11,
     valAxisMinVal: 0,
+    valAxisMaxVal: yMax,
     valGridLine: { color: "EEF2F6", size: 0.5 },
     catGridLine: { style: "none" },
   });
 
-  // Mini-gráficos por aerolínea (Check in / Retiro).
+  // Mini-gráficos por aerolínea (Check in / Retiro), misma escala Y que el principal.
   if (hasMini) {
-    s.addText("Promedio por aerolínea (mm:ss)", {
+    s.addText("Promedio por aerolínea (mm:ss) · línea: promedio, guiones: estándar IATA · ejes en minutos", {
       x: MX,
       y: 7.55,
       w: CONTENT_W,
       h: 0.35,
       fontFace: FONT.face,
-      fontSize: 13,
+      fontSize: 12,
       bold: true,
       color: AIGS.ink,
       margin: 0,
@@ -468,7 +498,7 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     const cards = p.byAirline.slice(0, 6);
     const gap = 0.28;
     const w = (CONTENT_W - gap * (cards.length - 1)) / cards.length;
-    cards.forEach((a, i) => miniAirlineChart(s, pres, a, MX + i * (w + gap), 7.95, w, 2.35));
+    cards.forEach((a, i) => miniAirlineChart(s, pres, a, MX + i * (w + gap), 7.95, w, 2.35, yMax));
   }
 
   addBottomLogo(s);
@@ -489,13 +519,16 @@ function closingSlide(pres: Pptx) {
     charSpacing: -1,
     margin: 0,
   });
-  s.addText(
-    [
-      { text: "Consultas y detalle del levantamiento a disposición.\n", options: { fontSize: 16, color: AIGS.body } },
-      { text: "jolave@aerodromosigs.cl · aerodromosigs.cl", options: { fontSize: 14, color: AIGS.muted } },
-    ],
-    { x: MX, y: 6.2, w: CONTENT_W, h: 1.2, fontFace: FONT.face, margin: 0, lineSpacingMultiple: 1.3 }
-  );
+  s.addText("contacto@aerodromosigs.cl · www.aerodromosigs.cl", {
+    x: MX,
+    y: 6.2,
+    w: CONTENT_W,
+    h: 0.5,
+    fontFace: FONT.face,
+    fontSize: 18,
+    color: AIGS.body,
+    margin: 0,
+  });
 }
 
 /** Construye el deck completo y devuelve los bytes del .pptx. */
@@ -516,7 +549,7 @@ export async function buildDeck(r: MonthlyReport): Promise<Uint8Array> {
   if (r.processes.length === 0) {
     const s = pres.addSlide();
     s.background = { color: AIGS.white };
-    slideTitle(s, "Mediciones de tiempos", r.airport.short ?? r.airport.name);
+    slideTitle(s, "Mediciones de tiempos", airportFull(r));
     s.addText(
       r.bqError
         ? "No se pudieron leer las mediciones de tiempos (credenciales de BigQuery)."

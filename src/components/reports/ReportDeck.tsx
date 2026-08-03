@@ -12,7 +12,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
-import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct, shortAirline } from "@/lib/reports/design";
+import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct } from "@/lib/reports/design";
 
 // Datos serializables que arma la página (server). Estructuralmente compatible
 // con MonthlyReport de src/lib/reports/monthlyReport.ts.
@@ -36,10 +36,12 @@ export type DeckData = {
     faseLabel: string | null;
     meta: number | null;
     kpi: { n: number; prom: number; med: number; p90: number };
+    kpiSeason: { n: number; prom: number; med: number; p90: number };
     margin: number | null;
     series: { label: string; prom: number | null; med: number | null; p90: number | null }[];
     byAirline: {
       airline: string;
+      label: string;
       meta: number | null;
       monthProm: number | null;
       monthN: number;
@@ -154,14 +156,15 @@ function Frame({ scale, children }: { scale: number; children: React.ReactNode }
 
 /* ---------- Slides ---------- */
 
-// Logo en la esquina inferior izquierda de las diapositivas de contenido.
+// Wordmark "AERÓDROMOS.IGS" (solo texto) en la esquina inferior izquierda de las
+// diapositivas de contenido (no en portada/cierre, que llevan el logo completo).
 function BottomLogo() {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/logo.png"
+      src="/report/logo-texto.png"
       alt="Aeródromos IGS"
-      style={{ position: "absolute", left: 48, bottom: 20, height: 30, width: "auto", opacity: 0.9 }}
+      style={{ position: "absolute", left: 48, bottom: 26, height: 16, width: "auto", opacity: 0.95 }}
     />
   );
 }
@@ -169,6 +172,11 @@ function BottomLogo() {
 function Logo() {
   // eslint-disable-next-line @next/next/no-img-element
   return <img src="/logo.png" alt="Aeródromos IGS" style={{ height: 46, width: "auto" }} />;
+}
+
+// "Aeropuerto El Loa - Calama" -> "Aeropuerto El Loa, Calama"
+function airportFull(data: DeckData): string {
+  return data.airport.companyName.replace(" - ", ", ");
 }
 
 function Cover({ data }: { data: DeckData }) {
@@ -233,11 +241,12 @@ function AsqSlide({ data }: { data: DeckData }) {
   const rowH = Math.min(30, 372 / Math.max(1, nRows + 2));
   const fs = Math.max(8, Math.min(14, Math.floor(rowH * 0.58)));
   const pv = Math.max(0, Math.floor((rowH - fs * 1.3) / 2));
+  const full = airportFull(data);
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
       <SlideHead
-        title="Encuestas ASQ — cumplimiento"
-        subtitle={a ? `${data.airport.short ?? data.airport.name} · temporada ${a.seasonLabel}` : data.airport.name}
+        title="Encuestas ACI ASQ"
+        subtitle={a ? `${full} · ${a.seasonLabel.replace("-", " ")}` : full}
       />
       {!a ? (
         <Centered>Aún no hay datos de ASQ para este aeropuerto.</Centered>
@@ -329,31 +338,61 @@ function AsqSlide({ data }: { data: DeckData }) {
   );
 }
 
+// Tope "bonito" (minutos) para compartir escala entre el gráfico principal y los mini.
+function niceMax(m: number): number {
+  const steps = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120];
+  const target = Math.max(1, m) * 1.1;
+  return steps.find((s) => s >= target) ?? Math.ceil(target / 30) * 30;
+}
+
+function LegendItem({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <span style={{ display: "inline-block", width: 16, borderTop: `2px ${dashed ? "dashed" : "solid"} ${hx(color)}` }} />
+      {label}
+    </span>
+  );
+}
+
+function ChartLegend({ meta }: { meta: number | null }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 12, color: hx(AIGS.muted) }}>
+      <LegendItem color={SERIES.prom} label="Promedio" />
+      <LegendItem color={SERIES.med} label="Mediana" dashed />
+      <LegendItem color={SERIES.p90} label="p90" />
+      {meta != null && <LegendItem color={SERIES.meta} label="Estándar IATA" dashed />}
+    </div>
+  );
+}
+
 function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][number] }) {
   const marginOk = p.margin != null && p.margin >= 0;
   const title = `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}`;
+  const full = airportFull(data);
   const hasMini = p.byAirline.length > 0;
   const cols = Math.min(p.byAirline.length, 6);
+  const seasonMargin = p.meta != null ? p.meta - p.kpiSeason.prom : null;
+  const yMax = niceMax(Math.max(0, ...p.series.flatMap((s) => [s.prom ?? 0, s.med ?? 0, s.p90 ?? 0]), p.meta ?? 0));
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title={title} subtitle={`${data.airport.short ?? data.airport.name} · ${data.monthLabel}`} />
+      <SlideHead title={title} subtitle={`${full} · ${data.monthLabel}`} />
+      {/* KPIs: número del mes en grande + promedio del periodo abajo (pequeño) */}
       <div style={{ position: "absolute", top: 150, left: 72, right: 72 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
-          <Kpi label="Promedio" value={fmtMMSS(p.kpi.prom)} sub="mm:ss" />
-          <Kpi label="P90" value={fmtMMSS(p.kpi.p90)} sub="mm:ss" />
-          <Kpi label="Mediana" value={fmtMMSS(p.kpi.med)} sub="mm:ss" />
+          <Kpi label="Promedio" value={fmtMMSS(p.kpi.prom)} sub={`Periodo ${fmtMMSS(p.kpiSeason.prom)}`} />
+          <Kpi label="P90" value={fmtMMSS(p.kpi.p90)} sub={`Periodo ${fmtMMSS(p.kpiSeason.p90)}`} />
+          <Kpi label="Mediana" value={fmtMMSS(p.kpi.med)} sub={`Periodo ${fmtMMSS(p.kpiSeason.med)}`} />
           {p.meta == null ? (
             <Kpi label="Estándar IATA" value="—" sub="sin estándar" />
           ) : (
             <Kpi
               label="Margen vs Est. IATA"
               value={fmtMMSS(p.margin)}
-              sub={`${marginOk ? "bajo" : "sobre"} estándar ${fmtMMSS(p.meta)}`}
+              sub={`Periodo ${fmtMMSS(seasonMargin)}`}
               valueColor={marginOk ? AIGS.up : AIGS.down}
-              subColor={marginOk ? AIGS.up : AIGS.down}
             />
           )}
-          <Kpi label="N° de mediciones" value={fmtInt(p.kpi.n)} sub="en el mes" />
+          <Kpi label="N° de mediciones" value={fmtInt(p.kpi.n)} sub={`Periodo ${fmtInt(p.kpiSeason.n)}`} />
         </div>
       </div>
 
@@ -365,21 +404,23 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
             : { position: "absolute", top: 410, left: 72, right: 72, bottom: 56 }
         }
       >
-        <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 6 }}>
-          Evolutivo — distribución (mm:ss)
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink) }}>Evolutivo — distribución (mm:ss)</div>
+          <ChartLegend meta={p.meta} />
         </div>
-        <ProcesoChart p={p} height={hasMini ? 150 : 200} />
+        <ProcesoChart p={p} height={hasMini ? 146 : 210} yMax={yMax} />
       </div>
 
-      {/* Mini-gráficos por aerolínea (Check in / Retiro) */}
+      {/* Mini-gráficos por aerolínea (Check in / Retiro), misma escala Y que el principal */}
       {hasMini && (
-        <div style={{ position: "absolute", top: 500, left: 72, right: 72, bottom: 74 }}>
+        <div style={{ position: "absolute", top: 486, left: 72, right: 72, bottom: 70 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 6 }}>
-            Promedio por aerolínea (mm:ss)
+            Promedio por aerolínea (mm:ss) ·{" "}
+            <span style={{ fontWeight: 400, color: hx(AIGS.muted) }}>línea: promedio · – – estándar IATA</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 12 }}>
             {p.byAirline.slice(0, 6).map((a) => (
-              <MiniAirlineChart key={a.airline} a={a} />
+              <MiniAirlineChart key={a.airline} a={a} yMax={yMax} />
             ))}
           </div>
         </div>
@@ -389,23 +430,15 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
   );
 }
 
-function MiniAirlineChart({ a }: { a: DeckData["processes"][number]["byAirline"][number] }) {
+function MiniAirlineChart({ a, yMax }: { a: DeckData["processes"][number]["byAirline"][number]; yMax: number }) {
   const chartData = a.series.map((s) => ({ label: s.label, prom: s.prom }));
   const ok = a.meta != null && a.monthProm != null ? a.monthProm <= a.meta : null;
   const valColor = ok == null ? AIGS.blue : ok ? AIGS.up : AIGS.down;
   return (
-    <div
-      style={{
-        border: `1px solid ${hx(AIGS.hairline)}`,
-        borderRadius: 10,
-        background: "#fff",
-        padding: "8px 10px",
-        minWidth: 0,
-      }}
-    >
+    <div style={{ border: `1px solid ${hx(AIGS.hairline)}`, borderRadius: 10, background: "#fff", padding: "6px 8px", minWidth: 0 }}>
       <div
         style={{
-          fontSize: 12,
+          fontSize: 11.5,
           fontWeight: 700,
           color: hx(AIGS.ink),
           whiteSpace: "nowrap",
@@ -413,19 +446,35 @@ function MiniAirlineChart({ a }: { a: DeckData["processes"][number]["byAirline"]
           textOverflow: "ellipsis",
         }}
       >
-        {shortAirline(a.airline)}
+        {a.label}
       </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-        <span style={{ fontFamily: FONT.mono, fontSize: 18, fontWeight: 700, color: hx(valColor) }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+        <span style={{ fontFamily: FONT.mono, fontSize: 15, fontWeight: 700, color: hx(valColor) }}>
           {fmtMMSS(a.monthProm)}
         </span>
-        <span style={{ fontSize: 10, color: hx(AIGS.muted) }}>n={a.monthN}</span>
+        <span style={{ fontSize: 9, color: hx(AIGS.muted) }}>n={a.monthN}</span>
       </div>
-      <div style={{ height: 58, marginTop: 2 }}>
+      <div style={{ height: 66, marginTop: 2 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chartData} margin={{ top: 4, right: 2, bottom: 0, left: 2 }}>
-            <YAxis hide domain={[0, "auto"]} />
-            <XAxis dataKey="label" hide />
+          <ComposedChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke="#f1f5f9" vertical={false} />
+            <YAxis
+              domain={[0, yMax]}
+              ticks={[0, Math.round(yMax / 2), yMax]}
+              tickFormatter={(v) => fmtMMSS(Number(v))}
+              tick={{ fill: hx(AIGS.muted), fontSize: 8 }}
+              tickLine={false}
+              axisLine={false}
+              width={30}
+            />
+            <XAxis
+              dataKey="label"
+              tickFormatter={(v) => String(v).split(" ")[0]}
+              tick={{ fill: hx(AIGS.muted), fontSize: 8 }}
+              tickLine={false}
+              axisLine={{ stroke: hx(AIGS.hairline) }}
+              interval={0}
+            />
             {a.meta != null && <ReferenceLine y={a.meta} stroke={hx(SERIES.meta)} strokeDasharray="3 3" strokeWidth={1} />}
             <Line type="monotone" dataKey="prom" stroke={hx(SERIES.prom)} strokeWidth={1.75} dot={false} isAnimationActive={false} connectNulls />
           </ComposedChart>
@@ -435,7 +484,7 @@ function MiniAirlineChart({ a }: { a: DeckData["processes"][number]["byAirline"]
   );
 }
 
-function ProcesoChart({ p, height = 200 }: { p: DeckData["processes"][number]; height?: number }) {
+function ProcesoChart({ p, height = 200, yMax }: { p: DeckData["processes"][number]; height?: number; yMax: number }) {
   const chartData = p.series.map((s) => ({
     label: s.label,
     prom: s.prom,
@@ -454,7 +503,7 @@ function ProcesoChart({ p, height = 200 }: { p: DeckData["processes"][number]; h
           tickLine={false}
           axisLine={false}
           width={56}
-          domain={[0, "auto"]}
+          domain={[0, yMax]}
         />
         <Tooltip formatter={(v: number, n) => [fmtMMSS(v), n]} />
         <Area type="monotone" dataKey="med" stackId="band" stroke="none" fill="transparent" isAnimationActive={false} />
@@ -478,7 +527,7 @@ function ProcesoChart({ p, height = 200 }: { p: DeckData["processes"][number]; h
 function EmptyTiempos({ data }: { data: DeckData }) {
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title="Mediciones de tiempos" subtitle={data.airport.short ?? data.airport.name} />
+      <SlideHead title="Mediciones de tiempos" subtitle={airportFull(data)} />
       <Centered>
         {data.bqError
           ? "No se pudieron leer las mediciones de tiempos (credenciales de BigQuery)."
@@ -497,11 +546,8 @@ function Closing() {
       </div>
       <div style={{ position: "absolute", left: 72, top: 320, right: 72 }}>
         <div style={{ fontSize: 64, letterSpacing: "-0.03em", color: hx(AIGS.ink) }}>Gracias</div>
-        <div style={{ fontSize: 16, color: hx(AIGS.body), marginTop: 18 }}>
-          Consultas y detalle del levantamiento a disposición.
-        </div>
-        <div style={{ fontSize: 14, color: hx(AIGS.muted), marginTop: 6 }}>
-          jolave@aerodromosigs.cl · aerodromosigs.cl
+        <div style={{ fontSize: 18, color: hx(AIGS.body), marginTop: 18 }}>
+          contacto@aerodromosigs.cl · www.aerodromosigs.cl
         </div>
       </div>
     </div>
