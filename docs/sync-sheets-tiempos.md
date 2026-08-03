@@ -15,9 +15,13 @@ mediciones que se levantan desde la app.
 
 | Sede | Google Sheet (título) | Pestaña | Sede en la app (`location_name`) |
 |---|---|---|---|
-| IQQ | Mediciones tiempo SCDA (Respuestas) | Respuestas de formulario 2 | Aeropuerto Diego Aracena |
+| IQQ | Mediciones tiempo SCDA (Respuestas) | por `gid=180156108` (resuelto en runtime) | Aeropuerto Diego Aracena |
 | CJC | Mediciones tiempo SCCF (Respuestas) | Respuestas de formulario 1 | Aeropuerto El Loa |
 | PMC | Mediciones SCTE - Tiempos y Encuestas | Respuestas de formulario 1 | Aeropuerto El Tepual |
+
+> Una sede puede fijar la pestaña por **`gid`** (el `?gid=` del link de Google Sheets) en
+> vez del nombre; el script resuelve el título real en cada corrida, así que aguanta
+> renombres. Si no hay `gid`, usa el nombre de la columna «Pestaña».
 
 Los 3 formularios divergieron (IQQ/PMC tienen encabezados **duplicados** por sección;
 CJC usa `snake_case`). El mapeo se hace por **nombre de encabezado + ocurrencia**, y el

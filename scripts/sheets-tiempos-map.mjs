@@ -15,6 +15,10 @@ export const SEDES = [
   {
     code: "IQQ",
     spreadsheetId: "138YVePO7RHs96iLrSbwFcNEfdzhlx7FC9kUkDwxtedA",
+    // Pestaña por gid del link (?gid=180156108). Tiene prioridad sobre `tab`:
+    // el sync resuelve el nombre real en tiempo de ejecución, así que aguanta
+    // renombres de la pestaña. `tab` queda como referencia/fallback.
+    gid: 180156108,
     tab: "Respuestas de formulario 2",
     location_name: "Aeropuerto Diego Aracena",
     company_name: "Aeropuerto Diego Aracena - Iquique",

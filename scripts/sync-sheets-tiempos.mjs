@@ -171,6 +171,30 @@ function resolveCols(headers, colsSpec) {
 }
 
 // --- Sheets API ---
+
+// Resuelve el título de una pestaña a partir de su gid (sheetId). Permite
+// configurar la fuente con el gid del link de Google Sheets (?gid=...) en vez del
+// nombre, que cambia si se renombra la pestaña.
+async function resolveTabTitle(token, spreadsheetId, gid) {
+  const url =
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}` +
+    `?fields=sheets.properties(sheetId,title)`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Sheets API ${res.status} (metadata ${spreadsheetId}): ${body.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const sheet = (data.sheets || []).find((s) => s.properties?.sheetId === gid);
+  if (!sheet) {
+    const avail = (data.sheets || [])
+      .map((s) => `${s.properties?.title} (gid ${s.properties?.sheetId})`)
+      .join(", ");
+    throw new Error(`No hay pestaña con gid ${gid} en ${spreadsheetId}. Disponibles: ${avail}`);
+  }
+  return sheet.properties.title;
+}
+
 async function readSheet(token, spreadsheetId, tab) {
   const range = encodeURIComponent(tab);
   const url =
@@ -302,8 +326,12 @@ async function main() {
 
   let all = [];
   for (const sede of SEDES) {
-    process.stdout.write(`\nLeyendo ${sede.code} (${sede.tab})... `);
-    const rows = await readSheet(token, sede.spreadsheetId, sede.tab);
+    // Si la sede declara un gid, se resuelve el nombre real de la pestaña; si no,
+    // se usa el nombre configurado directamente.
+    const tab =
+      sede.gid != null ? await resolveTabTitle(token, sede.spreadsheetId, sede.gid) : sede.tab;
+    process.stdout.write(`\nLeyendo ${sede.code} (${tab}${sede.gid != null ? ` · gid ${sede.gid}` : ""})... `);
+    const rows = await readSheet(token, sede.spreadsheetId, tab);
     console.log(`${rows.length} filas (con cabecera).`);
     const { out, stats, missing } = transformSede(sede, rows);
     if (missing.length) console.warn(`  ⚠ columnas no encontradas: ${missing.join(", ")}`);
