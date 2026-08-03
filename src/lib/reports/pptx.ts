@@ -343,25 +343,28 @@ function miniAirlineChart(
     line: { color: AIGS.hairline, width: 0.75 },
     rectRadius: 0.08,
   });
+  // Título a la izquierda; promedio + n a la derecha (deja más alto para el gráfico).
   slide.addText(a.label, {
-    x: x + 0.14,
-    y: y + 0.12,
-    w: w - 0.28,
-    h: 0.32,
+    x: x + 0.12,
+    y: y + 0.1,
+    w: w * 0.5 - 0.14,
+    h: 0.3,
     fontFace: FONT.face,
     fontSize: 11,
     bold: true,
     color: AIGS.ink,
+    align: "left",
+    valign: "middle",
     margin: 0,
   });
   const ok = a.meta != null && a.monthProm != null ? a.monthProm <= a.meta : null;
   const valColor = ok == null ? AIGS.blue : ok ? AIGS.up : AIGS.down;
   slide.addText(
     [
-      { text: fmtMMSS(a.monthProm), options: { fontFace: FONT.mono, fontSize: 16, bold: true, color: valColor } },
-      { text: `  n=${a.monthN}`, options: { fontFace: FONT.face, fontSize: 9, color: AIGS.muted } },
+      { text: fmtMMSS(a.monthProm), options: { fontFace: FONT.mono, fontSize: 13, bold: true, color: valColor } },
+      { text: ` n=${a.monthN}`, options: { fontFace: FONT.face, fontSize: 8, color: AIGS.muted } },
     ],
-    { x: x + 0.14, y: y + 0.42, w: w - 0.28, h: 0.34, margin: 0, valign: "middle" }
+    { x: x + w * 0.5, y: y + 0.1, w: w * 0.5 - 0.12, h: 0.3, align: "right", valign: "middle", margin: 0 }
   );
   // Ejes visibles con la MISMA escala Y (minutos) que el gráfico principal; meses cortos en X.
   const labels = a.series.map((p) => p.label.split(" ")[0]);
@@ -375,9 +378,9 @@ function miniAirlineChart(
   }
   slide.addChart(pres.ChartType.line, series, {
     x: x + 0.06,
-    y: y + 0.82,
+    y: y + 0.5,
     w: w - 0.12,
-    h: h - 0.92,
+    h: h - 0.6,
     chartColors: colors,
     lineSize: 1.75,
     showLegend: false,
@@ -444,7 +447,7 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     chartColors.push(SERIES.meta);
   }
 
-  s.addText("Evolutivo — distribución (minutos)", {
+  s.addText("Evolutivo", {
     x: MX,
     y: hasMini ? 4.5 : 4.7,
     w: CONTENT_W,
@@ -484,7 +487,7 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
 
   // Mini-gráficos por aerolínea (Check in / Retiro), misma escala Y que el principal.
   if (hasMini) {
-    s.addText("Promedio por aerolínea (mm:ss) · línea: promedio, guiones: estándar IATA · ejes en minutos", {
+    s.addText("Promedio por aerolínea · línea: promedio, guiones: estándar IATA · ejes en minutos", {
       x: MX,
       y: 7.55,
       w: CONTENT_W,

@@ -405,7 +405,7 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
         }
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink) }}>Evolutivo — distribución (mm:ss)</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink) }}>Evolutivo</div>
           <ChartLegend meta={p.meta} />
         </div>
         <ProcesoChart p={p} height={hasMini ? 146 : 210} yMax={yMax} />
@@ -415,8 +415,8 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
       {hasMini && (
         <div style={{ position: "absolute", top: 486, left: 72, right: 72, bottom: 70 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 6 }}>
-            Promedio por aerolínea (mm:ss) ·{" "}
-            <span style={{ fontWeight: 400, color: hx(AIGS.muted) }}>línea: promedio · – – estándar IATA</span>
+            Promedio por aerolínea{" "}
+            <span style={{ fontWeight: 400, color: hx(AIGS.muted) }}>· línea: promedio · – – estándar IATA</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 12 }}>
             {p.byAirline.slice(0, 6).map((a) => (
@@ -436,25 +436,29 @@ function MiniAirlineChart({ a, yMax }: { a: DeckData["processes"][number]["byAir
   const valColor = ok == null ? AIGS.blue : ok ? AIGS.up : AIGS.down;
   return (
     <div style={{ border: `1px solid ${hx(AIGS.hairline)}`, borderRadius: 10, background: "#fff", padding: "6px 8px", minWidth: 0 }}>
-      <div
-        style={{
-          fontSize: 11.5,
-          fontWeight: 700,
-          color: hx(AIGS.ink),
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {a.label}
-      </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-        <span style={{ fontFamily: FONT.mono, fontSize: 15, fontWeight: 700, color: hx(valColor) }}>
-          {fmtMMSS(a.monthProm)}
+      {/* Título a la izquierda; promedio + n a la derecha (deja más alto para el gráfico) */}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6 }}>
+        <span
+          style={{
+            fontSize: 11.5,
+            fontWeight: 700,
+            color: hx(AIGS.ink),
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            minWidth: 0,
+          }}
+        >
+          {a.label}
         </span>
-        <span style={{ fontSize: 9, color: hx(AIGS.muted) }}>n={a.monthN}</span>
+        <span style={{ display: "flex", alignItems: "baseline", gap: 4, flexShrink: 0, whiteSpace: "nowrap" }}>
+          <span style={{ fontFamily: FONT.mono, fontSize: 14, fontWeight: 700, color: hx(valColor) }}>
+            {fmtMMSS(a.monthProm)}
+          </span>
+          <span style={{ fontSize: 9, color: hx(AIGS.muted) }}>n={a.monthN}</span>
+        </span>
       </div>
-      <div style={{ height: 66, marginTop: 2 }}>
+      <div style={{ height: 94, marginTop: 3 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="#f1f5f9" vertical={false} />
