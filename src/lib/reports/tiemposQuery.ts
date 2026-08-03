@@ -23,7 +23,9 @@ const DUR_RETIRO: Record<string, string> = {
   descarga: "TIMESTAMP_DIFF(baggage_claim_t3, baggage_claim_t2, SECOND) / 60.0",
 };
 
-// Se descartan duraciones no positivas (horas invertidas) y absurdas (> 2 h).
+// Se descartan duraciones negativas (horas invertidas) y absurdas (> 2 h). El 0 SÍ
+// cuenta: los formularios capturan HH:MM, así que una medición de menos de un minuto
+// (p. ej. autoservicio de quiosco muy rápido) queda como 0 y es una medición válida.
 export const CAP_MIN = 120;
 
 export type Agg = { name: string; n: number; prom: number; med: number; p90: number };
@@ -74,7 +76,7 @@ export async function queryTiempos(p: TiemposQueryParams): Promise<TiemposQueryR
       APPROX_QUANTILES(dur, 100)[OFFSET(50)] AS med,
       APPROX_QUANTILES(dur, 100)[OFFSET(90)] AS p90
     FROM (SELECT location_name, ${durExpr} AS dur FROM ${table} WHERE ${common}${airportFilter})
-    WHERE dur > 0 AND dur <= @cap
+    WHERE dur >= 0 AND dur <= @cap
     GROUP BY name`;
 
   const seriesSql = `
@@ -83,7 +85,7 @@ export async function queryTiempos(p: TiemposQueryParams): Promise<TiemposQueryR
       APPROX_QUANTILES(dur, 100)[OFFSET(50)] AS med,
       APPROX_QUANTILES(dur, 100)[OFFSET(90)] AS p90
     FROM (SELECT responded_at, ${durExpr} AS dur FROM ${table} WHERE ${common} AND location_name = @airport)
-    WHERE dur > 0 AND dur <= @cap
+    WHERE dur >= 0 AND dur <= @cap
     GROUP BY ym ORDER BY ym`;
 
   // Temporadas CON datos para este aeropuerto (fecha ancla: 1 abr = verano, 1 oct = invierno).
@@ -173,7 +175,7 @@ export async function queryTiemposByAirline(p: {
         AND location_name = @airport
         AND ${baseCol} IS NOT NULL AND ${baseCol} != ''
     )
-    WHERE dur > 0 AND dur <= @cap
+    WHERE dur >= 0 AND dur <= @cap
     GROUP BY airline, ym
     ORDER BY airline, ym`;
 
