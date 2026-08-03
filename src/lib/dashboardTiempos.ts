@@ -23,7 +23,8 @@ export const AIRPORTS = [
 ] as const;
 export type AirportCode = (typeof AIRPORTS)[number]["code"];
 
-// Aerolíneas del cuestionario "Mediciones de tiempos" (columna checkin_airline).
+// Aerolíneas del CHECK IN (columna checkin_airline). LATAM se abre por modalidad
+// (mostrador / autoatención), que sólo aplica al check-in.
 export const AIRLINES = [
   "LATAM Airlines - Counter",
   "LATAM Airlines - Quiosco",
@@ -32,6 +33,20 @@ export const AIRLINES = [
   "Aerovías DAP",
   "Boliviana de Aviación",
 ] as const;
+
+// Aerolíneas del RETIRO de equipaje (columna baggage_claim_airline). El retiro no
+// tiene modalidad, así que LATAM va sin sufijo Counter/Quiosco.
+export const AIRLINES_RETIRO = ["LATAM Airlines", "SKY Airline", "JetSmart"] as const;
+
+// Unión de todas las aerolíneas válidas (para validar el parámetro en la API).
+export const AIRLINES_ALL: string[] = [...new Set<string>([...AIRLINES, ...AIRLINES_RETIRO])];
+
+// Opciones de aerolínea que ofrece el filtro según el proceso.
+export function airlinesFor(proceso: Proceso): readonly string[] {
+  if (proceso === "Check in") return AIRLINES;
+  if (proceso === "Retiro de equipajes") return AIRLINES_RETIRO;
+  return [];
+}
 
 // Umbral / meta en MINUTOS por proceso. En Check in depende de la modalidad:
 // quiosco (autoatención) 5 min, counter (mostrador) 20 min. Pasaporte y aduana

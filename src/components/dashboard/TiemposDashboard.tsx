@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import {
   PROCESOS,
-  AIRLINES,
+  airlinesFor,
   metaFor,
   hasAirline,
   hasFase,
@@ -215,7 +215,7 @@ export default function TiemposDashboard({ airports }: { airports: DashboardAirp
               onChange={(e) => setAirline(e.target.value)}
             >
               <option>Todas</option>
-              {AIRLINES.map((a) => (
+              {airlinesFor(proceso).map((a) => (
                 <option key={a}>{a}</option>
               ))}
             </select>

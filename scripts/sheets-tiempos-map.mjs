@@ -98,13 +98,19 @@ export function normalizeProcess(raw) {
 }
 
 // Opciones de aerolínea de la app (cuestionario "Mediciones de tiempos"):
-//   LATAM Airlines - Counter | LATAM Airlines - Quiosco | SKY Airline |
-//   JetSmart | Aerovías DAP | Boliviana de Aviación
-/** Normaliza la aerolínea cruda de la hoja a la opción de la app (o null). */
-export function normalizeAirline(raw) {
+//   Check in: LATAM Airlines - Counter | LATAM Airlines - Quiosco | SKY Airline |
+//     JetSmart | Aerovías DAP | Boliviana de Aviación
+//   Retiro (bare): LATAM Airlines | SKY Airline | JetSmart | ... (sin modalidad,
+//     el retiro de equipaje no tiene counter/quiosco).
+/**
+ * Normaliza la aerolínea cruda de la hoja a la opción de la app (o null).
+ * `bare`: LATAM sin modalidad ("LATAM Airlines"), para el retiro de equipaje.
+ */
+export function normalizeAirline(raw, { bare = false } = {}) {
   const s = (raw || "").toLowerCase();
   if (!s.trim()) return null;
   if (s.includes("latam")) {
+    if (bare) return "LATAM Airlines"; // retiro: sin modalidad
     if (s.includes("kiosko") || s.includes("kiosco") || s.includes("quiosco") || s.includes("self"))
       return "LATAM Airlines - Quiosco";
     // "bagdrop"/"counter" o sin modalidad -> Counter (supuesto: mostrador atendido)

@@ -261,7 +261,9 @@ export function transformSede(sede, rows) {
       o.baggage_claim_t2 = iso(t2);
       o.baggage_claim_t3 = iso(t3);
       const rawAir = get(row, "retiro_airline");
-      const air = normalizeAirline(rawAir); // enum de la app (o null): columna estructurada para filtrar
+      // Retiro: aerolínea SIN modalidad (no hay counter/quiosco). Columna
+      // estructurada para filtrar: LATAM Airlines / SKY Airline / JetSmart.
+      const air = normalizeAirline(rawAir, { bare: true });
       if (rawAir && rawAir.trim() && !air) stats.aerolineaDesconocida.add(rawAir.trim());
       o.baggage_claim_airline = air;
       o.baggage_claim_comments = joinComments(

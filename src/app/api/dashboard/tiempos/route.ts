@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiUser } from "@/lib/rbac";
 import { BigQueryCredentialsError } from "@/lib/bigquery";
-import { PROCESOS, FASES, AIRPORTS, AIRLINES } from "@/lib/dashboardTiempos";
+import { PROCESOS, FASES, AIRPORTS, AIRLINES_ALL } from "@/lib/dashboardTiempos";
 import { getScopedTiemposAirports } from "@/lib/dashboardTiemposScope";
 import { queryTiempos } from "@/lib/reports/tiemposQuery";
 
@@ -15,7 +15,7 @@ const schema = z.object({
   desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   fase: z.enum(FASES).optional(),
-  airline: z.enum(AIRLINES).optional(),
+  airline: z.enum(AIRLINES_ALL as [string, ...string[]]).optional(),
 });
 
 export async function GET(req: Request) {
