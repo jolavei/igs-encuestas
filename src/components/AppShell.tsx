@@ -31,7 +31,6 @@ const NAV: Record<Role, NavItem[]> = {
   ],
   SURVEYOR: [
     { href: "/encuestador", label: "Inicio", icon: "home", exact: true },
-    { href: "/encuestador/dashboard", label: "Dashboard", icon: "dashboard" },
     { href: "/encuestador/levantar", label: "Levantar encuesta", icon: "workplan" },
     { href: "/encuestador/compliance", label: "Encuestas ASQ", icon: "compliance" },
   ],
