@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Providers from "./providers";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import ChunkErrorReload from "@/components/ChunkErrorReload";
 
 export const metadata: Metadata = {
   title: "Aeródromos IGS — Encuestas",
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body>
         <Providers>{children}</Providers>
+        <ChunkErrorReload />
         <ServiceWorkerRegister />
       </body>
     </html>
