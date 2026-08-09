@@ -28,7 +28,8 @@ Resumen de las protecciones implementadas.
 - Producción: las variables viven en **Vercel** (Environment Variables) y los secretos del
   pipeline en **GitHub Actions Secrets** (`GCP_SA_KEY`, etc.).
 - Solo se exponen al navegador las variables con prefijo `NEXT_PUBLIC_` (ninguna es
-  secreta: solo `NEXT_PUBLIC_ENABLE_DEV_LOGIN`).
+  secreta: `NEXT_PUBLIC_ENABLE_DEV_LOGIN` y `NEXT_PUBLIC_ENABLE_EMAIL_LOGIN`, ambos
+  solo alternan qué se muestra en la pantalla de login).
 - **Rotación:** si un secreto se filtra (p. ej. se pegó en un chat), regenéralo en el
   proveedor (Neon / Google Cloud) y actualiza la variable en Vercel.
 
@@ -43,17 +44,68 @@ Resumen de las protecciones implementadas.
   nombres de tabla/columna vienen del **catálogo** de Postgres (`information_schema`),
   además validados contra `^[A-Za-z_][A-Za-z0-9_]*$`. Sin vector de input de usuario.
 
+## 4. Cabeceras de seguridad HTTP
+
+Definidas en `next.config.mjs` (`headers()`), aplicadas a **todas** las rutas:
+
+- **Siempre** (dev y prod): `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`
+  (anti-clickjacking, la app no se embebe en iframes), `Referrer-Policy:
+  strict-origin-when-cross-origin`, `Permissions-Policy` (cámara/micrófono/geolocalización
+  deshabilitados) y `X-DNS-Prefetch-Control`.
+- **Solo producción**: `Strict-Transport-Security` (HSTS) y `Content-Security-Policy`.
+  Se reservan a prod porque `next dev` (HMR) usa `eval`/inline y HSTS no aplica sobre
+  http local.
+- La **CSP** es pragmática (sin nonces): `script-src`/`style-src` permiten el inline que
+  Next inyecta para hidratar y Tailwind; `connect-src` incluye `storage.googleapis.com`
+  porque el navegador sube archivos con un `PUT` directo a la URL firmada. Endurecer a
+  nonces (script-src estricto) es una mejora futura que requiere tocar el middleware.
+
+## 5. Idempotencia de respuestas (anti-duplicados)
+
+- Cada envío lleva un `clientSubmissionId` (UUID v4 generado en el cliente,
+  `SurveyRunner`). Es **estable** entre reintentos de la misma respuesta y se **renueva**
+  al empezar una nueva.
+- `ResponseSet.clientSubmissionId` tiene índice **único**. `createResponseSet` devuelve el
+  envío existente si el id ya llegó (reintento, doble-tap o reenvío de la **cola offline**)
+  y captura la carrera concurrente (`P2002`) para no crear duplicados.
+- Importa porque el avance de los planes se cuenta por filas: un duplicado inflaría la meta.
+
+## 6. Integridad referencial (coherencia entre entidades)
+
+Prisma rechaza IDs inexistentes, pero no valida la **coherencia** entre entidades.
+`src/lib/refIntegrity.ts` cierra ese hueco en las rutas de escritura (admin):
+
+- **Planes de trabajo** (crear/editar): la empresa y el cuestionario existen y la sede
+  elegida **pertenece a la empresa** (antes se podía crear un plan con sede de otra
+  empresa). No se exige que el cuestionario esté "asignado" a la empresa: por diseño la
+  asociación empresa↔cuestionario nace del propio plan.
+- **Documentos y carpetas** (registrar / URL firmada / crear carpeta): la sede pertenece
+  a la empresa y la carpeta destino (o padre) es de la **misma empresa y sede**.
+- Devuelve `HTTP 400` con un mensaje legible; la UI ya envía datos coherentes, así que
+  solo bloquea manipulación directa de la API o estados inconsistentes.
+
 ## Otras protecciones ya presentes
 
 - **RBAC**: rol resuelto server-side en cada request; rutas protegidas por middleware.
 - **Lista blanca de acceso**: solo entran correos pre-registrados y activos (el resto
   recibe AccessDenied).
+- **Magic Link seguro**: el login por enlace de correo (Resend) pasa por la MISMA
+  lista blanca. NextAuth ejecuta el callback `signIn` tanto al PEDIR el enlace como al
+  usarlo, así que a un correo no autorizado ni se le envía el enlace ni se le crea
+  cuenta. El enlace es de un solo uso y vence en 30 minutos.
+- **Login dev con doble candado**: el provider `dev` (email sin password) exige el flag
+  `ENABLE_DEV_LOGIN` **y** `NODE_ENV !== "production"`, para que una variable mal puesta
+  no abra acceso sin contraseña en el sitio real.
+- **Protección del último admin**: no se puede degradar de rol ni desactivar al único
+  ADMIN activo (evita quedar sin administradores).
 - **Auth tables fuera de BigQuery**: `Account`/`Session`/`VerificationToken` no se
   sincronizan (contienen tokens).
 - **HTTPS** y cookies seguras gestionadas por Vercel + NextAuth.
 
 ## Pendiente / posibles mejoras
 
-- Rate limit global con Upstash (ver arriba) si el volumen lo amerita.
+- Rate limit global con Upstash (ver arriba) si el volumen lo amerita; extenderlo a
+  endpoints autenticados caros (p. ej. dashboard de tiempos → BigQuery).
 - Captcha en el formulario QR público si aparece spam real.
 - Consentimiento y política de retención de datos personales (Ley 19.628).
+- CSP con nonces (script-src estricto, sin `unsafe-inline`).

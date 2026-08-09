@@ -20,6 +20,9 @@ type Args = {
   raw: RawAnswer[];
   // Preguntas mostradas (secciones visitadas). Si viene, solo se exigen esas.
   presentedQuestionIds?: string[] | null;
+  // Idempotencia: UUID del cliente. Si ya existe un envío con este id, se devuelve
+  // ese mismo (no se crea un duplicado). Ver el modelo ResponseSet.
+  clientSubmissionId?: string | null;
 };
 
 /**
@@ -60,26 +63,56 @@ export async function createResponseSet(args: Args) {
   const segmentValue = segFrom(args.segmentKey);
   const segmentValue2 = segFrom(args.segment2Key);
 
-  const set = await prisma.responseSet.create({
-    data: {
-      versionId: args.versionId,
-      source: args.source,
-      locationId: args.locationId ?? null,
-      surveyorId: args.surveyorId ?? null,
-      workPlanId: args.workPlanId ?? null,
-      segmentValue,
-      segmentValue2,
-      answers: {
-        create: answers.map((a) => ({
-          questionId: a.questionId,
-          valueNumber: a.valueNumber,
-          valueText: a.valueText,
-          valueDate: a.valueDate,
-          valueJson: toJson(a.valueJson),
-        })),
-      },
-    },
-  });
+  const clientSubmissionId = args.clientSubmissionId ?? null;
 
-  return { ok: true as const, status: 201, id: set.id };
+  // Idempotencia: si ya llegó un envío con este id (reintento o reenvío de la cola
+  // offline), devolvemos el existente sin crear un duplicado.
+  if (clientSubmissionId) {
+    const existing = await prisma.responseSet.findUnique({
+      where: { clientSubmissionId },
+      select: { id: true },
+    });
+    if (existing) return { ok: true as const, status: 200, id: existing.id, duplicate: true };
+  }
+
+  try {
+    const set = await prisma.responseSet.create({
+      data: {
+        versionId: args.versionId,
+        source: args.source,
+        locationId: args.locationId ?? null,
+        surveyorId: args.surveyorId ?? null,
+        workPlanId: args.workPlanId ?? null,
+        segmentValue,
+        segmentValue2,
+        clientSubmissionId,
+        answers: {
+          create: answers.map((a) => ({
+            questionId: a.questionId,
+            valueNumber: a.valueNumber,
+            valueText: a.valueText,
+            valueDate: a.valueDate,
+            valueJson: toJson(a.valueJson),
+          })),
+        },
+      },
+    });
+    return { ok: true as const, status: 201, id: set.id };
+  } catch (e) {
+    // Carrera: dos envíos con el mismo clientSubmissionId a la vez. El unique
+    // dispara P2002; recuperamos el que sí quedó y lo devolvemos como duplicado.
+    if (
+      clientSubmissionId &&
+      typeof e === "object" &&
+      e !== null &&
+      (e as { code?: string }).code === "P2002"
+    ) {
+      const existing = await prisma.responseSet.findUnique({
+        where: { clientSubmissionId },
+        select: { id: true },
+      });
+      if (existing) return { ok: true as const, status: 200, id: existing.id, duplicate: true };
+    }
+    throw e;
+  }
 }

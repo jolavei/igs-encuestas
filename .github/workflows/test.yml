@@ -1,0 +1,51 @@
+name: Tests
+
+# Corre las pruebas automáticas en cada push a main y en cada Pull Request.
+# Si algo falla, GitHub marca el commit/PR en rojo (✗) y avisa por correo.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Base de datos temporal y limpia para las pruebas de integración.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: igs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/igs_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar cliente Prisma
+        run: npx prisma generate
+
+      - name: Preparar la base de datos de prueba
+        run: npx prisma migrate deploy
+
+      - name: Correr todas las pruebas (unitarias + integración)
+        run: npm run test:all

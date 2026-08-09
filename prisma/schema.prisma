@@ -272,6 +272,9 @@ model ResponseSet {
   workPlan      WorkPlan?           @relation(fields: [workPlanId], references: [id])
   segmentValue  String? // valor del segmento primario (nivel 1)
   segmentValue2 String? // valor del segmento secundario (nivel 2), si el plan lo usa
+  // Idempotencia: UUID que genera el cliente por envío. Un reintento (o el reenvío
+  // de la cola offline) con el mismo id NO crea un duplicado: se devuelve el existente.
+  clientSubmissionId String? @unique
   // Trazabilidad de sync a BigQuery (batch). null = pendiente.
   syncedAt     DateTime?
   createdAt    DateTime             @default(now())

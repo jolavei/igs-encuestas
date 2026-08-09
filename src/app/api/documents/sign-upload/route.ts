@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import { apiUser } from "@/lib/rbac";
 import { gcsConfigured, signUploadUrl } from "@/lib/gcs";
+import { validateDocTarget } from "@/lib/refIntegrity";
 
 const schema = z.object({
   companyId: z.string(),
@@ -26,6 +27,13 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
   const d = parsed.data;
+
+  // Integridad referencial: no firmar subidas hacia empresa/sede incoherentes.
+  const refError = await validateDocTarget({
+    companyId: d.companyId,
+    locationId: d.locationId ?? null,
+  });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
 
   const objectPath = `${d.companyId}/${d.locationId || "general"}/${randomUUID()}-${safeName(d.filename)}`;
   const url = await signUploadUrl(objectPath, d.contentType);

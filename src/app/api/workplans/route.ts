@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { chileDayToUtc } from "@/lib/dates";
+import { validatePlanRefs } from "@/lib/refIntegrity";
 
 const schema = z.object({
   companyId: z.string(),
@@ -46,6 +47,14 @@ export async function POST(req: Request) {
   if (!start || !end || end < start) {
     return NextResponse.json({ error: "Ventana de fechas inválida." }, { status: 400 });
   }
+
+  // Integridad referencial: empresa/cuestionario existen y la sede es de la empresa.
+  const refError = await validatePlanRefs({
+    companyId: d.companyId,
+    questionnaireId: d.questionnaireId,
+    locationId: d.locationId ?? null,
+  });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
 
   const plan = await prisma.workPlan.create({
     data: {

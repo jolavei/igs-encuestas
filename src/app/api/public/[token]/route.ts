@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { createResponseSet } from "@/lib/responses";
 import { submitSchema, type QuestionConfig } from "@/lib/questionTypes";
 import { fromJson } from "@/lib/enums";
 import { enforceRateLimit } from "@/lib/rateLimit";
+import { onceCookieName, onceCookieOptions } from "@/lib/onceGuard";
 
 // Resuelve token QR -> version ACTIVE en runtime (QR impreso no caduca al versionar).
 async function resolve(token: string) {
@@ -55,6 +57,13 @@ export async function POST(
   const r = await resolve(params.token);
   if (!r) return NextResponse.json({ error: "QR no válido." }, { status: 404 });
 
+  // Una respuesta por dispositivo cada 24 h: si ya respondió desde este navegador,
+  // se acepta en silencio sin crear un duplicado. Ver lib/onceGuard.
+  const cookieName = onceCookieName(params.token);
+  if (cookies().get(cookieName)) {
+    return NextResponse.json({ ok: true, duplicate: true }, { status: 200 });
+  }
+
   const parsed = submitSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Payload inválido." }, { status: 400 });
 
@@ -64,7 +73,11 @@ export async function POST(
     locationId: r.qr.locationId,
     raw: parsed.data.answers,
     presentedQuestionIds: parsed.data.presentedQuestionIds,
+    clientSubmissionId: parsed.data.clientSubmissionId,
   });
   if (!result.ok) return NextResponse.json(result, { status: result.status });
-  return NextResponse.json({ id: result.id }, { status: 201 });
+
+  const res = NextResponse.json({ id: result.id }, { status: 201 });
+  res.cookies.set(cookieName, "1", onceCookieOptions());
+  return res;
 }

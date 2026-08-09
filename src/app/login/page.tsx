@@ -6,13 +6,31 @@ import { Logo } from "@/components/Logo";
 export default function Login() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
   // Opt-in explícito: en producción se omite esta variable y el login dev no aparece.
   const devEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === "true";
+  // Magic Link por correo (Resend). El flag público oculta el formulario si el
+  // servidor no tiene configurado el envío de correo.
+  const emailEnabled = process.env.NEXT_PUBLIC_ENABLE_EMAIL_LOGIN === "true";
 
   useEffect(() => {
     const e = new URLSearchParams(window.location.search).get("error");
     if (e) setError(e);
   }, []);
+
+  async function sendMagicLink(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    // redirect:false → manejamos el resultado aquí (mensaje en español) en vez de
+    // saltar a la página genérica de NextAuth. Si el correo no está en la whitelist,
+    // el callback signIn lo rechaza y NextAuth devuelve error=AccessDenied.
+    const res = await signIn("email", { email, redirect: false, callbackUrl: "/" });
+    setLoading(false);
+    if (res?.error) setError(res.error);
+    else setSent(true);
+  }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-6 p-6">
@@ -52,6 +70,41 @@ export default function Login() {
             <YahooIcon />
           </ProviderCircle>
         </div>
+
+        {emailEnabled && (
+          <>
+            <div className="relative text-center text-xs text-slate-400">
+              <span className="bg-white px-2">o con tu correo</span>
+            </div>
+            {sent ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                Te enviamos un enlace de acceso a <strong>{email}</strong>. Revisa
+                tu correo (y la carpeta de spam); el enlace vence en 30 minutos.
+                <button
+                  type="button"
+                  className="mt-2 block text-xs text-emerald-800 underline"
+                  onClick={() => setSent(false)}
+                >
+                  Usar otro correo
+                </button>
+              </div>
+            ) : (
+              <form className="space-y-2" onSubmit={sendMagicLink}>
+                <input
+                  className="input"
+                  type="email"
+                  required
+                  placeholder="tu@correo.cl"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <button className="btn w-full" type="submit" disabled={loading}>
+                  {loading ? "Enviando…" : "Enviarme un enlace de acceso"}
+                </button>
+              </form>
+            )}
+          </>
+        )}
 
         {devEnabled && (
           <>

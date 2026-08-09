@@ -12,7 +12,11 @@
     "db:seed": "node --env-file=.env prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:reset": "prisma db push --force-reset && node --env-file=.env prisma/seed.ts",
-    "scrape:asq": "node --env-file=.env scripts/scrape-asq.mjs"
+    "scrape:asq": "node --env-file=.env scripts/scrape-asq.mjs",
+    "test": "vitest run src",
+    "test:watch": "vitest src",
+    "test:integration": "vitest run tests",
+    "test:all": "vitest run"
   },
   "prisma": {
     "seed": "node --env-file=.env prisma/seed.ts"
@@ -46,6 +50,7 @@
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.14",
     "tsx": "^4.19.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.10"
   }
 }

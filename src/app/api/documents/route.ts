@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
+import { validateDocTarget } from "@/lib/refIntegrity";
 
 const schema = z.object({
   companyId: z.string(),
@@ -22,6 +23,14 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
   const d = parsed.data;
+
+  // Integridad referencial: empresa/sede/carpeta coherentes entre sí.
+  const refError = await validateDocTarget({
+    companyId: d.companyId,
+    locationId: d.locationId ?? null,
+    folderId: d.folderId ?? null,
+  });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
 
   const doc = await prisma.document.create({
     data: {

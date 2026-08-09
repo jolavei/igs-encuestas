@@ -36,6 +36,28 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     );
   }
 
+  // Proteger el último administrador: no dejar que se degrade de rol o se desactive
+  // al único ADMIN activo que queda (incluye la auto-degradación de rol).
+  const demoting = d.role !== undefined && d.role !== "ADMIN";
+  const deactivating = d.active === false;
+  if (demoting || deactivating) {
+    const target = await prisma.user.findUnique({
+      where: { id: params.id },
+      select: { role: true, active: true },
+    });
+    if (target?.role === "ADMIN" && target.active) {
+      const otherAdmins = await prisma.user.count({
+        where: { role: "ADMIN", active: true, id: { not: params.id } },
+      });
+      if (otherAdmins === 0) {
+        return NextResponse.json(
+          { error: "No puedes dejar el sistema sin administradores activos." },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
   const data: Prisma.UserUpdateInput = {};
   if (d.role !== undefined) data.role = d.role;
   if (d.active !== undefined) data.active = d.active;

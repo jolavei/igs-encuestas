@@ -1,10 +1,48 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QuestionInput, { type ClientSection } from "./QuestionInput";
 import SurveyFooter from "./SurveyFooter";
 import { validateAnswers, type RawAnswer } from "@/lib/questionTypes";
 
 const QUEUE_KEY = "igs.offlineQueue";
+
+// Candado anti-duplicado del QR público (capa cliente): una respuesta por dispositivo
+// cada 24 h. Se refuerza con la cookie httpOnly del servidor (ver lib/onceGuard); cada
+// capa cubre a la otra si el navegador bloquea localStorage o las cookies.
+const LOCK_PREFIX = "igs.answered.";
+const LOCK_MS = 24 * 60 * 60 * 1000; // 24 h
+
+function isAnswered(key: string): boolean {
+  try {
+    const ts = Number(localStorage.getItem(LOCK_PREFIX + key) ?? "0");
+    return ts > 0 && Date.now() - ts < LOCK_MS;
+  } catch {
+    return false;
+  }
+}
+function markAnswered(key: string) {
+  try {
+    localStorage.setItem(LOCK_PREFIX + key, String(Date.now()));
+  } catch {
+    /* localStorage no disponible: la cookie httpOnly del servidor hace de respaldo */
+  }
+}
+
+// UUID v4 para idempotencia del envío. Se genera uno por respuesta y viaja en el
+// body; si un reintento o el reenvío de la cola offline usa el mismo id, el servidor
+// devuelve el envío existente en vez de crear un duplicado.
+function makeSubmissionId(): string {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  } catch {
+    /* sin crypto.randomUUID (contexto no seguro / navegador antiguo): cae al fallback */
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 type Props = {
   sections: ClientSection[];
@@ -15,6 +53,9 @@ type Props = {
   allowFileUpload?: boolean; // muestra preguntas de carga de archivos (solo campo)
   extra?: Record<string, unknown>; // campos extra en el body (ej: workPlanId)
   onDone?: () => void;
+  // Si se define, activa "una respuesta por dispositivo cada 24 h" (QR público).
+  // Es la clave del candado en localStorage; usar el token del QR.
+  lockKey?: string;
 };
 
 type Queued = { endpoint: string; body: string; at: number };
@@ -107,6 +148,7 @@ export default function SurveyRunner({
   allowFileUpload = false,
   extra,
   onDone,
+  lockKey,
 }: Props) {
   // El QR público no muestra preguntas de carga de archivos (ni las exige).
   const visible = (s: ClientSection) =>
@@ -116,6 +158,20 @@ export default function SurveyRunner({
   const [history, setHistory] = useState<number[]>([0]);
   const [status, setStatus] = useState<"idle" | "sending" | "ok" | "queued" | "error">("idle");
   const [pending, setPending] = useState(0);
+  // Id de idempotencia de la respuesta en curso (estable entre reintentos; se renueva
+  // al iniciar una respuesta nueva en reset()).
+  const submissionId = useRef<string | null>(null);
+  if (submissionId.current === null) submissionId.current = makeSubmissionId();
+
+  // Candado por dispositivo (solo QR público). lockChecked evita el parpadeo del
+  // formulario antes de leer localStorage; locked muestra "ya respondiste".
+  const [locked, setLocked] = useState(false);
+  const [lockChecked, setLockChecked] = useState(!lockKey);
+  useEffect(() => {
+    if (!lockKey) return;
+    setLocked(isAnswered(lockKey));
+    setLockChecked(true);
+  }, [lockKey]);
 
   useEffect(() => {
     if (!offline) return;
@@ -170,7 +226,12 @@ export default function SurveyRunner({
     const raw = presented.map((id) => answers[id] ?? { questionId: id });
 
     setStatus("sending");
-    const body = JSON.stringify({ answers: raw, presentedQuestionIds: presented, ...extra });
+    const body = JSON.stringify({
+      answers: raw,
+      presentedQuestionIds: presented,
+      ...extra,
+      clientSubmissionId: submissionId.current,
+    });
 
     try {
       const r = await fetch(endpoint, {
@@ -179,6 +240,7 @@ export default function SurveyRunner({
         body,
       });
       if (!r.ok) throw new Error(await r.text());
+      if (lockKey) markAnswered(lockKey);
       setStatus("ok");
       onDone?.();
     } catch (e) {
@@ -218,7 +280,12 @@ export default function SurveyRunner({
     setErrors({});
     setHistory([0]);
     setStatus("idle");
+    // Nueva respuesta = nuevo id de idempotencia.
+    submissionId.current = makeSubmissionId();
   }
+
+  // Evita mostrar el formulario un instante antes de resolver el candado local.
+  if (lockKey && !lockChecked) return null;
 
   if (status === "ok" || status === "queued") {
     return (
@@ -229,9 +296,25 @@ export default function SurveyRunner({
             ? "Respuesta registrada."
             : "Sin conexión: respuesta guardada y se sincronizará automáticamente."}
         </p>
-        <button className="btn mt-6" onClick={reset}>
-          Nueva respuesta
-        </button>
+        {/* En el QR público no se ofrece "Nueva respuesta": una por dispositivo. */}
+        {!lockKey && (
+          <button className="btn mt-6" onClick={reset}>
+            Nueva respuesta
+          </button>
+        )}
+        <SurveyFooter />
+      </div>
+    );
+  }
+
+  // Ya respondió desde este dispositivo en las últimas 24 h (candado local).
+  if (lockKey && locked) {
+    return (
+      <div className="my-6 rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm sm:px-8">
+        <h2 className="text-lg font-semibold">Ya registramos tu respuesta</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Gracias por participar. Solo se admite una respuesta por dispositivo.
+        </p>
         <SurveyFooter />
       </div>
     );

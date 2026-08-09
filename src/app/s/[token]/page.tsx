@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import SurveyRunner from "@/components/SurveyRunner";
 import { Logo } from "@/components/Logo";
+import { onceCookieName } from "@/lib/onceGuard";
 
 export const dynamic = "force-dynamic";
 import { buildClientSections } from "@/lib/surveyForm";
@@ -39,6 +41,11 @@ export default async function PublicSurvey({
     );
   }
 
+  // Refuerzo SSR: si ya respondió desde este dispositivo (cookie httpOnly, 24 h),
+  // no se muestra el formulario. El candado de localStorage en SurveyRunner cubre
+  // el caso inverso (cookies bloqueadas). Ver lib/onceGuard.
+  const alreadyAnswered = !!cookies().get(onceCookieName(params.token));
+
   const sections = buildClientSections(version.questions, version.sections);
 
   return (
@@ -46,15 +53,27 @@ export default async function PublicSurvey({
       <div className="flex justify-center pt-6">
         <Logo variant="full" className="h-12 w-auto" />
       </div>
-      <p className="px-5 pt-3 text-center text-xs text-slate-400 sm:px-8">
-        Tus respuestas son anónimas y se usan para mejorar el servicio.
-      </p>
-      <SurveyRunner
-        sections={sections}
-        endpoint={`/api/public/${params.token}`}
-        title={qr.questionnaire.title}
-        subtitle={`${qr.location.name}`}
-      />
+      {alreadyAnswered ? (
+        <div className="my-6 rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm sm:px-8">
+          <h2 className="text-lg font-semibold">Ya registramos tu respuesta</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Gracias por participar. Solo se admite una respuesta por dispositivo.
+          </p>
+        </div>
+      ) : (
+        <>
+          <p className="px-5 pt-3 text-center text-xs text-slate-400 sm:px-8">
+            Tus respuestas son anónimas y se usan para mejorar el servicio.
+          </p>
+          <SurveyRunner
+            sections={sections}
+            endpoint={`/api/public/${params.token}`}
+            title={qr.questionnaire.title}
+            subtitle={`${qr.location.name}`}
+            lockKey={params.token}
+          />
+        </>
+      )}
     </main>
   );
 }

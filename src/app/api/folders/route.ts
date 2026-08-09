@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
+import { validateDocTarget } from "@/lib/refIntegrity";
 
 const schema = z.object({
   companyId: z.string(),
@@ -20,11 +21,14 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
   const d = parsed.data;
 
-  // Si hay carpeta padre, hereda empresa/sede del padre (coherencia).
-  if (d.parentId) {
-    const parent = await prisma.folder.findUnique({ where: { id: d.parentId } });
-    if (!parent) return NextResponse.json({ error: "Carpeta padre no existe." }, { status: 400 });
-  }
+  // Integridad referencial: empresa/sede coherentes y, si hay carpeta padre, que
+  // sea de la misma empresa y sede (antes solo se comprobaba que el padre existiera).
+  const refError = await validateDocTarget({
+    companyId: d.companyId,
+    locationId: d.locationId ?? null,
+    folderId: d.parentId ?? null,
+  });
+  if (refError) return NextResponse.json({ error: refError }, { status: 400 });
 
   const folder = await prisma.folder.create({
     data: {
