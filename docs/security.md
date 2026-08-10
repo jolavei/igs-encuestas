@@ -28,8 +28,8 @@ Resumen de las protecciones implementadas.
 - Producción: las variables viven en **Vercel** (Environment Variables) y los secretos del
   pipeline en **GitHub Actions Secrets** (`GCP_SA_KEY`, etc.).
 - Solo se exponen al navegador las variables con prefijo `NEXT_PUBLIC_` (ninguna es
-  secreta: `NEXT_PUBLIC_ENABLE_DEV_LOGIN` y `NEXT_PUBLIC_ENABLE_EMAIL_LOGIN`, ambos
-  solo alternan qué se muestra en la pantalla de login).
+  secreta: solo `NEXT_PUBLIC_ENABLE_DEV_LOGIN`, que alterna si se muestra el login de
+  desarrollo en la pantalla de login).
 - **Rotación:** si un secreto se filtra (p. ej. se pegó en un chat), regenéralo en el
   proveedor (Neon / Google Cloud) y actualiza la variable en Vercel.
 
@@ -89,10 +89,6 @@ Prisma rechaza IDs inexistentes, pero no valida la **coherencia** entre entidade
 - **RBAC**: rol resuelto server-side en cada request; rutas protegidas por middleware.
 - **Lista blanca de acceso**: solo entran correos pre-registrados y activos (el resto
   recibe AccessDenied).
-- **Magic Link seguro**: el login por enlace de correo (Resend) pasa por la MISMA
-  lista blanca. NextAuth ejecuta el callback `signIn` tanto al PEDIR el enlace como al
-  usarlo, así que a un correo no autorizado ni se le envía el enlace ni se le crea
-  cuenta. El enlace es de un solo uso y vence en 30 minutos.
 - **Login dev con doble candado**: el provider `dev` (email sin password) exige el flag
   `ENABLE_DEV_LOGIN` **y** `NODE_ENV !== "production"`, para que una variable mal puesta
   no abra acceso sin contraseña en el sitio real.

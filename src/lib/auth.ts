@@ -5,7 +5,6 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import CredentialsProvider from "next-auth/providers/credentials";
-import EmailProvider from "next-auth/providers/email";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@/lib/enums";
 
@@ -91,45 +90,6 @@ function buildAdapter(): Adapter {
   };
 }
 
-// Cuerpo del correo del Magic Link (HTML inline: los clientes de correo no cargan
-// CSS externo). Colores de marca Aeródromos IGS (#003152).
-function magicLinkEmailHtml({ url, host }: { url: string; host: string }): string {
-  const brand = "#003152";
-  return `
-  <div style="background:#f1f5f9;padding:32px 0;font-family:Verdana,Geneva,Tahoma,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;">
-      <tr>
-        <td style="background:${brand};padding:20px 32px;">
-          <span style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:1px;">Aeródromos IGS</span>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:32px;">
-          <h1 style="margin:0 0 12px;font-size:18px;color:#0f172a;">Tu enlace de acceso</h1>
-          <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#475569;">
-            Haz clic en el botón para ingresar a la plataforma. Es un enlace de un solo uso y vence en 30 minutos.
-          </p>
-          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
-            <tr>
-              <td style="border-radius:8px;background:${brand};">
-                <a href="${url}" target="_blank" style="display:inline-block;padding:12px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Ingresar</a>
-              </td>
-            </tr>
-          </table>
-          <p style="margin:0 0 8px;font-size:12px;color:#94a3b8;">Si el botón no funciona, copia y pega esta dirección en tu navegador:</p>
-          <p style="margin:0 0 24px;font-size:12px;word-break:break-all;">
-            <a href="${url}" target="_blank" style="color:${brand};">${url}</a>
-          </p>
-          <p style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:16px;">
-            Si no solicitaste este correo, ignóralo: nadie puede entrar sin este enlace.
-          </p>
-        </td>
-      </tr>
-    </table>
-    <p style="max-width:480px;margin:16px auto 0;text-align:center;font-size:11px;color:#94a3b8;">${host}</p>
-  </div>`;
-}
-
 const providers: NextAuthOptions["providers"] = [];
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -181,43 +141,6 @@ if (process.env.YAHOO_CLIENT_ID && process.env.YAHOO_CLIENT_SECRET) {
       // Igual que Google y Microsoft: permite vincular el login de Yahoo a un
       // usuario pre-registrado por email. Yahoo verifica el email de la cuenta.
       allowDangerousEmailAccountLinking: true,
-    })
-  );
-}
-
-// Magic Link por correo (Resend): passwordless UNIVERSAL, cubre a quien no tiene
-// cuenta Google/Microsoft/Yahoo. La whitelist del callback `signIn` ya lo protege:
-// NextAuth ejecuta `signIn` tanto al PEDIR el enlace (verificationRequest) como al
-// hacer clic, así que a un correo no autorizado nunca se le envía el enlace NI se le
-// crea usuario. Enviamos por la API HTTP de Resend (sin SMTP/nodemailer): encaja
-// mejor en el serverless de Vercel. Al definir `sendVerificationRequest`, NextAuth NO
-// usa transporte SMTP, por eso no configuramos `server`.
-if (process.env.RESEND_API_KEY && process.env.EMAIL_FROM) {
-  providers.push(
-    EmailProvider({
-      from: process.env.EMAIL_FROM,
-      maxAge: 30 * 60, // el enlace vive 30 min (default de NextAuth: 24 h)
-      async sendVerificationRequest({ identifier: email, url, provider }) {
-        const { host } = new URL(url);
-        const res = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: provider.from,
-            to: email,
-            subject: `Tu enlace de acceso a ${host}`,
-            html: magicLinkEmailHtml({ url, host }),
-            text: `Ingresa a ${host} con este enlace (válido 30 minutos):\n${url}\n\nSi no solicitaste este correo, ignóralo.`,
-          }),
-        });
-        if (!res.ok) {
-          const detail = await res.text().catch(() => "");
-          throw new Error(`Resend rechazó el envío (${res.status}): ${detail}`);
-        }
-      },
     })
   );
 }
