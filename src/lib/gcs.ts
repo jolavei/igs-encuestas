@@ -45,6 +45,12 @@ export async function signDownloadUrl(objectPath: string, filename: string) {
   return url;
 }
 
+// Descarga el objeto al servidor (para parsear/ingestar). Devuelve el binario.
+export async function downloadObject(objectPath: string): Promise<Buffer> {
+  const [contents] = await getBucket().file(objectPath).download();
+  return contents;
+}
+
 export async function deleteObject(objectPath: string) {
   try {
     await getBucket().file(objectPath).delete({ ignoreNotFound: true });

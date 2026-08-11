@@ -28,7 +28,8 @@ export type IconName =
   | "dashboard"
   | "documents"
   | "compliance"
-  | "report";
+  | "report"
+  | "upload";
 
 export const HomeIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
@@ -111,6 +112,15 @@ export const ReportIcon = (p: SVGProps<SVGSVGElement>) => (
     <rect x="3" y="4" width="18" height="13" rx="2" />
     <path d="M3 20h18" />
     <path d="M8 13v-2M12 13V9M16 13v-4" />
+  </Svg>
+);
+
+// Ingesta ASQ (subir archivo a una bandeja)
+export const UploadIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" />
+    <path d="M12 15V3" />
+    <path d="m8 7 4-4 4 4" />
   </Svg>
 );
 
@@ -201,4 +211,5 @@ export const NAV_ICONS: Record<IconName, (p: SVGProps<SVGSVGElement>) => JSX.Ele
   documents: DocsIcon,
   compliance: ComplianceIcon,
   report: ReportIcon,
+  upload: UploadIcon,
 };

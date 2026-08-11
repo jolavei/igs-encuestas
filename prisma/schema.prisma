@@ -48,6 +48,7 @@ model User {
   workPlans   WorkPlan[]    @relation("WorkPlanSurveyors")
   responses   ResponseSet[] @relation("SurveyorResponses")
   auditLogs   AuditLog[]
+  asqImports  AsqDepartureImport[] @relation("UserAsqImports")
   // Sedes asignadas (multi-selección). Un usuario puede ver varias empresas/sedes.
   assignedLocations Location[] @relation("UserAssignedLocations")
 
@@ -424,6 +425,33 @@ model AsqComplianceRow {
   collected          Int // encuestas realizadas
 
   @@index([runId])
+}
+
+// Historial/auditoría de cada ingesta de microdata ASQ Departures (Excel/Sheet)
+// hacia BigQuery (encuestas.asq_departures). La microdata NO vive en Postgres; aquí
+// sólo queda la trazabilidad de cada carga. status: LOADED | FAILED.
+model AsqDepartureImport {
+  id           String   @id @default(cuid())
+  fileName     String
+  objectPath   String // ruta del .xlsx en GCS
+  status       String   @default("LOADED")
+  quarters     String? // códigos crudos, coma-separados (ej. "SU25")
+  seasonLabel  String? // etiqueta(s) legible(s) (ej. "Summer 2025")
+  rowCount     Int      @default(0) // filas del archivo
+  ownRowCount  Int      @default(0) // filas de aeropuertos propios
+  replacedRows Int      @default(0) // filas borradas por idempotencia
+  loadedRows   Int      @default(0) // filas cargadas a BQ
+  airportsJson String? // JSON { código: conteo }
+  bqTable      String? // referencia proyecto.dataset.tabla
+  bqLoadJobId  String? // id del load job de BigQuery
+  ingestId     String? // UUID del batch (== _ingest_id en BQ)
+  error        String? // mensaje si status = FAILED
+  createdById  String?
+  createdBy    User?    @relation("UserAsqImports", fields: [createdById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([createdById])
 }
 
 // Auditoria: quien creo/edito version y quien asigno cuota.
