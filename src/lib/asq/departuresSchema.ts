@@ -57,9 +57,11 @@ export const ASQ_COLUMNS: AsqColumn[] = [
   i("Crowd"), i("Flight_Delay"), i("Number_Trip"), s("Nationality"), s("Nationality_Region"),
   s("Residency"), s("Residency_Region"), i("Age"), i("Gender"), s("Quarter"),
   s("Agent_Number"), t("System_Time"), d("System_Date"), s("QuestNo"), s("Reference_ID"),
-  f("Weight"), i("Arrival_Category"), i("Checkin_Category"), i("Security_Category"), i("Border_Category"),
-  i("RestShops_Category"), i("Gates_Category"), i("Throughout_Category"), i("Atmosphere_Category"), i("Ease_Index"),
-  i("Waiting_Index"), i("Staff_Index"), i("Emotional_Score"), i("Language"),
+  // Scores de categoría e índices son promedios -> DECIMAL (FLOAT). El Excel los trae
+  // enteros (1..5) y el Sheet con decimales (3.66); FLOAT acomoda ambos sin truncar.
+  f("Weight"), f("Arrival_Category"), f("Checkin_Category"), f("Security_Category"), f("Border_Category"),
+  f("RestShops_Category"), f("Gates_Category"), f("Throughout_Category"), f("Atmosphere_Category"), f("Ease_Index"),
+  f("Waiting_Index"), f("Staff_Index"), f("Emotional_Score"), i("Language"),
 ];
 
 // Columnas vestigiales del Sheet histórico: se descartan (no van a _extra ni a BQ).

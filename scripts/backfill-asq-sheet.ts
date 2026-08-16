@@ -53,6 +53,30 @@ async function resolveOwnAirports(flags: Record<string, string | boolean>): Prom
   }
 }
 
+// Columnas de score/índice/peso que el export del Google Sheet trae escaladas
+// ×1.000.000 (los decimales con coma "3,66" se volvieron el entero 3660000). Los
+// valores válidos son 1..5 (scores) o ~0..3 (Weight), así que cualquier |v|>6 está
+// escalado -> ÷1e6. En un Excel limpio (enteros 1..5) esto NO se dispara (no-op).
+const SHEET_SCALED_COLUMNS = [
+  "Arrival_Category", "Checkin_Category", "Security_Category", "Border_Category",
+  "RestShops_Category", "Gates_Category", "Throughout_Category", "Atmosphere_Category",
+  "Ease_Index", "Waiting_Index", "Staff_Index", "Emotional_Score", "Weight",
+];
+
+function unscaleSheetDecimals(records: AsqRecord[]): number {
+  let fixed = 0;
+  for (const r of records) {
+    for (const c of SHEET_SCALED_COLUMNS) {
+      const v = r[c];
+      if (typeof v === "number" && Math.abs(v) > 6) {
+        r[c] = v / 1_000_000;
+        fixed++;
+      }
+    }
+  }
+  return fixed;
+}
+
 function groupByQuarter(records: AsqRecord[]): Map<string, AsqRecord[]> {
   const map = new Map<string, AsqRecord[]>();
   let sinQuarter = 0;
@@ -112,6 +136,12 @@ async function main() {
         "Revisa la pestaña con --sheet=NOMBRE o fuerza con --force."
     );
     process.exit(1);
+  }
+
+  // Corregir el escalado ×1e6 de los scores/índices/peso del export del Sheet.
+  if (!flags["no-unscale"]) {
+    const fixed = unscaleSheetDecimals(records);
+    if (fixed) console.log(`   des-escalado ÷1e6 aplicado a ${fixed} valores (scores/índices/peso)`);
   }
 
   let byQuarter = groupByQuarter(records);

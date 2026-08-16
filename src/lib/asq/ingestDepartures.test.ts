@@ -18,6 +18,8 @@ describe("asqTableFields", () => {
     expect(byName.get("Airport")?.type).toBe("STRING");
     expect(byName.get("Airp_Size")?.type).toBe("INTEGER");
     expect(byName.get("Weight")?.type).toBe("FLOAT");
+    expect(byName.get("Arrival_Category")?.type).toBe("FLOAT"); // score decimal
+    expect(byName.get("Ease_Index")?.type).toBe("FLOAT");
     expect(byName.get("Dep_Date")?.type).toBe("DATE");
     expect(byName.get("Language")?.type).toBe("INTEGER");
     expect(byName.get("_ingested_at")?.type).toBe("TIMESTAMP");
