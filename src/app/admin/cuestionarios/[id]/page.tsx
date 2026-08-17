@@ -15,6 +15,7 @@ import QuestionnaireBuilder, {
 } from "@/components/QuestionnaireBuilder";
 import QrManager from "@/components/QrManager";
 import DataformPanel from "@/components/DataformPanel";
+import QuestionnaireTitleEditor from "@/components/QuestionnaireTitleEditor";
 
 type VersionQuestion = {
   sectionId: string | null;
@@ -117,7 +118,7 @@ export default async function QuestionnaireDetail({ params }: { params: { id: st
         <Link href="/admin/cuestionarios" className="text-sm text-brand-600">
           ← Cuestionarios
         </Link>
-        <h1 className="text-2xl font-bold">{q.title}</h1>
+        <QuestionnaireTitleEditor id={q.id} title={q.title} />
         {companies.length > 0 && (
           <p className="flex flex-wrap gap-1 text-slate-500">
             {companies.map((c) => (

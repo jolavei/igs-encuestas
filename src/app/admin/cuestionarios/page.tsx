@@ -58,7 +58,7 @@ export default async function CuestionariosPage() {
               {active ? `Activa: v${active.versionNumber}` : "Sin versión activa"}
             </p>
           </Link>
-          <QuestionnaireActions id={q.id} active={q.active} />
+          <QuestionnaireActions id={q.id} active={q.active} title={q.title} />
         </div>
       </div>
     );
