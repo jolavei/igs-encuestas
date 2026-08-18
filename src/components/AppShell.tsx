@@ -12,9 +12,17 @@ import {
   LogoutIcon,
   ChevronDownIcon,
   UserIcon,
+  BookIcon,
 } from "@/components/icons";
 
 type NavItem = { href: string; label: string; icon: IconName; exact?: boolean };
+
+// Manual de usuario en PDF por rol (servido desde /public/manuales).
+const MANUAL_HREF: Record<Role, string> = {
+  ADMIN: "/manuales/Manual_Usuario_Administrador.pdf",
+  SURVEYOR: "/manuales/Manual_Usuario_Encuestador.pdf",
+  CLIENT: "/manuales/Manual_Usuario_Cliente.pdf",
+};
 
 const NAV: Record<Role, NavItem[]> = {
   ADMIN: [
@@ -214,6 +222,15 @@ export default function AppShell({
               >
                 <UserIcon className="text-slate-400" /> Mi perfil
               </Link>
+              <a
+                href={MANUAL_HREF[role]}
+                target="_blank"
+                rel="noopener noreferrer"
+                role="menuitem"
+                className="flex items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <BookIcon className="text-slate-400" /> Manual de usuario
+              </a>
               <button
                 onClick={() => signOut({ callbackUrl: "/login" })}
                 role="menuitem"
