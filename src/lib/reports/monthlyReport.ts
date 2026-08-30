@@ -133,9 +133,10 @@ export type ReportProcess = {
   fase: Fase | null;
   faseLabel: string | null; // "Espera 1ª maleta" / "Última maleta" (solo Retiro)
   meta: number | null; // Estándar IATA (min)
-  kpi: TiempoAgg; // del mes
+  monthHasData: boolean; // ¿hubo mediciones este mes? (si no, la diapositiva se muestra igual por la temporada)
+  kpi: TiempoAgg | null; // del mes; null si el mes no tuvo mediciones
   kpiSeason: TiempoAgg; // del periodo completo (temporada)
-  margin: number | null; // meta - prom del mes (min); null si el proceso no tiene estándar
+  margin: number | null; // meta - prom del mes (min); null si el proceso no tiene estándar o el mes no tuvo mediciones
   series: { ym: string; label: string; prom: number | null; med: number | null; p90: number | null }[];
   byAirline: ReportAirlineBreakdown[]; // vacío si el proceso no distingue aerolínea
 };
@@ -256,9 +257,14 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
               : Promise.resolve([] as AirlineSerieRow[]),
           ]);
           const monthEntry = main.series.find((s) => s.ym === month);
-          if (!monthEntry || monthEntry.n <= 0) return null; // sólo procesos con actividad en el mes
-
           const agg = main.byAirport.find((r) => r.name === ap.name);
+          // La diapositiva aparece si el proceso tuvo alguna medición en la TEMPORADA,
+          // aunque este mes puntual todavía no registre ninguna (p. ej. Check in en agosto
+          // cuando ya se midió antes en la misma temporada).
+          const monthHasData = !!monthEntry && monthEntry.n > 0;
+          const seasonHasData = !!agg && agg.n > 0;
+          if (!monthHasData && !seasonHasData) return null;
+
           const kpiSeason: TiempoAgg = agg
             ? { n: agg.n, prom: agg.prom, med: agg.med, p90: agg.p90 }
             : { n: 0, prom: 0, med: 0, p90: 0 };
@@ -302,9 +308,12 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
             fase,
             faseLabel,
             meta,
-            kpi: { n: monthEntry.n, prom: monthEntry.prom, med: monthEntry.med, p90: monthEntry.p90 },
+            monthHasData,
+            kpi: monthHasData
+              ? { n: monthEntry!.n, prom: monthEntry!.prom, med: monthEntry!.med, p90: monthEntry!.p90 }
+              : null,
             kpiSeason,
-            margin: meta != null ? meta - monthEntry.prom : null,
+            margin: monthHasData && meta != null ? meta - monthEntry!.prom : null,
             series: evol,
             byAirline,
           };

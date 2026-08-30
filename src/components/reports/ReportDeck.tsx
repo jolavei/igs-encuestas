@@ -35,7 +35,8 @@ export type DeckData = {
     fase: string | null;
     faseLabel: string | null;
     meta: number | null;
-    kpi: { n: number; prom: number; med: number; p90: number };
+    monthHasData: boolean;
+    kpi: { n: number; prom: number; med: number; p90: number } | null;
     kpiSeason: { n: number; prom: number; med: number; p90: number };
     margin: number | null;
     series: { label: string; prom: number | null; med: number | null; p90: number | null }[];
@@ -373,15 +374,21 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
   const cols = Math.min(p.byAirline.length, 6);
   const seasonMargin = p.meta != null ? p.meta - p.kpiSeason.prom : null;
   const yMax = niceMax(Math.max(0, ...p.series.flatMap((s) => [s.prom ?? 0, s.med ?? 0, s.p90 ?? 0]), p.meta ?? 0));
+  // Sin mediciones este mes: la diapositiva se muestra igual (hubo mediciones antes en la
+  // temporada). Los KPIs del mes van en "—" y se apoya el lector en el acumulado del periodo.
+  const kpi = p.kpi;
+  const subtitle = p.monthHasData
+    ? `${full} · ${data.monthLabel}`
+    : `${full} · ${data.monthLabel} · sin mediciones este mes (se muestra el acumulado de la temporada)`;
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title={title} subtitle={`${full} · ${data.monthLabel}`} />
+      <SlideHead title={title} subtitle={subtitle} />
       {/* KPIs: número del mes en grande + promedio del periodo abajo (pequeño) */}
       <div style={{ position: "absolute", top: 150, left: 72, right: 72 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
-          <Kpi label="Promedio" value={fmtMMSS(p.kpi.prom)} sub={`Periodo ${fmtMMSS(p.kpiSeason.prom)}`} />
-          <Kpi label="P90" value={fmtMMSS(p.kpi.p90)} sub={`Periodo ${fmtMMSS(p.kpiSeason.p90)}`} />
-          <Kpi label="Mediana" value={fmtMMSS(p.kpi.med)} sub={`Periodo ${fmtMMSS(p.kpiSeason.med)}`} />
+          <Kpi label="Promedio" value={kpi ? fmtMMSS(kpi.prom) : "—"} sub={`Periodo ${fmtMMSS(p.kpiSeason.prom)}`} />
+          <Kpi label="P90" value={kpi ? fmtMMSS(kpi.p90) : "—"} sub={`Periodo ${fmtMMSS(p.kpiSeason.p90)}`} />
+          <Kpi label="Mediana" value={kpi ? fmtMMSS(kpi.med) : "—"} sub={`Periodo ${fmtMMSS(p.kpiSeason.med)}`} />
           {p.meta == null ? (
             <Kpi label="Estándar IATA" value="—" sub="sin estándar" />
           ) : (
@@ -389,10 +396,10 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
               label="Margen vs Est. IATA"
               value={fmtMMSS(p.margin)}
               sub={`Periodo ${fmtMMSS(seasonMargin)}`}
-              valueColor={marginOk ? AIGS.up : AIGS.down}
+              valueColor={p.margin == null ? AIGS.muted : marginOk ? AIGS.up : AIGS.down}
             />
           )}
-          <Kpi label="N° de mediciones" value={fmtInt(p.kpi.n)} sub={`Periodo ${fmtInt(p.kpiSeason.n)}`} />
+          <Kpi label="N° de mediciones" value={fmtInt(kpi ? kpi.n : 0)} sub={`Periodo ${fmtInt(p.kpiSeason.n)}`} />
         </div>
       </div>
 
@@ -535,7 +542,7 @@ function EmptyTiempos({ data }: { data: DeckData }) {
       <Centered>
         {data.bqError
           ? "No se pudieron leer las mediciones de tiempos (credenciales de BigQuery)."
-          : "Sin mediciones de tiempos registradas para este mes."}
+          : "Sin mediciones de tiempos registradas en esta temporada."}
       </Centered>
       <BottomLogo />
     </div>

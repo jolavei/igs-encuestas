@@ -403,8 +403,14 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
   const title = `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}`;
-  slideTitle(s, title, `${airportFull(r)} · ${r.monthLabel}`);
+  // Sin mediciones este mes: la diapositiva se muestra igual (hubo mediciones antes en la
+  // temporada); los KPIs del mes van en "—" y se apoya el lector en el acumulado del periodo.
+  const subtitle = p.monthHasData
+    ? `${airportFull(r)} · ${r.monthLabel}`
+    : `${airportFull(r)} · ${r.monthLabel} · sin mediciones este mes (se muestra el acumulado de la temporada)`;
+  slideTitle(s, title, subtitle);
 
+  const kpi = p.kpi;
   const marginOk = p.margin != null && p.margin >= 0;
   const seasonMargin = p.meta != null ? p.meta - p.kpiSeason.prom : null;
   const marginCard =
@@ -414,7 +420,7 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
           label: "Margen vs Est. IATA",
           value: fmtMMSS(p.margin),
           sub: `Periodo ${fmtMMSS(seasonMargin)}`,
-          valueColor: marginOk ? AIGS.up : AIGS.down,
+          valueColor: p.margin == null ? AIGS.muted : marginOk ? AIGS.up : AIGS.down,
         };
 
   // KPIs: número del mes en grande + promedio del periodo abajo (pequeño).
@@ -422,11 +428,11 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     s,
     pres,
     [
-      { label: "Promedio", value: fmtMMSS(p.kpi.prom), sub: `Periodo ${fmtMMSS(p.kpiSeason.prom)}` },
-      { label: "P90", value: fmtMMSS(p.kpi.p90), sub: `Periodo ${fmtMMSS(p.kpiSeason.p90)}` },
-      { label: "Mediana", value: fmtMMSS(p.kpi.med), sub: `Periodo ${fmtMMSS(p.kpiSeason.med)}` },
+      { label: "Promedio", value: kpi ? fmtMMSS(kpi.prom) : "—", sub: `Periodo ${fmtMMSS(p.kpiSeason.prom)}` },
+      { label: "P90", value: kpi ? fmtMMSS(kpi.p90) : "—", sub: `Periodo ${fmtMMSS(p.kpiSeason.p90)}` },
+      { label: "Mediana", value: kpi ? fmtMMSS(kpi.med) : "—", sub: `Periodo ${fmtMMSS(p.kpiSeason.med)}` },
       marginCard,
-      { label: "N° de mediciones", value: fmtInt(p.kpi.n), sub: `Periodo ${fmtInt(p.kpiSeason.n)}` },
+      { label: "N° de mediciones", value: fmtInt(kpi ? kpi.n : 0), sub: `Periodo ${fmtInt(p.kpiSeason.n)}` },
     ],
     2.1
   );
@@ -556,7 +562,7 @@ export async function buildDeck(r: MonthlyReport): Promise<Uint8Array> {
     s.addText(
       r.bqError
         ? "No se pudieron leer las mediciones de tiempos (credenciales de BigQuery)."
-        : "Sin mediciones de tiempos registradas para este mes.",
+        : "Sin mediciones de tiempos registradas en esta temporada.",
       { x: MX, y: 5, w: CONTENT_W, h: 1, fontFace: FONT.face, fontSize: 18, color: AIGS.muted, align: "center", margin: 0 }
     );
     addBottomLogo(s);
