@@ -1,8 +1,8 @@
-import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
 import { fromJson } from "@/lib/enums";
 import type { QuestionConfig } from "@/lib/questionTypes";
 import { getPlanProgress } from "@/lib/planProgress";
+import { PlanSegmentTable } from "@/components/planCards";
 import Fab from "@/components/Fab";
 import NewWorkPlanForm from "@/components/NewWorkPlanForm";
 import PlanStatusToggle from "@/components/PlanStatusToggle";
@@ -32,11 +32,6 @@ function Bar({ done, target, label }: { done: number; target: number; label: str
       </div>
     </div>
   );
-}
-
-function Estado({ done, target }: { done: number; target: number }) {
-  if (target > 0 && done >= target) return <span className="font-medium text-green-600">✓</span>;
-  return <span className="text-slate-400">faltan {Math.max(0, target - done)}</span>;
 }
 
 export default async function PlanesPage() {
@@ -172,55 +167,12 @@ export default async function PlanesPage() {
 
         <Bar done={prog.done} target={prog.total} label="Total" />
 
-        {prog.levels.length > 0 && (
-          <div className="overflow-hidden rounded-md border border-slate-200">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-3 py-2">
-                    {p.segmentLabel || "Segmento"}
-                    {p.segment2Label && ` / ${p.segment2Label}`}
-                  </th>
-                  <th className="px-3 py-2 text-right">Realizadas</th>
-                  <th className="px-3 py-2 text-right">Meta</th>
-                  <th className="px-3 py-2 text-right">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {prog.levels.map((l1) => (
-                  <Fragment key={l1.value}>
-                    <tr className="border-t border-slate-200 bg-slate-50/60 font-medium">
-                      <td className="px-3 py-2">{l1.label}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{l1.done}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{l1.target}</td>
-                      <td className="px-3 py-2 text-right">
-                        <Estado done={l1.done} target={l1.target} />
-                      </td>
-                    </tr>
-                    {l1.children.map((c) => (
-                      <tr key={c.value} className="border-t border-slate-100 text-slate-600">
-                        <td className="px-3 py-2 pl-7">↳ {c.label}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{c.done}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{c.target}</td>
-                        <td className="px-3 py-2 text-right">
-                          <Estado done={c.done} target={c.target} />
-                        </td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-                {prog.otros > 0 && (
-                  <tr className="border-t border-slate-100 text-slate-500">
-                    <td className="px-3 py-2 italic">Otros (fuera de segmentos)</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{prog.otros}</td>
-                    <td className="px-3 py-2 text-right">—</td>
-                    <td className="px-3 py-2"></td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <PlanSegmentTable
+          segmentLabel={p.segmentLabel}
+          segment2Label={p.segment2Label}
+          levels={prog.levels}
+          otros={prog.otros}
+        />
 
         {p.comment && <p className="text-sm text-slate-600">📋 {p.comment}</p>}
       </div>
