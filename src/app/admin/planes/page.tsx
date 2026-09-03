@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { fromJson } from "@/lib/enums";
-import type { QuestionConfig } from "@/lib/questionTypes";
+import { buildSegmentQuestions } from "@/lib/planSegments";
 import { getPlanProgress } from "@/lib/planProgress";
 import { PlanSegmentTable } from "@/components/planCards";
 import Fab from "@/components/Fab";
@@ -46,7 +45,10 @@ export default async function PlanesPage() {
         companies: { select: { id: true } },
         versions: {
           where: { status: "ACTIVE" },
-          include: { questions: { orderBy: { order: "asc" } } },
+          include: {
+            questions: { orderBy: { order: "asc" } },
+            sections: { orderBy: { order: "asc" } },
+          },
         },
       },
       orderBy: { title: "asc" },
@@ -64,23 +66,15 @@ export default async function PlanesPage() {
     }),
   ]);
 
-  // Solo cuestionarios con versión activa; extraer preguntas-segmento (selección única + equivalenceKey).
+  // Solo cuestionarios con versión activa; extraer preguntas-segmento (selección única
+  // + equivalenceKey), resolviendo el anidamiento por sección (ver buildSegmentQuestions).
   const questionnaires = questionnairesRaw
     .filter((q) => q.versions.length > 0)
     .map((q) => ({
       id: q.id,
       title: q.title,
       companyIds: q.companies.map((c) => c.id),
-      segmentQuestions: q.versions[0].questions
-        .filter(
-          (qq) =>
-            (qq.type === "SINGLE_CHOICE" || qq.type === "DROPDOWN") && qq.equivalenceKey
-        )
-        .map((qq) => ({
-          equivalenceKey: qq.equivalenceKey as string,
-          text: qq.text,
-          options: fromJson<QuestionConfig>(qq.config)?.options ?? [],
-        })),
+      segmentQuestions: buildSegmentQuestions(q.versions[0].questions, q.versions[0].sections),
     }));
 
   // Opciones para el formulario (crear y editar): se calculan una vez y se reusan.

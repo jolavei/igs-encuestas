@@ -1,12 +1,18 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { buildPlanSegmentsFromTargets } from "@/lib/planSegments";
 
 export type Company = { id: string; name: string; locations: { id: string; name: string }[] };
+type SubOption = { value: string; label: string };
 type SegmentQuestion = {
   equivalenceKey: string;
   text: string;
-  options: { value: string; label: string }[];
+  options: SubOption[];
+  // Presente solo si esta pregunta enruta a una sección por opción (p. ej. "Proceso a
+  // medir"): la sub-meta de cada opción usa la aerolínea de su sección, distinta por
+  // proceso. `byOption[valorDelProceso]` = opciones de aerolínea de ese proceso.
+  nested?: { label: string; byOption: Record<string, SubOption[]> } | null;
 };
 export type Questionnaire = {
   id: string;
@@ -71,6 +77,15 @@ export default function NewWorkPlanForm({
   const questionnaire = questionnaires.find((q) => q.id === questionnaireId);
   const primaryQ = questionnaire?.segmentQuestions.find((s) => s.equivalenceKey === segEqKey);
   const secondaryQ = questionnaire?.segmentQuestions.find((s) => s.equivalenceKey === seg2EqKey);
+  // Modo "anidado por sección": el primario enruta a una sección por opción y cada una
+  // tiene su propia aerolínea. En ese caso el sub-segmento no se elige (es automático).
+  const nested = primaryQ?.nested ?? null;
+  const isNested = !!nested;
+  // Opciones de sub-meta para un valor del primario: anidadas por proceso, o (modo
+  // clásico) las opciones uniformes del sub-segmento elegido.
+  const subOptionsFor = (poValue: string): SubOption[] =>
+    nested ? nested.byOption[poValue] ?? [] : secondaryQ ? secondaryQ.options : [];
+  const subLabel = nested ? nested.label : secondaryQ?.text;
 
   function toggleSurveyor(id: string) {
     setSurveyorIds((s) => {
@@ -85,35 +100,12 @@ export default function NewWorkPlanForm({
     setBusy(true);
     setError(null);
     try {
-      const segments: {
-        parentValue: string | null;
-        value: string;
-        label: string;
-        target: number;
-      }[] = [];
-
-      if (primaryQ) {
-        for (const po of primaryQ.options) {
-          const childSum = secondaryQ
-            ? secondaryQ.options.reduce(
-                (a, so) => a + (seg2Targets[`${po.value}|${so.value}`] ?? 0),
-                0
-              )
-            : 0;
-          const l1target = segTargets[po.value] || childSum;
-          if (l1target > 0) {
-            segments.push({ parentValue: null, value: po.value, label: po.label, target: l1target });
-          }
-          if (secondaryQ) {
-            for (const so of secondaryQ.options) {
-              const t = seg2Targets[`${po.value}|${so.value}`] ?? 0;
-              if (t > 0) {
-                segments.push({ parentValue: po.value, value: so.value, label: so.label, target: t });
-              }
-            }
-          }
-        }
-      }
+      const segments = buildPlanSegmentsFromTargets(
+        primaryQ ? primaryQ.options : [],
+        subOptionsFor,
+        segTargets,
+        seg2Targets
+      );
 
       const r = await fetch(editing ? `/api/workplans/${initial!.id}` : "/api/workplans", {
         method: editing ? "PATCH" : "POST",
@@ -127,8 +119,10 @@ export default function NewWorkPlanForm({
           totalTarget: Number(totalTarget) || 0,
           segmentKey: primaryQ ? segEqKey : null,
           segmentLabel: primaryQ ? primaryQ.text : null,
-          segment2Key: primaryQ && secondaryQ ? seg2EqKey : null,
-          segment2Label: primaryQ && secondaryQ ? secondaryQ.text : null,
+          // Anidado por sección => centinela "@nested" (la aerolínea se resuelve por la
+          // sección del proceso al guardar la respuesta). Si no, el sub-segmento elegido.
+          segment2Key: primaryQ ? (isNested ? "@nested" : secondaryQ ? seg2EqKey : null) : null,
+          segment2Label: primaryQ ? (isNested ? nested!.label : secondaryQ?.text ?? null) : null,
           segments,
           surveyorIds: [...surveyorIds],
           comment: comment || null,
@@ -283,7 +277,7 @@ export default function NewWorkPlanForm({
         </div>
       )}
 
-      {primaryQ && questionnaire!.segmentQuestions.length > 1 && (
+      {primaryQ && !isNested && questionnaire!.segmentQuestions.length > 1 && (
         <div>
           <label className="label">Sub-segmento (opcional — para metas de dos niveles)</label>
           <select
@@ -310,10 +304,12 @@ export default function NewWorkPlanForm({
         <div className="rounded-md bg-slate-50 p-3">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Sub-metas por {primaryQ.text}
-            {secondaryQ && ` → ${secondaryQ.text}`}
+            {subLabel && ` → ${subLabel}`}
           </p>
           <div className="space-y-2">
-            {primaryQ.options.map((po) => (
+            {primaryQ.options.map((po) => {
+              const subOpts = subOptionsFor(po.value);
+              return (
               <div key={po.value} className="rounded-md border border-slate-200 bg-white p-2">
                 <div className="flex items-center gap-3">
                   <span className="flex-1 text-sm font-medium">{po.label}</span>
@@ -331,9 +327,9 @@ export default function NewWorkPlanForm({
                     }
                   />
                 </div>
-                {secondaryQ && (
+                {subOpts.length > 0 && (
                   <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-                    {secondaryQ.options.map((so) => {
+                    {subOpts.map((so) => {
                       const k = `${po.value}|${so.value}`;
                       return (
                         <div key={so.value} className="flex items-center gap-3 pl-4">
@@ -357,7 +353,8 @@ export default function NewWorkPlanForm({
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
           <p className="mt-2 text-xs text-slate-400">
             No es obligatorio que las sub-metas sumen N (el resto cuenta como “Otros”). Si un

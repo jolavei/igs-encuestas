@@ -60,8 +60,24 @@ export async function createResponseSet(args: Args) {
     if (!segQ) return null;
     return answers.find((x) => x.questionId === segQ.id)?.valueText ?? null;
   };
+  // Segmento secundario "anidado por sección" (segment2Key === "@nested"): la pregunta
+  // de aerolínea vive dentro de la sección de cada proceso (Check in y Retiro tienen su
+  // propia pregunta con opciones distintas), así que no es una pregunta fija. Cada envío
+  // responde una sola sección, por lo que tomamos la única opción-única/desplegable (con
+  // equivalenceKey) efectivamente respondida que no sea la del segmento primario.
+  const nestedSegValue = (primaryKey?: string | null): string | null => {
+    for (const q of questions) {
+      if (q.equivalenceKey === primaryKey) continue;
+      if (q.type !== "SINGLE_CHOICE" && q.type !== "DROPDOWN") continue;
+      if (!q.equivalenceKey) continue;
+      const v = answers.find((x) => x.questionId === q.id)?.valueText;
+      if (v != null && v !== "") return v;
+    }
+    return null;
+  };
   const segmentValue = segFrom(args.segmentKey);
-  const segmentValue2 = segFrom(args.segment2Key);
+  const segmentValue2 =
+    args.segment2Key === "@nested" ? nestedSegValue(args.segmentKey) : segFrom(args.segment2Key);
 
   const clientSubmissionId = args.clientSubmissionId ?? null;
 
