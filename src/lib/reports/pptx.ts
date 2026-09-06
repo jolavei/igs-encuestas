@@ -513,6 +513,40 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   addBottomLogo(s);
 }
 
+/** Diapositiva opcional "Comentarios y sugerencias" (antes del cierre). */
+function commentsSlide(pres: Pptx, r: MonthlyReport, comentarios: string) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Comentarios y sugerencias", `${airportFull(r)} · ${r.monthLabel}`);
+
+  const boxY = 2.2;
+  const boxH = H - boxY - 0.9; // deja aire para el logo inferior
+  s.addShape(pres.ShapeType.roundRect, {
+    x: MX,
+    y: boxY,
+    w: CONTENT_W,
+    h: boxH,
+    fill: { color: AIGS.surfaceSoft },
+    line: { color: AIGS.hairline, width: 0.75 },
+    rectRadius: 0.1,
+  });
+  s.addText(comentarios, {
+    x: MX + 0.4,
+    y: boxY + 0.3,
+    w: CONTENT_W - 0.8,
+    h: boxH - 0.6,
+    fontFace: FONT.face,
+    fontSize: 18,
+    color: AIGS.body,
+    align: "left",
+    valign: "top",
+    margin: 0,
+    lineSpacingMultiple: 1.25,
+    fit: "shrink", // achica el texto si el comentario es largo, para que no desborde
+  });
+  addBottomLogo(s);
+}
+
 function closingSlide(pres: Pptx) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
@@ -540,8 +574,12 @@ function closingSlide(pres: Pptx) {
   });
 }
 
-/** Construye el deck completo y devuelve los bytes del .pptx. */
-export async function buildDeck(r: MonthlyReport): Promise<Uint8Array> {
+/**
+ * Construye el deck completo y devuelve los bytes del .pptx.
+ * `comentarios`: si trae texto, agrega la diapositiva "Comentarios y sugerencias"
+ * justo antes del cierre; si viene vacío, se omite.
+ */
+export async function buildDeck(r: MonthlyReport, comentarios?: string): Promise<Uint8Array> {
   const PptxGenJS = (await import("pptxgenjs")).default;
   const pres = new PptxGenJS();
   pres.defineLayout({ name: "AIGS", width: W, height: H });
@@ -569,6 +607,9 @@ export async function buildDeck(r: MonthlyReport): Promise<Uint8Array> {
   } else {
     for (const p of r.processes) procesoSlide(pres, r, p);
   }
+
+  const comments = (comentarios ?? "").trim();
+  if (comments) commentsSlide(pres, r, comments);
 
   closingSlide(pres);
 

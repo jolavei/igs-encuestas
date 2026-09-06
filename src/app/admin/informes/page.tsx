@@ -6,6 +6,7 @@ import {
   monthLabel,
 } from "@/lib/reports/monthlyReport";
 import MonthPicker from "@/components/reports/MonthPicker";
+import PptxDownloadButton from "@/components/reports/PptxDownloadButton";
 
 export const dynamic = "force-dynamic";
 
@@ -72,12 +73,7 @@ export default async function InformesIndex({ searchParams }: { searchParams: { 
                 >
                   Ver informe
                 </Link>
-                <a
-                  href={`/api/reports/pptx?airport=${a.code}&mes=${mes}`}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-                >
-                  Descargar PPTX
-                </a>
+                <PptxDownloadButton airport={a.code} mes={mes} />
               </div>
             </div>
           ))}
