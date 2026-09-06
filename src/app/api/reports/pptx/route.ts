@@ -34,13 +34,17 @@ async function generate(airportRaw: string, mesRaw: string, comentarios: string)
   });
 }
 
-// GET: descarga directa sin comentarios (enlaces simples).
+// GET: descarga directa; admite comentarios por query (enlace desde el informe HTML).
 export async function GET(req: Request) {
   const { user, status } = await apiUser(["ADMIN"]);
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status });
 
   const url = new URL(req.url);
-  return generate(url.searchParams.get("airport") || "", url.searchParams.get("mes") || "", "");
+  return generate(
+    url.searchParams.get("airport") || "",
+    url.searchParams.get("mes") || "",
+    url.searchParams.get("comentarios") || ""
+  );
 }
 
 // POST: descarga con posible diapositiva de comentarios y sugerencias.

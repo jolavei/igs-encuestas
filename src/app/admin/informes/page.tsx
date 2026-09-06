@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   listReportAirports,
   currentMonth,
@@ -6,7 +5,7 @@ import {
   monthLabel,
 } from "@/lib/reports/monthlyReport";
 import MonthPicker from "@/components/reports/MonthPicker";
-import PptxDownloadButton from "@/components/reports/PptxDownloadButton";
+import ReportActions from "@/components/reports/ReportActions";
 
 export const dynamic = "force-dynamic";
 
@@ -65,16 +64,7 @@ export default async function InformesIndex({ searchParams }: { searchParams: { 
               <p className="text-sm text-slate-500">
                 {a.plans} {a.plans === 1 ? "plan vigente" : "planes vigentes"}
               </p>
-              <div className="mt-auto flex flex-wrap gap-2 pt-1">
-                <Link
-                  href={`/informe/${a.code}?mes=${mes}`}
-                  target="_blank"
-                  className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
-                >
-                  Ver informe
-                </Link>
-                <PptxDownloadButton airport={a.code} mes={mes} />
-              </div>
+              <ReportActions airport={a.code} mes={mes} />
             </div>
           ))}
         </div>

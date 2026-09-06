@@ -10,12 +10,13 @@ export default async function InformePage({
   searchParams,
 }: {
   params: { airport: string };
-  searchParams: { mes?: string };
+  searchParams: { mes?: string; comentarios?: string };
 }) {
   await requireUser(["ADMIN"]);
 
   const code = decodeURIComponent(params.airport).trim().toUpperCase();
   const mes = searchParams.mes && isValidMonth(searchParams.mes) ? searchParams.mes : currentMonth();
+  const comentarios = (searchParams.comentarios ?? "").slice(0, 3000);
 
   const report = await getMonthlyReport(code, mes);
 
@@ -33,5 +34,5 @@ export default async function InformePage({
     );
   }
 
-  return <ReportDeck data={report} />;
+  return <ReportDeck data={report} comentarios={comentarios} />;
 }

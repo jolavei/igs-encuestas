@@ -55,9 +55,10 @@ export type DeckData = {
 const SLIDE_W = 1280;
 const SLIDE_H = 720;
 
-export default function ReportDeck({ data }: { data: DeckData }) {
+export default function ReportDeck({ data, comentarios }: { data: DeckData; comentarios?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const comments = (comentarios ?? "").trim();
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -69,7 +70,9 @@ export default function ReportDeck({ data }: { data: DeckData }) {
     return () => ro.disconnect();
   }, []);
 
-  const pptxHref = `/api/reports/pptx?airport=${encodeURIComponent(data.airport.code)}&mes=${data.month}`;
+  const pptxHref =
+    `/api/reports/pptx?airport=${encodeURIComponent(data.airport.code)}&mes=${data.month}` +
+    (comments ? `&comentarios=${encodeURIComponent(comments)}` : "");
 
   return (
     <div className="min-h-screen bg-slate-100" style={{ fontFamily: FONT.face }}>
@@ -130,6 +133,13 @@ export default function ReportDeck({ data }: { data: DeckData }) {
               <ProcesoSlide data={data} p={p} />
             </Frame>
           ))
+        )}
+
+        {/* Comentarios y sugerencias (opcional, justo antes del cierre) */}
+        {comments && (
+          <Frame scale={scale}>
+            <Comments data={data} comentarios={comments} />
+          </Frame>
         )}
 
         {/* Cierre */}
@@ -544,6 +554,36 @@ function EmptyTiempos({ data }: { data: DeckData }) {
           ? "No se pudieron leer las mediciones de tiempos (credenciales de BigQuery)."
           : "Sin mediciones de tiempos registradas en esta temporada."}
       </Centered>
+      <BottomLogo />
+    </div>
+  );
+}
+
+function Comments({ data, comentarios }: { data: DeckData; comentarios: string }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Comentarios y sugerencias" subtitle={`${airportFull(data)} · ${data.monthLabel}`} />
+      <div
+        style={{
+          position: "absolute",
+          left: 72,
+          right: 72,
+          top: 150,
+          bottom: 64,
+          border: `1px solid ${hx(AIGS.hairline)}`,
+          background: hx(AIGS.surfaceSoft),
+          borderRadius: 14,
+          padding: "28px 32px",
+          fontSize: 18,
+          lineHeight: 1.5,
+          color: hx(AIGS.body),
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+          overflow: "hidden",
+        }}
+      >
+        {comentarios}
+      </div>
       <BottomLogo />
     </div>
   );
