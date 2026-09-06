@@ -175,11 +175,6 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
 
   const { start, end, y, m } = monthBounds(month);
   const season = seasonOf(new Date(y, m - 1, 15));
-  // El informe de un mes solo considera datos de la temporada HASTA ese mes
-  // (inclusive); nunca de los meses posteriores. Por eso la ventana de consulta y
-  // el evolutivo se recortan al último día del mes informado, en vez de usar el
-  // cierre de la temporada (season.to).
-  const hastaMes = `${month}-${pad(new Date(Date.UTC(y, m, 0)).getUTCDate())}`;
   const ap = airportByCode(code);
 
   // Planes vigentes de la empresa en el mes (contexto).
@@ -228,7 +223,7 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
   // Tiempos: sólo si el aeropuerto tiene equivalente en AIRPORTS (dato en BigQuery).
   // Se consultan todos los procesos/fases en paralelo; el informe usa la serie mensual
   // + (Check in / Retiro) el desglose por aerolínea.
-  const seasonMonths = monthsOfSeason(season).filter((ym) => ym <= month);
+  const seasonMonths = monthsOfSeason(season);
   // Retiro se informa en 2 fases: espera 1ª maleta y última maleta (descarga de correa).
   const jobs: { proceso: Proceso; fase: Fase | null; faseLabel: string | null }[] = [];
   for (const proceso of PROCESOS) {
@@ -252,13 +247,13 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
               proceso,
               airport: ap.name,
               desde: season.from,
-              hasta: hastaMes,
+              hasta: season.to,
               fase: fase ?? undefined,
               scopeAirports: [ap.name],
               skipSeasons: true,
             }),
             hasAirline(proceso)
-              ? queryTiemposByAirline({ proceso, airport: ap.name, desde: season.from, hasta: hastaMes, fase: fase ?? undefined })
+              ? queryTiemposByAirline({ proceso, airport: ap.name, desde: season.from, hasta: season.to, fase: fase ?? undefined })
               : Promise.resolve([] as AirlineSerieRow[]),
           ]);
           const monthEntry = main.series.find((s) => s.ym === month);
