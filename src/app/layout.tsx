@@ -1,8 +1,13 @@
 import type { Metadata, Viewport } from "next";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 import Providers from "./providers";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ChunkErrorReload from "@/components/ChunkErrorReload";
+
+// Google Analytics (GA4). Se puede sobreescribir el ID por entorno con
+// NEXT_PUBLIC_GA_ID; si no, usa el de la propiedad "Aeródromos IGS".
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID ?? "G-JFR58BMDXJ";
 
 export const metadata: Metadata = {
   title: "Aeródromos IGS — Encuestas",
@@ -23,6 +28,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>{children}</Providers>
         <ChunkErrorReload />
         <ServiceWorkerRegister />
+        {/* GA solo en producción para no ensuciar los datos con la navegación
+            local (`next dev`). Verás las visitas en GA4 → Tiempo real. */}
+        {process.env.NODE_ENV === "production" && (
+          <GoogleAnalytics gaId={GA_MEASUREMENT_ID} />
+        )}
       </body>
     </html>
   );

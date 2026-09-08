@@ -16,11 +16,13 @@ const csp = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  // googletagmanager: carga el gtag.js de Google Analytics (GA4).
+  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://www.googletagmanager.com https://*.google-analytics.com",
   "font-src 'self' data:",
-  "connect-src 'self' https://storage.googleapis.com",
+  // *.google-analytics.com / *.analytics.google.com: envío de eventos de GA4.
+  "connect-src 'self' https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com",
   "worker-src 'self' blob:",
   "manifest-src 'self'",
   "upgrade-insecure-requests",
