@@ -28,6 +28,7 @@ export type PlanInitial = {
   id: string;
   companyId: string;
   questionnaireId: string;
+  name: string;
   locationId: string;
   windowStart: string; // "YYYY-MM-DD" (día chileno)
   windowEnd: string;
@@ -57,6 +58,7 @@ export default function NewWorkPlanForm({
   const editing = !!initial;
   const [companyId, setCompanyId] = useState(initial?.companyId ?? "");
   const [questionnaireId, setQuestionnaireId] = useState(initial?.questionnaireId ?? "");
+  const [name, setName] = useState(initial?.name ?? "");
   const [locationId, setLocationId] = useState(initial?.locationId ?? "");
   const [windowStart, setWindowStart] = useState(initial?.windowStart ?? "");
   const [windowEnd, setWindowEnd] = useState(initial?.windowEnd ?? "");
@@ -113,6 +115,7 @@ export default function NewWorkPlanForm({
         body: JSON.stringify({
           companyId,
           questionnaireId,
+          name: name.trim() || null,
           locationId: locationId || null,
           windowStart,
           windowEnd,
@@ -136,6 +139,7 @@ export default function NewWorkPlanForm({
       }
       setCompanyId("");
       setQuestionnaireId("");
+      setName("");
       setLocationId("");
       setWindowStart("");
       setWindowEnd("");
@@ -207,6 +211,27 @@ export default function NewWorkPlanForm({
               No hay cuestionarios con versión activa.
             </p>
           )}
+        </div>
+      )}
+
+      {questionnaireId && (
+        <div>
+          <label className="label">Nombre del plan (opcional)</label>
+          <input
+            className="input"
+            type="text"
+            maxLength={120}
+            placeholder="Ej: SU2026"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            Se muestra junto al título del cuestionario para distinguir planes iguales:{" "}
+            <span className="font-medium text-slate-500">
+              {questionnaire?.title}
+              {name.trim() && ` – ${name.trim()}`}
+            </span>
+          </p>
         </div>
       )}
 

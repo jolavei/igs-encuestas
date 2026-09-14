@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { buildSegmentQuestions } from "@/lib/planSegments";
 import { getPlanProgress } from "@/lib/planProgress";
+import { planDisplayTitle } from "@/lib/planTitle";
 import { PlanSegmentTable } from "@/components/planCards";
 import Fab from "@/components/Fab";
 import NewWorkPlanForm from "@/components/NewWorkPlanForm";
@@ -110,6 +111,7 @@ export default async function PlanesPage() {
       id: p.id,
       companyId: p.companyId,
       questionnaireId: p.questionnaireId,
+      name: p.name ?? "",
       locationId: p.locationId ?? "",
       windowStart: utcToChileDay(p.windowStart),
       windowEnd: utcToChileDay(p.windowEnd),
@@ -130,7 +132,7 @@ export default async function PlanesPage() {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h3 className="flex flex-wrap items-center gap-2 font-semibold">
-              {p.questionnaire.title}
+              {planDisplayTitle(p.questionnaire.title, p.name)}
               {!active && (
                 <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
                   Cancelado

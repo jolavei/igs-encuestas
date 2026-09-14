@@ -9,6 +9,7 @@ import { validatePlanRefs } from "@/lib/refIntegrity";
 const schema = z.object({
   companyId: z.string(),
   questionnaireId: z.string(),
+  name: z.string().max(120).optional().nullable(),
   locationId: z.string().optional().nullable(),
   windowStart: z.string(),
   windowEnd: z.string(),
@@ -60,6 +61,7 @@ export async function POST(req: Request) {
     data: {
       companyId: d.companyId,
       questionnaireId: d.questionnaireId,
+      name: d.name?.trim() || null,
       locationId: d.locationId || null,
       windowStart: start,
       windowEnd: end,

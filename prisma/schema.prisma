@@ -219,6 +219,9 @@ model WorkPlan {
   company         Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   questionnaireId String
   questionnaire   Questionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  // Nombre/etiqueta opcional del plan, para distinguir dos planes del mismo
+  // cuestionario (p. ej. "SU2026"). Se muestra junto al título del cuestionario.
+  name            String?
   locationId      String? // sede fija (opcional); si null, el encuestador la elige
   location        Location?     @relation(fields: [locationId], references: [id])
   windowStart     DateTime

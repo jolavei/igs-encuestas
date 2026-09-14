@@ -18,6 +18,7 @@ import {
   type Fase,
 } from "@/lib/dashboardTiempos";
 import { queryTiempos, queryTiemposByAirline, type AirlineSerieRow } from "@/lib/reports/tiemposQuery";
+import { planDisplayTitle } from "@/lib/planTitle";
 import { shortAirline } from "@/lib/reports/design";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -189,7 +190,7 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
     orderBy: { windowEnd: "asc" },
   });
   const plans = plansRaw.map((p) => ({
-    questionnaire: p.questionnaire.title,
+    questionnaire: planDisplayTitle(p.questionnaire.title, p.name),
     location: p.location?.name ?? null,
     windowStart: fmtDate(p.windowStart),
     windowEnd: fmtDate(p.windowEnd),

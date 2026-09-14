@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/rbac";
 import { getPlanProgress } from "@/lib/planProgress";
+import { planDisplayTitle } from "@/lib/planTitle";
 import PlanesVigentesTable, { type PlanRow } from "@/components/PlanesVigentesTable";
 import SyncBubble from "@/components/SyncBubble";
 
@@ -95,7 +96,7 @@ export default async function AdminHome() {
       const done = prog.done;
       return {
         id: p.id,
-        questionnaire: p.questionnaire.title,
+        questionnaire: planDisplayTitle(p.questionnaire.title, p.name),
         company: p.company.name,
         location: p.location?.name ?? "Todas las sedes",
         windowStart: fmtDate(p.windowStart),

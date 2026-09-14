@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getPlanProgress } from "@/lib/planProgress";
+import { planDisplayTitle } from "@/lib/planTitle";
 
 export default async function AdminLevantarPage() {
   const plans = await prisma.workPlan.findMany({
@@ -31,7 +32,7 @@ export default async function AdminLevantarPage() {
           >
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold">{p.questionnaire.title}</h3>
+                <h3 className="font-semibold">{planDisplayTitle(p.questionnaire.title, p.name)}</h3>
                 <p className="text-sm text-slate-500">
                   {p.company.name}
                   {p.location && ` · ${p.location.name}`}

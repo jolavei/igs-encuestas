@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/rbac";
 import { getUserScope } from "@/lib/userScope";
 import { getPlanProgress } from "@/lib/planProgress";
+import { planDisplayTitle } from "@/lib/planTitle";
 import { PlanAvanceCard } from "@/components/planCards";
 
 function fmtDate(d: Date) {
@@ -62,7 +63,7 @@ export default async function ClienteHome() {
             {plans.map((p, i) => (
               <PlanAvanceCard
                 key={p.id}
-                title={p.questionnaire.title}
+                title={planDisplayTitle(p.questionnaire.title, p.name)}
                 subtitle={`${p.company.name}${
                   p.location ? ` · ${p.location.name}` : " · Todas las sedes"
                 } · vence ${fmtDate(p.windowEnd)}`}

@@ -18,6 +18,7 @@ const statusSchema = z
 const editSchema = z.object({
   companyId: z.string(),
   questionnaireId: z.string(),
+  name: z.string().max(120).optional().nullable(),
   locationId: z.string().optional().nullable(),
   windowStart: z.string(),
   windowEnd: z.string(),
@@ -85,6 +86,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       data: {
         companyId: d.companyId,
         questionnaireId: d.questionnaireId,
+        name: d.name?.trim() || null,
         locationId: d.locationId || null,
         windowStart: start,
         windowEnd: end,

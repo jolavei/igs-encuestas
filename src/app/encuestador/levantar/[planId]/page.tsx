@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSessionUser } from "@/lib/rbac";
 import { getPlanSurvey } from "@/lib/planSurvey";
+import { planDisplayTitle } from "@/lib/planTitle";
 import FieldSurvey from "@/components/FieldSurvey";
 
 export default async function Levantar({ params }: { params: { planId: string } }) {
@@ -32,7 +33,7 @@ export default async function Levantar({ params }: { params: { planId: string } 
       {/* El levantamiento vive en un contenedor blanco redondeado con margen vertical. */}
       <FieldSurvey
         workPlanId={data.plan.id}
-        title={data.plan.questionnaire.title}
+        title={planDisplayTitle(data.plan.questionnaire.title, data.plan.name)}
         subtitle={data.plan.location?.name}
         sections={data.sections}
         locations={data.locations ?? undefined}
