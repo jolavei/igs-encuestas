@@ -63,7 +63,7 @@ export default async function AdminHome() {
   const [user, empresasVigentes, cuestionarios, activePlans, lastSync] = await Promise.all([
     getSessionUser(),
     prisma.company.count({ where: { active: true } }),
-    prisma.questionnaire.count(),
+    prisma.questionnaire.count({ where: { active: true } }),
     // Planes vigentes: activos y con hoy dentro de su ventana (los desactivados
     // quedan "no vigentes" y no cuentan aquí).
     prisma.workPlan.findMany({
@@ -126,7 +126,7 @@ export default async function AdminHome() {
       {/* Resumen */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard href="/admin/empresas" label="Empresas vigentes" value={empresasVigentes} />
-        <StatCard href="/admin/cuestionarios" label="Cuestionarios" value={cuestionarios} />
+        <StatCard href="/admin/cuestionarios" label="Cuestionarios vigentes" value={cuestionarios} />
         <StatCard
           href="/admin/planes"
           label="Planes de trabajo vigentes"
