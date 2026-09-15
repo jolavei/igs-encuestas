@@ -135,7 +135,7 @@ export default async function PlanesPage() {
               {planDisplayTitle(p.questionnaire.title, p.name)}
               {!active && (
                 <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
-                  Cancelado
+                  No vigente
                 </span>
               )}
             </h3>

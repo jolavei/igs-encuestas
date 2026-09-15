@@ -2,9 +2,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-// Botón para cancelar / reactivar un plan de trabajo (solo admin). Cancelar
-// pone el plan "no vigente": deja de aparecer para los encuestadores y en el
-// avance de planes vigentes, pero conserva su histórico.
+// Botón para dejar no vigente / reactivar un plan de trabajo (solo admin).
+// Dejarlo no vigente (status CANCELLED) hace que deje de aparecer para los
+// encuestadores y en el avance de planes vigentes, pero conserva su histórico.
 export default function PlanStatusToggle({
   planId,
   active,
@@ -20,7 +20,7 @@ export default function PlanStatusToggle({
     if (
       active &&
       !confirm(
-        "¿Cancelar este plan? Dejará de aparecer para los encuestadores y en el avance de planes vigentes. Podrás reactivarlo cuando quieras."
+        "¿Dejar este plan no vigente? Dejará de aparecer para los encuestadores y en el avance de planes vigentes. Podrás reactivarlo cuando quieras."
       )
     ) {
       return;
@@ -54,7 +54,7 @@ export default function PlanStatusToggle({
             : "rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-50"
         }
       >
-        {busy ? "Guardando…" : active ? "Cancelar" : "Reactivar"}
+        {busy ? "Guardando…" : active ? "Dejar no vigente" : "Reactivar"}
       </button>
       {error && <span className="text-xs text-red-600">{error}</span>}
     </div>

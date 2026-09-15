@@ -7,10 +7,10 @@ import { chileDayToUtc } from "@/lib/dates";
 import { validatePlanRefs } from "@/lib/refIntegrity";
 
 // Dos operaciones sobre un plan según el cuerpo recibido:
-//  - Cambio de estado (cancelar / reactivar): cuerpo = solo { status }.
+//  - Cambio de estado (dejar no vigente / reactivar): cuerpo = solo { status }.
 //  - Edición completa: cuerpo con todos los campos del plan (misma forma que POST).
-// status: ACTIVE | COMPLETED | CANCELLED. "Cancelar" un plan = CANCELLED: lo oculta
-// a los encuestadores y del avance de planes vigentes, pero conserva su histórico.
+// status: ACTIVE | COMPLETED | CANCELLED. Dejar un plan "no vigente" = CANCELLED: lo
+// oculta a los encuestadores y del avance de planes vigentes, pero conserva su histórico.
 const statusSchema = z
   .object({ status: z.enum(["ACTIVE", "COMPLETED", "CANCELLED"]) })
   .strict();
