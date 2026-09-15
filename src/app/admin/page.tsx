@@ -134,7 +134,7 @@ export default async function AdminHome() {
         />
         <StatCard
           href="#planes-vigentes"
-          label="Respuestas (planes vigentes)"
+          label="Respuestas vigentes"
           value={respuestasVigentes}
         />
       </div>
