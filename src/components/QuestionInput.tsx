@@ -314,6 +314,10 @@ function DateTimeInput({
   const segRef = useRef(seg);
   segRef.current = seg;
   const refs = useRef<Array<HTMLInputElement | null>>([]);
+  // Al enfocar un segmento, el primer dígito lo sobrescribe (no se apila sobre lo
+  // que ya había). Guarda qué segmento está "fresco" para no depender de la
+  // selección del texto, que un clic del mouse deshace y rompía la edición.
+  const freshRef = useRef<SegKey | null>(null);
 
   // valueText es la fuente de verdad: el botón "Ahora" y "Nueva respuesta" la cambian
   // desde afuera. Sincroniza los segmentos solo ante cambios externos reales (no cuando
@@ -331,21 +335,43 @@ function DateTimeInput({
     }
   }
 
-  function onSegChange(key: SegKey, raw: string) {
-    const digits = raw.replace(/\D/g, "").slice(0, SEG_LEN[key]);
-    let next = digits;
+  // Fija el valor de un segmento: recorta a su largo, acota al máximo, rellena con
+  // cero cuando ya está "completo" y auto-avanza al siguiente. Fuente única para
+  // teclado y para el respaldo de onChange.
+  function commit(key: SegKey, raw: string) {
+    let next = raw.replace(/\D/g, "").slice(0, SEG_LEN[key]);
     if (next !== "" && Number(next) > SEG_MAX[key]) next = String(SEG_MAX[key]);
     // "Completo" = el segmento ya no admite otro dígito (por longitud o rango, ej. mes 3).
     const canExtend = next.length < SEG_LEN[key] && Number(next + "0") <= SEG_MAX[key];
     const complete = next !== "" && !canExtend;
     if (complete && key !== "y") next = next.padStart(SEG_LEN[key], "0"); // "3" -> "03"
-    const newSeg = { ...seg, [key]: next };
+    const newSeg = { ...segRef.current, [key]: next };
+    segRef.current = newSeg; // sincroniza ya, para dígitos rápidos antes del re-render
     setSeg(newSeg);
     const built = buildSeg(newSeg);
     onChange({ valueText: built, valueDate: built });
+    freshRef.current = null;
     // Auto-avanza al siguiente segmento cuando ya está completo.
     const idx = SEG_ORDER.indexOf(key);
     if (complete && idx < SEG_ORDER.length - 1) focusIdx(idx + 1);
+  }
+
+  // Agrega un dígito al segmento enfocado. Si está "fresco" (recién enfocado) o
+  // lleno, el dígito lo sobrescribe; si no, se apila. Así editar "14" -> "13"
+  // funciona sin depender de que el texto siga seleccionado tras el clic.
+  function typeDigit(key: SegKey, digit: string) {
+    const prev = segRef.current[key];
+    const overwrite = freshRef.current === key || prev.length >= SEG_LEN[key];
+    commit(key, (overwrite ? "" : prev) + digit);
+  }
+
+  // Respaldo para entradas que no pasan por keydown (pegar, dictado, algunos IME
+  // móviles). Reconstruye sin usar la selección del DOM: en un campo fresco o lleno
+  // los dígitos nuevos sobrescriben; si no, se toma el prefijo.
+  function onSegChange(key: SegKey, raw: string) {
+    const digits = raw.replace(/\D/g, "");
+    const overwrite = freshRef.current === key || segRef.current[key].length >= SEG_LEN[key];
+    commit(key, overwrite ? digits.slice(-SEG_LEN[key]) : digits);
   }
 
   // Al salir de un segmento con un solo dígito, lo rellena con cero ("7" -> "07").
@@ -361,12 +387,24 @@ function DateTimeInput({
 
   function onSegKey(key: SegKey, e: React.KeyboardEvent<HTMLInputElement>) {
     const idx = SEG_ORDER.indexOf(key);
-    if (e.key === "Backspace" && seg[key] === "" && idx > 0) {
+    // Manejamos los dígitos aquí (no vía onChange) para conocer la tecla exacta
+    // sin depender del cursor ni de la selección del input.
+    if (/^\d$/.test(e.key)) {
+      e.preventDefault();
+      typeDigit(key, e.key);
+    } else if (e.key === "Backspace") {
+      e.preventDefault();
+      const cur = segRef.current[key];
+      if (cur.length > 0) {
+        commit(key, cur.slice(0, -1)); // borra el último dígito, sin rellenar
+      } else if (idx > 0) {
+        focusIdx(idx - 1);
+      }
+    } else if (e.key === "ArrowLeft" && idx > 0) {
       e.preventDefault();
       focusIdx(idx - 1);
-    } else if (e.key === "ArrowLeft" && idx > 0) {
-      focusIdx(idx - 1);
     } else if (e.key === "ArrowRight" && idx < SEG_ORDER.length - 1) {
+      e.preventDefault();
       focusIdx(idx + 1);
     }
   }
@@ -392,7 +430,10 @@ function DateTimeInput({
       value={seg[key]}
       onChange={(e) => onSegChange(key, e.target.value)}
       onKeyDown={(e) => onSegKey(key, e)}
-      onFocus={(e) => e.target.select()}
+      onFocus={(e) => {
+        freshRef.current = key; // el próximo dígito sobrescribe
+        e.target.select();
+      }}
       onBlur={() => onSegBlur(key)}
     />
   );
