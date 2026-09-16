@@ -75,11 +75,17 @@ export default async function EmpresasPage() {
                 id: c.id,
                 name: c.name,
                 kind: c.kind,
+                rut: c.rut,
+                email: c.email,
+                phone: c.phone,
                 locations: c.locations.map((l) => ({
                   id: l.id,
                   name: l.name,
                   city: l.city,
                   address: l.address,
+                  iataCode: l.iataCode,
+                  icaoCode: l.icaoCode,
+                  timezone: l.timezone,
                 })),
               }}
             />
@@ -150,6 +156,9 @@ export default async function EmpresasPage() {
                     { value: "otro", label: "Otro" },
                   ],
                 },
+                { name: "rut", label: "RUT", placeholder: "76.123.456-7" },
+                { name: "email", label: "Correo de contacto", placeholder: "contacto@empresa.cl" },
+                { name: "phone", label: "Teléfono de contacto", placeholder: "+56 9 1234 5678" },
               ]}
             />
           </div>
@@ -170,6 +179,9 @@ export default async function EmpresasPage() {
                 { name: "name", label: "Nombre sede", required: true },
                 { name: "city", label: "Ciudad" },
                 { name: "address", label: "Dirección" },
+                { name: "iataCode", label: "Código IATA", placeholder: "PMC" },
+                { name: "icaoCode", label: "Código ICAO", placeholder: "SCTE" },
+                { name: "timezone", label: "Zona horaria", placeholder: "America/Santiago" },
               ]}
             />
           </div>

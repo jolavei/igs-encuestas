@@ -273,4 +273,7 @@ export const submitSchema = z.object({
   // Idempotencia: UUID generado en el cliente por envío. Reintentos y reenvíos de
   // la cola offline con el mismo id no crean duplicados (ver createResponseSet).
   clientSubmissionId: z.string().uuid().optional(),
+  // Métricas de la toma (opcionales): las reporta el cronómetro del cliente.
+  startedAt: z.string().datetime().optional(), // ISO 8601 del inicio de la encuesta
+  durationMs: z.number().int().min(0).max(86_400_000).optional(), // duración (tope 24 h)
 });

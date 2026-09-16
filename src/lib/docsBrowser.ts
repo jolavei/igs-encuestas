@@ -31,7 +31,10 @@ export async function getFolderView(
       include: { _count: { select: { children: true, documents: true } } },
     }),
     prisma.document.findMany({
-      where: folderId ? { folderId } : { folderId: null, companyId, locationId },
+      where: {
+        deletedAt: null, // solo documentos vigentes (no borrados lógicamente)
+        ...(folderId ? { folderId } : { folderId: null, companyId, locationId }),
+      },
       orderBy: { createdAt: "desc" },
     }),
   ]);

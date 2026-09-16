@@ -186,6 +186,23 @@ export const authOptions: NextAuthOptions = {
   providers,
   session: { strategy: "jwt" },
   pages: { signIn: "/login", error: "/login" },
+  events: {
+    // Marca la última vez que el usuario inició sesión (métrica de actividad).
+    // Best-effort: si el usuario aún no tiene registro (p. ej. admin bootstrap en su
+    // primer ingreso) o hay una carrera, se ignora sin afectar el login.
+    async signIn({ user }) {
+      const email = user?.email?.toLowerCase();
+      if (!email) return;
+      try {
+        await prisma.user.update({
+          where: { email },
+          data: { lastLoginAt: new Date() },
+        });
+      } catch {
+        /* usuario sin registro todavía; se ignora */
+      }
+    },
+  },
   callbacks: {
     // Lista blanca: solo entran usuarios PRE-REGISTRADOS y activos.
     // Cualquier otro correo (aunque tenga Google) queda fuera -> "AccessDenied".

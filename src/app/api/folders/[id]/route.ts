@@ -13,7 +13,7 @@ export async function DELETE(
 
   const [children, docs] = await Promise.all([
     prisma.folder.count({ where: { parentId: params.id } }),
-    prisma.document.count({ where: { folderId: params.id } }),
+    prisma.document.count({ where: { folderId: params.id, deletedAt: null } }),
   ]);
   if (children > 0 || docs > 0) {
     return NextResponse.json(

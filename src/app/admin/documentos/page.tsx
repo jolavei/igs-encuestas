@@ -5,6 +5,7 @@ import { getFolderView, fileKind, fmtSize } from "@/lib/docsBrowser";
 import { FolderIcon, FileIcon } from "@/components/icons";
 import NewFolderButton from "@/components/docs/NewFolderButton";
 import DocumentUploader from "@/components/docs/DocumentUploader";
+import DocumentEditor from "@/components/docs/DocumentEditor";
 import DeleteButton from "@/components/docs/DeleteButton";
 
 export default async function DocsAdmin({
@@ -144,7 +145,14 @@ export default async function DocsAdmin({
                 <td className="px-4 py-2">
                   <span className="flex items-center gap-2">
                     <FileIcon className="shrink-0 text-slate-400" />
-                    {d.name}
+                    <span className="min-w-0">
+                      <span className="block truncate">{d.name}</span>
+                      {d.description && (
+                        <span className="block truncate text-xs text-slate-400">
+                          {d.description}
+                        </span>
+                      )}
+                    </span>
                   </span>
                 </td>
                 <td className="px-4 py-2 text-slate-500">{fileKind(d.contentType, d.name)}</td>
@@ -157,6 +165,7 @@ export default async function DocsAdmin({
                     >
                       Descargar
                     </a>
+                    <DocumentEditor id={d.id} name={d.name} description={d.description} />
                     <DeleteButton
                       endpoint={`/api/documents/${d.id}`}
                       confirmText={`¿Borrar "${d.name}"?`}

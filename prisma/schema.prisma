@@ -42,6 +42,7 @@ model User {
   locationId    String? // si CLIENT: sede específica que puede consultar (documentos)
   location      Location? @relation("ClientLocation", fields: [locationId], references: [id])
   createdAt     DateTime  @default(now())
+  lastLoginAt   DateTime? // último inicio de sesión (métrica de actividad; lo marca events.signIn)
 
   accounts    Account[]
   sessions    Session[]
@@ -98,6 +99,10 @@ model Company {
   name      String
   kind      String // "hotel" | "aeropuerto" | "clinica" | ...
   active    Boolean  @default(true) // false = cliente pasado/desactivado (conserva histórico)
+  // Datos de contacto/identificación del cliente (opcionales; para informes/facturación).
+  rut       String? // RUT / identificador tributario
+  email     String? // correo de contacto
+  phone     String? // teléfono de contacto
   createdAt DateTime @default(now())
 
   locations      Location[]
@@ -116,6 +121,10 @@ model Location {
   name      String
   city      String?
   address   String?
+  // Identidad de aeropuerto y zona horaria (útil porque muchas sedes son aeropuertos).
+  iataCode  String? // código IATA (ej. "PMC"); identidad natural del aeropuerto
+  icaoCode  String? // código ICAO (ej. "SCTE")
+  timezone  String? // zona horaria IANA (ej. "America/Santiago"); desambigua los tiempos
   createdAt DateTime @default(now())
 
   qrTokens    QrToken[]
@@ -276,6 +285,13 @@ model ResponseSet {
   workPlan      WorkPlan?           @relation(fields: [workPlanId], references: [id])
   segmentValue  String? // valor del segmento primario (nivel 1)
   segmentValue2 String? // valor del segmento secundario (nivel 2), si el plan lo usa
+  // Métricas de la toma (calidad + tiempos). startedAt/durationMs los reporta el cliente
+  // (cronómetro de la encuesta, ver roadmap de automatización de tiempos); userAgent y
+  // deviceType se capturan server-side al recibir el envío.
+  startedAt     DateTime?
+  durationMs    Int?
+  userAgent     String?
+  deviceType    String? // "mobile" | "tablet" | "desktop" (derivado del userAgent)
   // Idempotencia: UUID que genera el cliente por envío. Un reintento (o el reenvío
   // de la cola offline) con el mismo id NO crea un duplicado: se devuelve el existente.
   clientSubmissionId String? @unique
@@ -370,14 +386,20 @@ model Document {
   folderId     String?
   folder       Folder?  @relation(fields: [folderId], references: [id])
   name         String
+  description  String? // nota/detalle opcional del archivo
   objectPath   String // ruta del objeto en el bucket de GCS
   contentType  String
   size         Int
   uploadedById String?
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+  // Borrado lógico: conserva el registro histórico del documento (nombre, quién, cuándo)
+  // aunque el binario en GCS se elimine. null = vigente. Las listas filtran deletedAt=null.
+  deletedAt    DateTime?
 
   @@index([companyId, locationId])
   @@index([folderId])
+  @@index([deletedAt])
 }
 
 // ----------------------------------------------------------------------------

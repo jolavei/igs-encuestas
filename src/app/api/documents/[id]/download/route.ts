@@ -15,7 +15,7 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const doc = await prisma.document.findUnique({ where: { id: params.id } });
-  if (!doc) return NextResponse.json({ error: "No existe." }, { status: 404 });
+  if (!doc || doc.deletedAt) return NextResponse.json({ error: "No existe." }, { status: 404 });
 
   // Alcance por sedes asignadas (admin ve todo; cliente solo sus sedes).
   const assignedLocationIds =

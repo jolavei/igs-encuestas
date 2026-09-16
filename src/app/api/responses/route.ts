@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
 import { createResponseSet } from "@/lib/responses";
 import { submitSchema } from "@/lib/questionTypes";
+import { deviceTypeFromUA } from "@/lib/userAgent";
 
 const schema = submitSchema.extend({
   workPlanId: z.string(),
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
   });
   if (!version) return NextResponse.json({ error: "Cuestionario sin versión activa." }, { status: 400 });
 
+  const userAgent = req.headers.get("user-agent");
   const result = await createResponseSet({
     versionId: version.id,
     source: "FIELD",
@@ -57,6 +59,10 @@ export async function POST(req: Request) {
     raw: parsed.data.answers,
     presentedQuestionIds: parsed.data.presentedQuestionIds,
     clientSubmissionId: parsed.data.clientSubmissionId,
+    userAgent,
+    deviceType: deviceTypeFromUA(userAgent),
+    startedAt: parsed.data.startedAt ? new Date(parsed.data.startedAt) : null,
+    durationMs: parsed.data.durationMs ?? null,
   });
   if (!result.ok) return NextResponse.json(result, { status: result.status });
   return NextResponse.json({ id: result.id }, { status: 201 });

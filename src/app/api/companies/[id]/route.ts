@@ -8,6 +8,9 @@ const patchSchema = z.object({
   active: z.boolean().optional(),
   name: z.string().min(1).optional(),
   kind: z.string().min(1).optional(),
+  rut: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable().or(z.literal("")),
+  phone: z.string().optional().nullable(),
 });
 
 // Editar empresa (nombre/tipo) y/o activar-desactivar (soft). Conserva histórico.
@@ -21,13 +24,16 @@ export async function PATCH(
   const parsed = patchSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
 
-  const { active, name, kind } = parsed.data;
+  const { active, name, kind, rut, email, phone } = parsed.data;
   const company = await prisma.company.update({
     where: { id: params.id },
     data: {
       ...(active !== undefined ? { active } : {}),
       ...(name !== undefined ? { name } : {}),
       ...(kind !== undefined ? { kind } : {}),
+      ...(rut !== undefined ? { rut: rut?.trim() || null } : {}),
+      ...(email !== undefined ? { email: email?.trim() || null } : {}),
+      ...(phone !== undefined ? { phone: phone?.trim() || null } : {}),
     },
   });
   const action =

@@ -23,6 +23,12 @@ type Args = {
   // Idempotencia: UUID del cliente. Si ya existe un envío con este id, se devuelve
   // ese mismo (no se crea un duplicado). Ver el modelo ResponseSet.
   clientSubmissionId?: string | null;
+  // Métricas de la toma (opcionales). userAgent/deviceType los captura el server desde
+  // los headers; startedAt/durationMs los reporta el cliente (cronómetro de la encuesta).
+  userAgent?: string | null;
+  deviceType?: string | null;
+  startedAt?: Date | null;
+  durationMs?: number | null;
 };
 
 /**
@@ -102,6 +108,10 @@ export async function createResponseSet(args: Args) {
         segmentValue,
         segmentValue2,
         clientSubmissionId,
+        userAgent: args.userAgent ?? null,
+        deviceType: args.deviceType ?? null,
+        startedAt: args.startedAt ?? null,
+        durationMs: args.durationMs ?? null,
         answers: {
           create: answers.map((a) => ({
             questionId: a.questionId,

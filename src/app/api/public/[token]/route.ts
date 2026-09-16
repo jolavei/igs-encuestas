@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { createResponseSet } from "@/lib/responses";
+import { deviceTypeFromUA } from "@/lib/userAgent";
 import { submitSchema, type QuestionConfig } from "@/lib/questionTypes";
 import { fromJson } from "@/lib/enums";
 import { enforceRateLimit } from "@/lib/rateLimit";
@@ -67,6 +68,7 @@ export async function POST(
   const parsed = submitSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Payload inválido." }, { status: 400 });
 
+  const userAgent = req.headers.get("user-agent");
   const result = await createResponseSet({
     versionId: r.version.id,
     source: "QR_PUBLIC",
@@ -74,6 +76,10 @@ export async function POST(
     raw: parsed.data.answers,
     presentedQuestionIds: parsed.data.presentedQuestionIds,
     clientSubmissionId: parsed.data.clientSubmissionId,
+    userAgent,
+    deviceType: deviceTypeFromUA(userAgent),
+    startedAt: parsed.data.startedAt ? new Date(parsed.data.startedAt) : null,
+    durationMs: parsed.data.durationMs ?? null,
   });
   if (!result.ok) return NextResponse.json(result, { status: result.status });
 

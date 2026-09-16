@@ -3,8 +3,24 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
-type Loc = { id: string; name: string; city: string | null; address: string | null };
-type Company = { id: string; name: string; kind: string; locations: Loc[] };
+type Loc = {
+  id: string;
+  name: string;
+  city: string | null;
+  address: string | null;
+  iataCode: string | null;
+  icaoCode: string | null;
+  timezone: string | null;
+};
+type Company = {
+  id: string;
+  name: string;
+  kind: string;
+  rut: string | null;
+  email: string | null;
+  phone: string | null;
+  locations: Loc[];
+};
 
 const KINDS = [
   { value: "hotel", label: "Hotel" },
@@ -18,6 +34,9 @@ function SedeRow({ loc, onChanged }: { loc: Loc; onChanged: () => void }) {
   const [name, setName] = useState(loc.name);
   const [city, setCity] = useState(loc.city ?? "");
   const [address, setAddress] = useState(loc.address ?? "");
+  const [iataCode, setIataCode] = useState(loc.iataCode ?? "");
+  const [icaoCode, setIcaoCode] = useState(loc.icaoCode ?? "");
+  const [timezone, setTimezone] = useState(loc.timezone ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +47,14 @@ function SedeRow({ loc, onChanged }: { loc: Loc; onChanged: () => void }) {
       const r = await fetch(`/api/locations/${loc.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, city: city || null, address: address || null }),
+        body: JSON.stringify({
+          name,
+          city: city || null,
+          address: address || null,
+          iataCode: iataCode || null,
+          icaoCode: icaoCode || null,
+          timezone: timezone || null,
+        }),
       });
       if (!r.ok) throw new Error((await r.json()).error ?? "Error");
       onChanged();
@@ -76,6 +102,26 @@ function SedeRow({ loc, onChanged }: { loc: Loc; onChanged: () => void }) {
           placeholder="Dirección"
         />
       </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <input
+          className="input"
+          value={iataCode}
+          onChange={(e) => setIataCode(e.target.value)}
+          placeholder="IATA (ej. PMC)"
+        />
+        <input
+          className="input"
+          value={icaoCode}
+          onChange={(e) => setIcaoCode(e.target.value)}
+          placeholder="ICAO (ej. SCTE)"
+        />
+        <input
+          className="input"
+          value={timezone}
+          onChange={(e) => setTimezone(e.target.value)}
+          placeholder="Zona horaria"
+        />
+      </div>
       <div className="flex items-center gap-3">
         <button className="btn-secondary" disabled={busy} onClick={save}>
           {busy ? "…" : "Guardar sede"}
@@ -104,6 +150,9 @@ function Modal({
 }) {
   const [name, setName] = useState(company.name);
   const [kind, setKind] = useState(company.kind);
+  const [rut, setRut] = useState(company.rut ?? "");
+  const [email, setEmail] = useState(company.email ?? "");
+  const [phone, setPhone] = useState(company.phone ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,7 +168,13 @@ function Modal({
       const r = await fetch(`/api/companies/${company.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, kind }),
+        body: JSON.stringify({
+          name,
+          kind,
+          rut: rut || null,
+          email: email || null,
+          phone: phone || null,
+        }),
       });
       if (!r.ok) throw new Error((await r.json()).error ?? "Error");
       onSaved();
@@ -159,6 +214,36 @@ function Modal({
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="label">RUT</label>
+            <input
+              className="input"
+              value={rut}
+              onChange={(e) => setRut(e.target.value)}
+              placeholder="76.123.456-7"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="label">Correo de contacto</label>
+              <input
+                className="input"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="contacto@empresa.cl"
+              />
+            </div>
+            <div>
+              <label className="label">Teléfono de contacto</label>
+              <input
+                className="input"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+56 9 1234 5678"
+              />
+            </div>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="btn" disabled={busy} onClick={saveCompany}>

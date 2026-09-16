@@ -8,9 +8,12 @@ const patchSchema = z.object({
   name: z.string().min(1).optional(),
   city: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
+  iataCode: z.string().nullable().optional(),
+  icaoCode: z.string().nullable().optional(),
+  timezone: z.string().nullable().optional(),
 });
 
-// Editar una sede (nombre / ciudad / dirección).
+// Editar una sede (nombre / ciudad / dirección / códigos de aeropuerto / zona horaria).
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const { user, status } = await apiUser(["ADMIN"]);
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status });
@@ -18,11 +21,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const parsed = patchSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
 
+  const d = parsed.data;
   const location = await prisma.location.update({
     where: { id: params.id },
-    data: parsed.data,
+    data: {
+      ...(d.name !== undefined ? { name: d.name } : {}),
+      ...(d.city !== undefined ? { city: d.city?.trim() || null } : {}),
+      ...(d.address !== undefined ? { address: d.address?.trim() || null } : {}),
+      ...(d.iataCode !== undefined ? { iataCode: d.iataCode?.trim().toUpperCase() || null } : {}),
+      ...(d.icaoCode !== undefined ? { icaoCode: d.icaoCode?.trim().toUpperCase() || null } : {}),
+      ...(d.timezone !== undefined ? { timezone: d.timezone?.trim() || null } : {}),
+    },
   });
-  await audit(user.id, "location.update", "Location", location.id, parsed.data);
+  await audit(user.id, "location.update", "Location", location.id, d);
   return NextResponse.json({ id: location.id });
 }
 
@@ -35,7 +46,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     prisma.responseSet.count({ where: { locationId: params.id } }),
     prisma.workPlan.count({ where: { locationId: params.id } }),
     prisma.qrToken.count({ where: { locationId: params.id } }),
-    prisma.document.count({ where: { locationId: params.id } }),
+    prisma.document.count({ where: { locationId: params.id, deletedAt: null } }),
   ]);
 
   if (responses > 0 || workPlans > 0 || qrTokens > 0 || documents > 0) {

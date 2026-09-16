@@ -163,6 +163,11 @@ export default function SurveyRunner({
   const submissionId = useRef<string | null>(null);
   if (submissionId.current === null) submissionId.current = makeSubmissionId();
 
+  // Cronómetro de la encuesta: momento en que empezó esta respuesta. Se reinicia al
+  // iniciar una respuesta nueva (reset). La duración se calcula al enviar y viaja en
+  // el body (así queda correcta también en reenvíos de la cola offline).
+  const startedAtMs = useRef<number>(Date.now());
+
   // Candado por dispositivo (solo QR público). lockChecked evita el parpadeo del
   // formulario antes de leer localStorage; locked muestra "ya respondiste".
   const [locked, setLocked] = useState(false);
@@ -226,9 +231,12 @@ export default function SurveyRunner({
     const raw = presented.map((id) => answers[id] ?? { questionId: id });
 
     setStatus("sending");
+    const startMs = startedAtMs.current;
     const body = JSON.stringify({
       answers: raw,
       presentedQuestionIds: presented,
+      startedAt: new Date(startMs).toISOString(),
+      durationMs: Math.max(0, Date.now() - startMs),
       ...extra,
       clientSubmissionId: submissionId.current,
     });
@@ -280,8 +288,9 @@ export default function SurveyRunner({
     setErrors({});
     setHistory([0]);
     setStatus("idle");
-    // Nueva respuesta = nuevo id de idempotencia.
+    // Nueva respuesta = nuevo id de idempotencia y cronómetro reiniciado.
     submissionId.current = makeSubmissionId();
+    startedAtMs.current = Date.now();
   }
 
   // Evita mostrar el formulario un instante antes de resolver el candado local.
