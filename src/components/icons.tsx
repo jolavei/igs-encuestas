@@ -29,7 +29,8 @@ export type IconName =
   | "documents"
   | "compliance"
   | "report"
-  | "upload";
+  | "upload"
+  | "planning";
 
 export const HomeIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
@@ -208,6 +209,15 @@ export const BookIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
+// Planificación (calendario con marca de tiempo)
+export const PlanningIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <rect width="18" height="18" x="3" y="4" rx="2" />
+    <path d="M3 9h18M8 2v4M16 2v4" />
+    <path d="M12 13v3l2 1" />
+  </Svg>
+);
+
 export const NAV_ICONS: Record<IconName, (p: SVGProps<SVGSVGElement>) => JSX.Element> = {
   home: HomeIcon,
   questionnaire: QuestionnaireIcon,
@@ -220,4 +230,5 @@ export const NAV_ICONS: Record<IconName, (p: SVGProps<SVGSVGElement>) => JSX.Ele
   compliance: ComplianceIcon,
   report: ReportIcon,
   upload: UploadIcon,
+  planning: PlanningIcon,
 };

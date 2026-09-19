@@ -492,3 +492,29 @@ model AuditLog {
 
   @@index([entity, entityId])
 }
+
+// ----------------------------------------------------------------------------
+// Planificacion: itinerarios de vuelos por aeropuerto (fuente AeroDataBox).
+// Los llena el job scripts/planificacion-flights-job.mjs (1x/mes). La app lee de
+// aqui en vez de pegarle a la API en cada carga (ahorra API units). Formato
+// portable: fecha/hora como String local del aeropuerto.
+// ----------------------------------------------------------------------------
+model FlightSchedule {
+  id              String   @id @default(cuid())
+  airportIata     String // aeropuerto consultado (el que planificamos)
+  direction       String // "salida" | "llegada"
+  flightNumber    String
+  airlineCode     String?
+  airlineName     String?
+  origin          String // IATA origen
+  originName      String?
+  destination     String // IATA destino
+  destinationName String?
+  date            String // YYYY-MM-DD local en el aeropuerto
+  time            String // HH:MM local
+  aircraft        String?
+  fetchedAt       DateTime @default(now())
+
+  @@unique([airportIata, direction, flightNumber, date, time, origin, destination])
+  @@index([airportIata, date])
+}
