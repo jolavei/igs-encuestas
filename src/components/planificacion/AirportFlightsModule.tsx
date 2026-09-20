@@ -88,8 +88,24 @@ type ApiResponse = {
   to: string;
   count: number;
   flights: ScheduledFlight[];
+  updatedAt?: string | null;
   generatedAt: string;
 };
+
+// Fecha/hora en huso de Chile: "DD-MM-YYYY, HH:MM" (igual que el badge de ASQ).
+function fmtStamp(iso: string): string {
+  const p = new Intl.DateTimeFormat("es-CL", {
+    timeZone: "America/Santiago",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const g = (t: Intl.DateTimeFormatPartTypes) => p.find((x) => x.type === t)?.value ?? "";
+  return `${g("day")}-${g("month")}-${g("year")}, ${g("hour")}:${g("minute")}`;
+}
 
 export default function AirportFlightsModule({
   iata,
@@ -241,10 +257,24 @@ export default function AirportFlightsModule({
     <div className="space-y-5">
       {/* ---- Controles ---- */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-900">Vuelos planificados</h2>
-          {contextLabel && (
-            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{contextLabel}</span>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-900">Vuelos planificados</h2>
+            {contextLabel && (
+              <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{contextLabel}</span>
+            )}
+          </div>
+          {data?.updatedAt && (
+            <span
+              title="Última vez que el job actualizó los itinerarios"
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+              </span>
+              Última actualización: {fmtStamp(data.updatedAt)}
+            </span>
           )}
         </div>
 

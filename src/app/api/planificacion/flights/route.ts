@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiUser } from "@/lib/rbac";
 import { getFlightScheduleProvider } from "@/lib/flights/provider";
+import { prisma } from "@/lib/prisma";
 import type { ScheduledFlight } from "@/lib/flights/types";
 
 export const runtime = "nodejs";
@@ -67,6 +68,20 @@ export async function GET(req: Request) {
     return true;
   });
 
+  // Última actualización de los datos guardados (solo aplica al proveedor db).
+  let updatedAt: string | null = null;
+  if (provider.name === "db") {
+    try {
+      const agg = await prisma.flightSchedule.aggregate({
+        _max: { fetchedAt: true },
+        where: { airportIata: origin.toUpperCase() },
+      });
+      updatedAt = agg._max.fetchedAt ? agg._max.fetchedAt.toISOString() : null;
+    } catch {
+      updatedAt = null;
+    }
+  }
+
   return NextResponse.json({
     provider: provider.name,
     origin: origin.toUpperCase(),
@@ -74,6 +89,7 @@ export async function GET(req: Request) {
     to,
     count: filtered.length,
     flights: filtered,
+    updatedAt,
     generatedAt: new Date().toISOString(),
   });
 }

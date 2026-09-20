@@ -12,6 +12,9 @@
 //   --to=YYYY-MM-DD         Fin inclusive (por defecto: último día del mes siguiente)
 //   --max-units=N          Tope de API units a gastar en esta corrida (default 200)
 //   --out=ruta.json        Dónde escribir el resultado (default: temp del SO)
+//   --save-db              Guarda en la tabla FlightSchedule (createMany skipDuplicates)
+//   --refresh              Con --save-db: borra las filas previas de los aeropuertos
+//                          procesados antes de insertar (reemplazo limpio; para el cron)
 //   --dry-run              No llama a la API; solo estima llamadas y units
 //
 // Cuesta 2 units por llamada; cada día = 2 llamadas (ventanas de 12 h) que traen
@@ -34,6 +37,7 @@ const args = Object.fromEntries(
 );
 const DRY = !!args["dry-run"];
 const SAVE_DB = !!args["save-db"];
+const REFRESH = !!args["refresh"]; // borra las filas previas de los aeropuertos procesados antes de insertar
 const MAX_UNITS = Number(args["max-units"] ?? 200);
 const OUT = args.out || join(tmpdir(), "planificacion-vuelos.json");
 const KEY = process.env.AERODATABOX_API_KEY;
@@ -198,6 +202,11 @@ console.log(`Archivo: ${OUT}`);
 // ---- guardado en BD (idempotente: createMany skipDuplicates por el @@unique) ----
 if (SAVE_DB && all.length > 0) {
   const prisma = new PrismaClient();
+  if (REFRESH) {
+    const iatas = [...new Set(all.map((r) => r.airportIata))];
+    const del = await prisma.flightSchedule.deleteMany({ where: { airportIata: { in: iatas } } });
+    console.log(`🧹 refresh: ${del.count} filas previas borradas (${iatas.join(", ")})`);
+  }
   let inserted = 0;
   for (let i = 0; i < all.length; i += 500) {
     const chunk = all.slice(i, i + 500).map((r) => ({

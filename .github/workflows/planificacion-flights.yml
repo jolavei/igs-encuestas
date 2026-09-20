@@ -1,0 +1,43 @@
+name: Planificación — itinerarios de vuelos (mensual)
+
+# Consulta AeroDataBox (salidas y llegadas, mes actual + mes siguiente) para cada
+# empresa de tipo "aeropuerto" con código IATA y actualiza la base de producción
+# (Neon). Con --refresh reemplaza las filas de los aeropuertos procesados (limpio).
+on:
+  schedule:
+    # Día 20 de cada mes, 09:00 UTC (~06:00 en Chile). GitHub usa UTC y no ajusta
+    # el horario de verano.
+    - cron: "0 9 20 * *"
+  workflow_dispatch: {} # permite ejecutarlo a mano desde la pestaña Actions
+
+concurrency:
+  group: planificacion-flights
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Generar cliente Prisma
+        run: npx prisma generate
+
+      - name: Aplicar migraciones a Neon (idempotente)
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Consultar AeroDataBox y guardar en Neon
+        run: node scripts/planificacion-flights-job.mjs --save-db --refresh --max-units=4000
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AERODATABOX_API_KEY: ${{ secrets.AERODATABOX_API_KEY }}
