@@ -39,6 +39,9 @@ const DRY = !!args["dry-run"];
 const SAVE_DB = !!args["save-db"];
 const REFRESH = !!args["refresh"]; // borra las filas previas de los aeropuertos procesados antes de insertar
 const MAX_UNITS = Number(args["max-units"] ?? 200);
+const THROTTLE_MS = Number(args["throttle"] ?? 350); // pausa entre llamadas (respeta el rate limit por segundo)
+const MAX_RETRIES = 5;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const OUT = args.out || join(tmpdir(), "planificacion-vuelos.json");
 const KEY = process.env.AERODATABOX_API_KEY;
 
@@ -96,6 +99,25 @@ async function fetchBoth(iata, from, to) {
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 160)}`);
   const data = await res.json();
   return { data, remaining };
+}
+
+// Reintenta ante 429 por límite POR SEGUNDO (backoff). La cuota MENSUAL agotada
+// no se reintenta (se propaga para detener el job).
+async function fetchBothRetry(iata, from, to) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetchBoth(iata, from, to);
+    } catch (e) {
+      const msg = e?.message ?? "";
+      const is429 = /HTTP 429/.test(msg);
+      const isMonthly = /month|quota/i.test(msg);
+      if (is429 && !isMonthly && attempt < MAX_RETRIES) {
+        await sleep(1500 * (attempt + 1));
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 function rowsFrom(iata, data) {
@@ -168,10 +190,10 @@ outer: for (const ap of airports) {
       }
       let r;
       try {
-        r = await fetchBoth(ap.iata, wf, wt);
+        r = await fetchBothRetry(ap.iata, wf, wt);
       } catch (e) {
         console.error(`  ${ap.iata} ${wf}: ${e.message}`);
-        if (/HTTP 429/.test(e.message)) { stopped = "cuota agotada (429)"; break outer; }
+        if (/HTTP 429/.test(e.message)) { stopped = "cuota mensual agotada (429)"; break outer; }
         continue;
       }
       consumed += UNITS_PER_CALL;
@@ -182,6 +204,7 @@ outer: for (const ap of airports) {
         all.push(row);
       }
       if (Number.isFinite(r.remaining) && r.remaining <= 4) { stopped = "units de la cuenta casi agotadas"; break outer; }
+      await sleep(THROTTLE_MS); // respeta el límite por segundo del plan
     }
   }
   console.log(`  ✓ ${ap.iata}: acumulados ${all.length} vuelos (units usadas: ${consumed})`);
