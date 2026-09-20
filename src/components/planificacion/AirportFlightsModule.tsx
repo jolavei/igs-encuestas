@@ -14,7 +14,7 @@ import {
   Pie,
 } from "recharts";
 import RangeCalendar from "./RangeCalendar";
-import { airportLabel, AIRPORTS } from "@/lib/flights/airports";
+import { airportName as airportNameOf } from "@/lib/flights/airports";
 import type { FlightDirection, ScheduledFlight } from "@/lib/flights/types";
 
 const MAX_WINDOW_DAYS = 31;
@@ -24,7 +24,6 @@ const SELECT_CLS =
 const INPUT_CLS =
   "w-full rounded-md border border-slate-400 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500";
 
-// Etiqueta legible de la fuente de datos que reporta la API.
 const PROVIDER_LABEL: Record<string, string> = {
   db: "base de datos (guardado)",
   aerodatabox: "AeroDataBox (en vivo)",
@@ -61,7 +60,7 @@ function spanDays(from: string, to: string) {
 }
 function fmtDayLong(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
-  return new Intl.DateTimeFormat("es-CL", { weekday: "short", day: "2-digit", month: "short" }).format(
+  return new Intl.DateTimeFormat("es-CL", { weekday: "long", day: "numeric", month: "long" }).format(
     new Date(y, m - 1, d),
   );
 }
@@ -75,6 +74,13 @@ function hourOf(time: string) {
   return Number(time.slice(0, 2));
 }
 
+// Aeropuerto de la "otra punta" según el sentido.
+function counterOf(f: ScheduledFlight) {
+  return f.direction === "salida"
+    ? { code: f.destination, name: f.destinationName }
+    : { code: f.origin, name: f.originName };
+}
+
 type ApiResponse = {
   provider: string;
   origin: string;
@@ -85,32 +91,26 @@ type ApiResponse = {
   generatedAt: string;
 };
 
-type AirportOption = { iata: string; name: string };
-
 export default function AirportFlightsModule({
-  airports,
-  defaultIata,
+  iata,
   contextLabel,
-  isDemo = false,
 }: {
-  airports: AirportOption[];
-  defaultIata: string;
+  iata: string;
   contextLabel?: string;
-  isDemo?: boolean;
 }) {
   const initFrom = todayISO();
   const initTo = addDaysISO(initFrom, 6);
 
-  // "draft" = lo que se está editando; "applied" = lo consultado (dispara fetch).
-  const [draftIata, setDraftIata] = useState(defaultIata);
+  // "draft" = ventana en edición; "applied" = la consultada (dispara fetch).
   const [draftFrom, setDraftFrom] = useState(initFrom);
   const [draftTo, setDraftTo] = useState(initTo);
-  const [applied, setApplied] = useState({ iata: defaultIata, from: initFrom, to: initTo });
+  const [applied, setApplied] = useState({ from: initFrom, to: initTo });
   const [showCalendar, setShowCalendar] = useState(false);
 
   // Filtros instantáneos (client-side).
   const [direction, setDirection] = useState<FlightDirection>("salida");
   const [airline, setAirline] = useState("todas");
+  const [counter, setCounter] = useState("todos"); // aeropuerto de origen/destino
   const [cell, setCell] = useState<{ day: string; hour: number } | null>(null);
 
   const [data, setData] = useState<ApiResponse | null>(null);
@@ -120,14 +120,14 @@ export default function AirportFlightsModule({
   const span = spanDays(applied.from, applied.to);
   const draftSpan = spanDays(draftFrom, draftTo);
   const draftValid = draftTo >= draftFrom && draftSpan <= MAX_WINDOW_DAYS && draftSpan >= 1;
-  const dirty = draftIata !== applied.iata || draftFrom !== applied.from || draftTo !== applied.to;
+  const dirty = draftFrom !== applied.from || draftTo !== applied.to;
 
-  // Fetch al cambiar lo aplicado (incluye el montaje inicial).
+  // Fetch al cambiar la ventana aplicada o el aeropuerto (prop).
   useEffect(() => {
     const ac = new AbortController();
     setLoading(true);
     setError(null);
-    const qs = new URLSearchParams({ origin: applied.iata, from: applied.from, to: applied.to });
+    const qs = new URLSearchParams({ origin: iata, from: applied.from, to: applied.to });
     fetch(`/api/planificacion/flights?${qs}`, { signal: ac.signal })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
@@ -144,27 +144,29 @@ export default function AirportFlightsModule({
         setLoading(false);
       });
     return () => ac.abort();
-  }, [applied]);
+  }, [applied, iata]);
 
-  // Al cambiar sentido/ventana, reinicia la aerolínea y la celda seleccionada.
+  // Al cambiar sentido/ventana, reinicia filtros dependientes y la celda.
   useEffect(() => {
     setAirline("todas");
+    setCounter("todos");
     setCell(null);
   }, [direction, applied]);
 
   function consultar() {
     if (!draftValid) return;
-    setApplied({ iata: draftIata, from: draftFrom, to: draftTo });
+    setApplied({ from: draftFrom, to: draftTo });
   }
 
   const dirLabel = direction === "salida" ? "salidas" : "llegadas";
-  const counterLabel = direction === "salida" ? "Destino" : "Origen";
+  const counterLabel = direction === "salida" ? "Aeropuerto de destino" : "Aeropuerto de origen";
+  const counterShort = direction === "salida" ? "destino" : "origen";
 
   // --- Derivados -------------------------------------------------------------
   const all = data?.flights ?? [];
   const directional = useMemo(() => all.filter((f) => f.direction === direction), [all, direction]);
 
-  // Opciones de aerolínea presentes en el sentido actual (para el filtro dinámico).
+  // Opciones de aerolínea (independientes del filtro de aeropuerto).
   const airlineOptions = useMemo(() => {
     const m = new Map<string, { code: string; name: string; n: number }>();
     for (const f of directional) {
@@ -175,9 +177,25 @@ export default function AirportFlightsModule({
     return [...m.values()].sort((a, b) => b.n - a.n);
   }, [directional]);
 
+  // Opciones de aeropuerto de origen/destino (independientes del filtro de aerolínea).
+  const counterOptions = useMemo(() => {
+    const m = new Map<string, { code: string; name: string; n: number }>();
+    for (const f of directional) {
+      const c = counterOf(f);
+      if (!c.code) continue;
+      const cur = m.get(c.code) ?? { code: c.code, name: c.name || airportNameOf(c.code), n: 0 };
+      cur.n += 1;
+      m.set(c.code, cur);
+    }
+    return [...m.values()].sort((a, b) => b.n - a.n);
+  }, [directional]);
+
   const flights = useMemo(
-    () => (airline === "todas" ? directional : directional.filter((f) => f.airlineCode === airline)),
-    [directional, airline],
+    () =>
+      directional.filter(
+        (f) => (airline === "todas" || f.airlineCode === airline) && (counter === "todos" || counterOf(f).code === counter),
+      ),
+    [directional, airline, counter],
   );
 
   const hourHist = useMemo(() => {
@@ -211,18 +229,12 @@ export default function AirportFlightsModule({
     [flights],
   );
 
-  const days = useMemo(() => {
-    const s = new Set(flights.map((f) => f.date));
-    return [...s].sort();
-  }, [flights]);
-
+  const days = useMemo(() => [...new Set(flights.map((f) => f.date))].sort(), [flights]);
   const avgPerDay = span > 0 ? flights.length / span : 0;
 
   const cellFlights = useMemo(() => {
     if (!cell) return [];
-    return flights
-      .filter((f) => f.date === cell.day && hourOf(f.time) === cell.hour)
-      .sort((a, b) => (a.time < b.time ? -1 : 1));
+    return flights.filter((f) => f.date === cell.day && hourOf(f.time) === cell.hour).sort((a, b) => (a.time < b.time ? -1 : 1));
   }, [flights, cell]);
 
   return (
@@ -239,7 +251,6 @@ export default function AirportFlightsModule({
         <div className="grid gap-4 lg:grid-cols-2">
           {/* Filtros */}
           <div className="space-y-4">
-            {/* Sentido */}
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Sentido</label>
               <div className="inline-flex rounded-md border border-slate-300 p-0.5">
@@ -260,12 +271,13 @@ export default function AirportFlightsModule({
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Aeropuerto
+                  {counterLabel}
                 </label>
-                <select className={SELECT_CLS} value={draftIata} onChange={(e) => setDraftIata(e.target.value)}>
-                  {mergeAirportOptions(airports, draftIata).map((a) => (
-                    <option key={a.iata} value={a.iata}>
-                      {airportLabel(a.iata) === a.iata ? `${a.name} (${a.iata})` : airportLabel(a.iata)}
+                <select className={SELECT_CLS} value={counter} onChange={(e) => setCounter(e.target.value)}>
+                  <option value="todos">Todos</option>
+                  {counterOptions.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name} ({c.code}) · {c.n}
                     </option>
                   ))}
                 </select>
@@ -286,7 +298,7 @@ export default function AirportFlightsModule({
             </div>
           </div>
 
-          {/* Fechas: compacto por defecto, calendario grande opcional */}
+          {/* Ventana de tiempo: compacto por defecto, calendario grande opcional */}
           <div>
             <div className="mb-1 flex items-center justify-between">
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -313,23 +325,11 @@ export default function AirportFlightsModule({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="mb-1 block text-[11px] text-slate-400">Desde</span>
-                  <input
-                    type="date"
-                    className={INPUT_CLS}
-                    value={draftFrom}
-                    max={draftTo}
-                    onChange={(e) => setDraftFrom(e.target.value)}
-                  />
+                  <input type="date" className={INPUT_CLS} value={draftFrom} max={draftTo} onChange={(e) => setDraftFrom(e.target.value)} />
                 </div>
                 <div>
                   <span className="mb-1 block text-[11px] text-slate-400">Hasta</span>
-                  <input
-                    type="date"
-                    className={INPUT_CLS}
-                    value={draftTo}
-                    min={draftFrom}
-                    onChange={(e) => setDraftTo(e.target.value)}
-                  />
+                  <input type="date" className={INPUT_CLS} value={draftTo} min={draftFrom} onChange={(e) => setDraftTo(e.target.value)} />
                 </div>
               </div>
             )}
@@ -358,8 +358,8 @@ export default function AirportFlightsModule({
       </div>
 
       {/* ---- Fuente ---- */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        {data && (
+      {data && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <span
             className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium ${
               data.provider === "mock"
@@ -370,13 +370,8 @@ export default function AirportFlightsModule({
             <span className={`h-1.5 w-1.5 rounded-full ${data.provider === "mock" ? "bg-amber-500" : "bg-green-500"}`} />
             Fuente: {PROVIDER_LABEL[data.provider] ?? data.provider}
           </span>
-        )}
-        {isDemo && (
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-500">
-            Sin empresa asociada
-          </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
@@ -386,7 +381,7 @@ export default function AirportFlightsModule({
         <>
           {flights.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500">
-              No hay {dirLabel} guardadas para este aeropuerto en la ventana seleccionada.
+              No hay {dirLabel} guardadas para este aeropuerto con los filtros seleccionados.
             </div>
           ) : (
             <>
@@ -432,7 +427,7 @@ export default function AirportFlightsModule({
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <h3 className="mb-1 text-sm font-semibold text-slate-800">Mapa de calor por día y hora</h3>
                 <p className="mb-3 text-xs text-slate-500">
-                  Cuántas {dirLabel} hay en cada franja. Haz clic en una celda para ver aerolínea y {counterLabel.toLowerCase()}.
+                  Cuántas {dirLabel} hay en cada franja. Haz clic en una celda para ver aerolínea y {counterShort}.
                 </p>
                 <Heatmap days={days} flights={flights} selected={cell} onSelect={setCell} />
 
@@ -510,29 +505,10 @@ export default function AirportFlightsModule({
       )}
     </div>
   );
-
-  function counterOf(f: ScheduledFlight) {
-    return f.direction === "salida"
-      ? { code: f.destination, name: f.destinationName }
-      : { code: f.origin, name: f.originName };
-  }
 }
 
 function cap(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-// Combina las opciones de aeropuerto con el seleccionado y evita duplicados.
-function mergeAirportOptions(airports: AirportOption[], selected: string): AirportOption[] {
-  const seen = new Set<string>();
-  const out: AirportOption[] = [];
-  for (const a of airports) {
-    if (seen.has(a.iata)) continue;
-    seen.add(a.iata);
-    out.push(a);
-  }
-  if (!seen.has(selected)) out.unshift({ iata: selected, name: AIRPORTS[selected]?.name ?? selected });
-  return out;
 }
 
 function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -602,7 +578,7 @@ function Heatmap({
   const END_H = 23;
   const hours = Array.from({ length: END_H - START_H + 1 }, (_, i) => i + START_H);
   const counts = useMemo(() => {
-    const m = new Map<string, number>(); // `${day}|${hour}` -> n
+    const m = new Map<string, number>();
     for (const f of flights) {
       const k = `${f.date}|${hourOf(f.time)}`;
       m.set(k, (m.get(k) ?? 0) + 1);

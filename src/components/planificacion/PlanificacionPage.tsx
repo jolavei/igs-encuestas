@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import AirportFlightsModule from "./AirportFlightsModule";
-import { QUICK_PICK_AIRPORTS, AIRPORTS } from "@/lib/flights/airports";
 
 // Estilo de <select> alineado a los controles de la app.
 const SELECT_CLS =
@@ -10,8 +9,6 @@ const SELECT_CLS =
 
 export type LocationLite = { id: string; name: string; iataCode: string | null; timezone: string | null };
 export type CompanyLite = { id: string; name: string; kind: string; locations: LocationLite[] };
-
-const DEMO_VALUE = "__demo_airport__";
 
 // Etiqueta legible para cada tipo de empresa.
 const KIND_LABEL: Record<string, string> = {
@@ -34,24 +31,13 @@ const PLANNED_MODULES: Record<string, string> = {
 export default function PlanificacionPage({ companies }: { companies: CompanyLite[] }) {
   const [selected, setSelected] = useState<string>("");
 
-  const company = useMemo(
-    () => companies.find((c) => c.id === selected) ?? null,
-    [companies, selected],
-  );
+  const company = useMemo(() => companies.find((c) => c.id === selected) ?? null, [companies, selected]);
 
-  // Aeropuertos que ofrece el módulo: los de las sedes con IATA de la empresa
-  // seleccionada; si no hay, se cae al listado rápido de aeropuertos chilenos.
-  const companyAirports = useMemo(() => {
-    if (!company) return [];
-    return company.locations
-      .filter((l) => l.iataCode)
-      .map((l) => ({ iata: l.iataCode!.toUpperCase(), name: l.name }));
+  // La empresa/cliente define el aeropuerto: tomamos la 1ª sede con código IATA.
+  const airport = useMemo(() => {
+    const loc = company?.locations.find((l) => l.iataCode);
+    return loc ? { iata: loc.iataCode!.toUpperCase(), name: loc.name } : null;
   }, [company]);
-
-  const quickAirports = QUICK_PICK_AIRPORTS.map((iata) => ({
-    iata,
-    name: AIRPORTS[iata]?.name ?? iata,
-  }));
 
   return (
     <div className="space-y-6 pb-16">
@@ -59,8 +45,8 @@ export default function PlanificacionPage({ companies }: { companies: CompanyLit
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Planificación</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Herramientas para dimensionar y programar los turnos de levantamiento. Los módulos cambian
-            según el tipo de empresa.
+            Herramientas para dimensionar y programar los turnos de levantamiento. Los módulos cambian según el tipo de
+            empresa.
           </p>
         </div>
         <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
@@ -68,22 +54,17 @@ export default function PlanificacionPage({ companies }: { companies: CompanyLit
         </span>
       </div>
 
-      {/* Selector de empresa */}
+      {/* Aeropuerto (empresa / cliente) — define el aeropuerto de forma automática */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Empresa</label>
+        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Aeropuerto (empresa / cliente)</label>
         <div className="grid gap-3 sm:grid-cols-2">
           <select className={SELECT_CLS} value={selected} onChange={(e) => setSelected(e.target.value)}>
-            <option value="">— Selecciona una empresa —</option>
-            <option value={DEMO_VALUE}>✈️ Aeropuerto (demo, sin empresa)</option>
-            {companies.length > 0 && (
-              <optgroup label="Empresas">
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} · {kindLabel(c.kind)}
-                  </option>
-                ))}
-              </optgroup>
-            )}
+            <option value="">— Selecciona —</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} · {kindLabel(c.kind)}
+              </option>
+            ))}
           </select>
           {company && (
             <div className="flex items-center text-sm text-slate-500">
@@ -97,22 +78,21 @@ export default function PlanificacionPage({ companies }: { companies: CompanyLit
       </div>
 
       {/* Despacho del módulo según el tipo de empresa */}
-      {selected === "" && (
-        <EmptyState />
-      )}
+      {selected === "" && <EmptyState />}
 
-      {selected === DEMO_VALUE && (
-        <AirportFlightsModule key="demo" airports={quickAirports} defaultIata="IQQ" contextLabel="Modo demo" isDemo />
-      )}
-
-      {company && company.kind === "aeropuerto" && (
-        <AirportFlightsModule
-          key={company.id} // remonta al cambiar de empresa → reinicia origen/ventana
-          airports={companyAirports.length > 0 ? companyAirports : quickAirports}
-          defaultIata={(companyAirports[0]?.iata ?? "IQQ")}
-          contextLabel={company.name}
-        />
-      )}
+      {company && company.kind === "aeropuerto" &&
+        (airport ? (
+          <AirportFlightsModule
+            key={company.id} // remonta al cambiar de empresa → reinicia filtros/ventana
+            iata={airport.iata}
+            contextLabel={company.name}
+          />
+        ) : (
+          <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50/50 p-6 text-sm text-amber-700">
+            Esta empresa no tiene una sede con código IATA. Agrégalo en{" "}
+            <span className="font-medium">Empresas → sede</span> para poder consultar sus vuelos.
+          </div>
+        ))}
 
       {company && company.kind !== "aeropuerto" && (
         <ModulePlaceholder kind={company.kind} companyName={company.name} />
@@ -124,12 +104,7 @@ export default function PlanificacionPage({ companies }: { companies: CompanyLit
 function EmptyState() {
   return (
     <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-10 text-center">
-      <p className="text-sm text-slate-500">
-        Selecciona una empresa para ver su módulo de planificación.
-      </p>
-      <p className="mt-1 text-xs text-slate-400">
-        O prueba <span className="font-medium">✈️ Aeropuerto (demo)</span> para explorar el módulo de vuelos.
-      </p>
+      <p className="text-sm text-slate-500">Selecciona un aeropuerto (empresa / cliente) para ver su planificación.</p>
     </div>
   );
 }
@@ -138,9 +113,7 @@ function ModulePlaceholder({ kind, companyName }: { kind: string; companyName: s
   const planned = PLANNED_MODULES[kind];
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-900">
-        Módulo de {kindLabel(kind).toLowerCase()} — próximamente
-      </h2>
+      <h2 className="text-lg font-semibold text-slate-900">Módulo de {kindLabel(kind).toLowerCase()} — próximamente</h2>
       <p className="mt-1 text-sm text-slate-500">
         Aún no hay un módulo de planificación para <span className="font-medium">{companyName}</span>.
       </p>
