@@ -44,14 +44,14 @@ function airlineColor(code: string) {
 function isoOf(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function todayISO() {
-  return isoOf(new Date());
+// Ventana por defecto = todo el MES SIGUIENTE (día 1 al último).
+function firstOfNextMonth() {
+  const n = new Date();
+  return isoOf(new Date(n.getFullYear(), n.getMonth() + 1, 1));
 }
-function addDaysISO(iso: string, n: number) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + n);
-  return isoOf(dt);
+function lastOfNextMonth() {
+  const n = new Date();
+  return isoOf(new Date(n.getFullYear(), n.getMonth() + 2, 0));
 }
 function spanDays(from: string, to: string) {
   const a = new Date(from + "T00:00:00").getTime();
@@ -114,8 +114,8 @@ export default function AirportFlightsModule({
   iata: string;
   contextLabel?: string;
 }) {
-  const initFrom = todayISO();
-  const initTo = addDaysISO(initFrom, 6);
+  const initFrom = firstOfNextMonth();
+  const initTo = lastOfNextMonth();
 
   // "draft" = ventana en edición; "applied" = la consultada (dispara fetch).
   const [draftFrom, setDraftFrom] = useState(initFrom);
