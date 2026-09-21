@@ -12,6 +12,33 @@ export type CompanyLite = { id: string; name: string; kind: string; locations: L
 
 export default function PlanificacionPage({ companies }: { companies: CompanyLite[] }) {
   const [selected, setSelected] = useState<string>("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function runRefresh() {
+    if (
+      !window.confirm(
+        "Esto ejecuta el job en GitHub que vuelve a consultar AeroDataBox y actualiza la base " +
+          "(consume ~516 API units y tarda unos minutos). ¿Continuar?",
+      )
+    )
+      return;
+    setRefreshing(true);
+    setRefreshMsg(null);
+    try {
+      const res = await fetch("/api/planificacion/refresh", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Error ${res.status}`);
+      setRefreshMsg({
+        ok: true,
+        text: "Actualización iniciada en GitHub. Los datos se refrescan en unos minutos; recarga para ver la nueva fecha.",
+      });
+    } catch (e) {
+      setRefreshMsg({ ok: false, text: e instanceof Error ? e.message : "No se pudo iniciar la actualización." });
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   // Solo empresas de tipo aeropuerto en el desplegable.
   const airportCompanies = useMemo(() => companies.filter((c) => c.kind === "aeropuerto"), [companies]);
@@ -29,11 +56,28 @@ export default function PlanificacionPage({ companies }: { companies: CompanyLit
 
   return (
     <div className="space-y-6 pb-16">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Planificación</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Herramientas para dimensionar y programar los turnos de levantamiento.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Planificación</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Herramientas para dimensionar y programar los turnos de levantamiento.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={runRefresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 rounded-md border border-brand-600 bg-white px-3 py-2 text-sm font-semibold text-brand-700 shadow-sm transition-colors hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className={refreshing ? "animate-spin" : ""}>⟳</span>
+            {refreshing ? "Iniciando…" : "Actualizar datos"}
+          </button>
+          {refreshMsg && (
+            <p className={`max-w-xs text-right text-xs ${refreshMsg.ok ? "text-green-600" : "text-red-600"}`}>
+              {refreshMsg.text}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Aeropuerto (empresa / cliente) — define el aeropuerto de forma automática */}
