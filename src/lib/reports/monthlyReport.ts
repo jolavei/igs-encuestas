@@ -252,9 +252,17 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
               fase: fase ?? undefined,
               scopeAirports: [ap.name],
               skipSeasons: true,
+              reportSource: true,
             }),
             hasAirline(proceso)
-              ? queryTiemposByAirline({ proceso, airport: ap.name, desde: season.from, hasta: season.to, fase: fase ?? undefined })
+              ? queryTiemposByAirline({
+                  proceso,
+                  airport: ap.name,
+                  desde: season.from,
+                  hasta: season.to,
+                  fase: fase ?? undefined,
+                  reportSource: true,
+                })
               : Promise.resolve([] as AirlineSerieRow[]),
           ]);
           const monthEntry = main.series.find((s) => s.ym === month);

@@ -28,6 +28,15 @@ const DUR_RETIRO: Record<string, string> = {
 // (p. ej. autoservicio de quiosco muy rápido) queda como 0 y es una medición válida.
 export const CAP_MIN = 120;
 
+// Corte de fuente para el informe mensual (NO afecta al dashboard): hasta septiembre
+// de 2026 inclusive se informa solo con el histórico de Google Sheets (origen
+// "form_historico"); desde octubre de 2026 solo con lo levantado en la app propia
+// (origen "app"). Ver dataform/mediciones_tiempos_consolidado.sqlx.
+export const REPORT_SOURCE_CUTOFF = "2026-10-01";
+const reportSourceClause =
+  " AND ((DATE(responded_at, 'America/Santiago') < DATE(@sourceCutoff) AND origen = 'form_historico')" +
+  " OR (DATE(responded_at, 'America/Santiago') >= DATE(@sourceCutoff) AND origen = 'app'))";
+
 export type Agg = { name: string; n: number; prom: number; med: number; p90: number };
 export type Serie = { ym: string } & Omit<Agg, "name">;
 
@@ -48,13 +57,16 @@ export type TiemposQueryParams = {
   // Omite sólo la consulta de temporadas (el informe sí usa byAirport = agregado
   // del periodo, pero no necesita la lista de temporadas).
   skipSeasons?: boolean;
+  // Aplica el corte de fuente del informe mensual (ver REPORT_SOURCE_CUTOFF). El
+  // dashboard NO lo usa (sigue mezclando Sheets + app en todo el histórico).
+  reportSource?: boolean;
 };
 
 export type TiemposQueryResult = { byAirport: Agg[]; series: Serie[]; seasons: Periodo[] };
 
 /** Ejecuta las 3 consultas agregadas (byAirport, series mensual, temporadas con datos). */
 export async function queryTiempos(p: TiemposQueryParams): Promise<TiemposQueryResult> {
-  const { proceso, airport, desde, hasta, fase, airline, scopeAirports, seriesOnly, skipSeasons } = p;
+  const { proceso, airport, desde, hasta, fase, airline, scopeAirports, seriesOnly, skipSeasons, reportSource } = p;
 
   const durExpr =
     proceso === "Retiro de equipajes" ? DUR_RETIRO[hasFase(proceso) ? fase ?? "espera" : "espera"] : DUR[proceso];
@@ -69,7 +81,8 @@ export async function queryTiempos(p: TiemposQueryParams): Promise<TiemposQueryR
   const common =
     "process = @proceso" +
     " AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)" +
-    airlineClause;
+    airlineClause +
+    (reportSource ? reportSourceClause : "");
 
   const byAirportSql = `
     SELECT location_name AS name, COUNT(*) AS n, AVG(dur) AS prom,
@@ -105,6 +118,7 @@ export async function queryTiempos(p: TiemposQueryParams): Promise<TiemposQueryR
   const params: Record<string, unknown> = { proceso, desde, hasta, airport, cap: CAP_MIN };
   if (useAirline) params.airline = airline;
   if (scopeAirports) params.airports = scopeAirports;
+  if (reportSource) params.sourceCutoff = REPORT_SOURCE_CUTOFF;
 
   const empty = Promise.resolve<Record<string, unknown>[]>([]);
   const [byAirportRaw, seriesRaw, seasonsRaw] = await Promise.all([
@@ -153,8 +167,9 @@ export async function queryTiemposByAirline(p: {
   desde: string;
   hasta: string;
   fase?: Fase;
+  reportSource?: boolean;
 }): Promise<AirlineSerieRow[]> {
-  const { proceso, airport, desde, hasta, fase } = p;
+  const { proceso, airport, desde, hasta, fase, reportSource } = p;
   const durExpr =
     proceso === "Retiro de equipajes" ? DUR_RETIRO[hasFase(proceso) ? fase ?? "espera" : "espera"] : DUR[proceso];
   const baseCol = proceso === "Check in" ? "checkin_airline" : "baggage_claim_airline";
@@ -173,12 +188,14 @@ export async function queryTiemposByAirline(p: {
       WHERE process = @proceso
         AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)
         AND location_name = @airport
-        AND ${baseCol} IS NOT NULL AND ${baseCol} != ''
+        AND ${baseCol} IS NOT NULL AND ${baseCol} != ''${reportSource ? reportSourceClause : ""}
     )
     WHERE dur >= 0 AND dur <= @cap
     GROUP BY airline, ym
     ORDER BY airline, ym`;
 
-  const rows = await bqQuery<Record<string, unknown>>(sql, { proceso, desde, hasta, airport, cap: CAP_MIN });
+  const params: Record<string, unknown> = { proceso, desde, hasta, airport, cap: CAP_MIN };
+  if (reportSource) params.sourceCutoff = REPORT_SOURCE_CUTOFF;
+  const rows = await bqQuery<Record<string, unknown>>(sql, params);
   return rows.map((r) => ({ airline: String(r.airline), ym: String(r.ym), n: num(r.n), prom: num(r.prom) }));
 }
