@@ -42,6 +42,7 @@ export default async function PlanesPage() {
       orderBy: { name: "asc" },
     }),
     prisma.questionnaire.findMany({
+      where: { active: true },
       include: {
         companies: { select: { id: true } },
         versions: {
@@ -67,8 +68,9 @@ export default async function PlanesPage() {
     }),
   ]);
 
-  // Solo cuestionarios con versión activa; extraer preguntas-segmento (selección única
-  // + equivalenceKey), resolviendo el anidamiento por sección (ver buildSegmentQuestions).
+  // Solo cuestionarios vigentes (active=true) y con versión ACTIVE; extraer
+  // preguntas-segmento (selección única + equivalenceKey), resolviendo el
+  // anidamiento por sección (ver buildSegmentQuestions).
   const questionnaires = questionnairesRaw
     .filter((q) => q.versions.length > 0)
     .map((q) => ({
