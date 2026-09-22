@@ -547,6 +547,57 @@ function commentsSlide(pres: Pptx, r: MonthlyReport, comentarios: string) {
   addBottomLogo(s);
 }
 
+export type DeckPhotoData = { caption: string | null; dataUri: string };
+
+/** Diapositivas "Fotografías" (opcionales, justo después de comentarios): grilla 2×2, máx. 4 por diapositiva. */
+function photosSlides(pres: Pptx, r: MonthlyReport, photos: DeckPhotoData[]) {
+  const chunks: DeckPhotoData[][] = [];
+  for (let i = 0; i < photos.length; i += 4) chunks.push(photos.slice(i, i + 4));
+
+  const gap = 0.3;
+  const top = 2.2;
+  const bottom = H - 0.9;
+  const cellW = (CONTENT_W - gap) / 2;
+  const cellH = (bottom - top - gap) / 2;
+
+  chunks.forEach((group, gi) => {
+    const s = pres.addSlide();
+    s.background = { color: AIGS.white };
+    slideTitle(
+      s,
+      "Fotografías",
+      `${airportFull(r)} · ${r.monthLabel}${chunks.length > 1 ? ` · ${gi + 1}/${chunks.length}` : ""}`
+    );
+
+    group.forEach((p, i) => {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = MX + col * (cellW + gap);
+      const y = top + row * (cellH + gap);
+      const capH = p.caption ? 0.5 : 0;
+      const imgH = cellH - capH;
+      s.addImage({ data: p.dataUri, x, y, w: cellW, h: imgH, sizing: { type: "contain", w: cellW, h: imgH } });
+      if (p.caption) {
+        s.addText(p.caption, {
+          x,
+          y: y + imgH + 0.04,
+          w: cellW,
+          h: capH,
+          fontFace: FONT.face,
+          fontSize: 11,
+          color: AIGS.muted,
+          align: "center",
+          valign: "top",
+          margin: 0,
+          fit: "shrink",
+        });
+      }
+    });
+
+    addBottomLogo(s);
+  });
+}
+
 function closingSlide(pres: Pptx) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
@@ -578,8 +629,10 @@ function closingSlide(pres: Pptx) {
  * Construye el deck completo y devuelve los bytes del .pptx.
  * `comentarios`: si trae texto, agrega la diapositiva "Comentarios y sugerencias"
  * justo antes del cierre; si viene vacío, se omite.
+ * `photos`: si trae elementos, agrega diapositiva(s) "Fotografías" (máx. 4 por
+ * diapositiva) justo después de comentarios; si viene vacío, se omite.
  */
-export async function buildDeck(r: MonthlyReport, comentarios?: string): Promise<Uint8Array> {
+export async function buildDeck(r: MonthlyReport, comentarios?: string, photos?: DeckPhotoData[]): Promise<Uint8Array> {
   const PptxGenJS = (await import("pptxgenjs")).default;
   const pres = new PptxGenJS();
   pres.defineLayout({ name: "AIGS", width: W, height: H });
@@ -610,6 +663,8 @@ export async function buildDeck(r: MonthlyReport, comentarios?: string): Promise
 
   const comments = (comentarios ?? "").trim();
   if (comments) commentsSlide(pres, r, comments);
+
+  if (photos && photos.length > 0) photosSlides(pres, r, photos);
 
   closingSlide(pres);
 

@@ -402,6 +402,26 @@ model Document {
   @@index([deletedAt])
 }
 
+// Fotografía adjunta a un informe mensual (por aeropuerto + mes, igual clave que la
+// diapositiva "Comentarios y sugerencias"). El binario vive en GCS (objectPath); se
+// muestra en una diapositiva "Fotografías" (máx. 4 por diapositiva, con su descripción
+// abajo) justo después de la de comentarios. Persisten entre visitas (a diferencia del
+// comentario, que es texto libre no guardado).
+model ReportPhoto {
+  id           String   @id @default(cuid())
+  airport      String // código ASQ (PMC, IQQ, CJC, ...)
+  mes          String // "YYYY-MM"
+  objectPath   String
+  contentType  String
+  size         Int
+  caption      String? // descripción breve
+  order        Int      @default(0)
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  @@index([airport, mes])
+}
+
 // ----------------------------------------------------------------------------
 // Compliance ASQ: datos extraídos del portal ACI-ASQ (Survey Management Tool)
 // por el scraper (scripts/scrape-asq.mjs). Un "run" = una combinación

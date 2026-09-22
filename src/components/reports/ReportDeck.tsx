@@ -55,10 +55,28 @@ export type DeckData = {
 const SLIDE_W = 1280;
 const SLIDE_H = 720;
 
-export default function ReportDeck({ data, comentarios }: { data: DeckData; comentarios?: string }) {
+export type DeckPhoto = { id: string; caption: string | null; url: string };
+
+// Reparte las fotos en grupos de máx. 4 (una diapositiva "Fotografías" por grupo).
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+export default function ReportDeck({
+  data,
+  comentarios,
+  photos,
+}: {
+  data: DeckData;
+  comentarios?: string;
+  photos?: DeckPhoto[];
+}) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const comments = (comentarios ?? "").trim();
+  const photoGroups = chunk(photos ?? [], 4);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -141,6 +159,13 @@ export default function ReportDeck({ data, comentarios }: { data: DeckData; come
             <Comments data={data} comentarios={comments} />
           </Frame>
         )}
+
+        {/* Fotografías (opcional, justo después de comentarios): máx. 4 por diapositiva */}
+        {photoGroups.map((group, i) => (
+          <Frame key={`photos-${i}`} scale={scale}>
+            <PhotosSlide data={data} photos={group} index={i} total={photoGroups.length} />
+          </Frame>
+        ))}
 
         {/* Cierre */}
         <Frame scale={scale}>
@@ -583,6 +608,78 @@ function Comments({ data, comentarios }: { data: DeckData; comentarios: string }
         }}
       >
         {comentarios}
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Grilla 2×2 (máx. 4 fotos), cada una con su descripción breve debajo.
+function PhotosSlide({
+  data,
+  photos,
+  index,
+  total,
+}: {
+  data: DeckData;
+  photos: DeckPhoto[];
+  index: number;
+  total: number;
+}) {
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead
+        title="Fotografías"
+        subtitle={`${airportFull(data)} · ${data.monthLabel}${total > 1 ? ` · ${index + 1}/${total}` : ""}`}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: 150,
+          left: 72,
+          right: 72,
+          bottom: 56,
+          display: "grid",
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gridTemplateRows: "repeat(2, 1fr)",
+          gap: 20,
+        }}
+      >
+        {photos.map((p) => (
+          <div key={p.id} style={{ display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                borderRadius: 10,
+                overflow: "hidden",
+                background: hx(AIGS.surfaceSoft),
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.url} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            </div>
+            {p.caption && (
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 13,
+                  color: hx(AIGS.muted),
+                  textAlign: "center",
+                  overflow: "hidden",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                }}
+              >
+                {p.caption}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
       <BottomLogo />
     </div>

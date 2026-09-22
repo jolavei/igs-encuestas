@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ReportPhotos from "@/components/reports/ReportPhotos";
 
 // Acciones de la tarjeta de informe: "Ver informe" despliega un cuadro de texto
 // inline para redactar comentarios y sugerencias. El comentario alimenta tanto
@@ -89,6 +90,9 @@ export default function ReportActions({ airport, mes }: { airport: string; mes: 
             className="mt-2 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+
+          <ReportPhotos airport={airport} mes={mes} />
+
           <div className="mt-2 flex flex-wrap justify-end gap-2">
             <button
               type="button"

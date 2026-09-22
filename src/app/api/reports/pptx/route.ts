@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { apiUser } from "@/lib/rbac";
 import { getMonthlyReport, isValidMonth, currentMonth } from "@/lib/reports/monthlyReport";
-import { buildDeck } from "@/lib/reports/pptx";
+import { listReportPhotos } from "@/lib/reports/photos";
+import { downloadObject } from "@/lib/gcs";
+import { buildDeck, type DeckPhotoData } from "@/lib/reports/pptx";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +22,15 @@ async function generate(airportRaw: string, mesRaw: string, comentarios: string)
     return NextResponse.json({ error: "Aeropuerto no encontrado o sin empresa asociada." }, { status: 404 });
   }
 
-  const buffer = await buildDeck(report, comentarios.slice(0, MAX_COMENTARIOS));
+  const photoRows = await listReportPhotos(airport, mes);
+  const photos: DeckPhotoData[] = await Promise.all(
+    photoRows.map(async (p) => {
+      const bytes = await downloadObject(p.objectPath);
+      return { caption: p.caption, dataUri: `data:${p.contentType};base64,${bytes.toString("base64")}` };
+    })
+  );
+
+  const buffer = await buildDeck(report, comentarios.slice(0, MAX_COMENTARIOS), photos);
   const filename = `${mes.replace("-", "")} ${airport} Informe Mensual.pptx`;
 
   // Response acepta una vista de buffer en runtime; el tipo BodyInit de este

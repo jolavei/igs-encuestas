@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/rbac";
 import { getMonthlyReport, isValidMonth, currentMonth } from "@/lib/reports/monthlyReport";
+import { listReportPhotos } from "@/lib/reports/photos";
 import ReportDeck from "@/components/reports/ReportDeck";
 
 // Vista imprimible del informe mensual (sin el shell del panel), solo ADMIN.
@@ -18,7 +19,8 @@ export default async function InformePage({
   const mes = searchParams.mes && isValidMonth(searchParams.mes) ? searchParams.mes : currentMonth();
   const comentarios = (searchParams.comentarios ?? "").slice(0, 3000);
 
-  const report = await getMonthlyReport(code, mes);
+  const [report, photoRows] = await Promise.all([getMonthlyReport(code, mes), listReportPhotos(code, mes)]);
+  const photos = photoRows.map((p) => ({ id: p.id, caption: p.caption, url: `/api/reports/photos/${p.id}/raw` }));
 
   if (!report) {
     return (
@@ -34,5 +36,5 @@ export default async function InformePage({
     );
   }
 
-  return <ReportDeck data={report} comentarios={comentarios} />;
+  return <ReportDeck data={report} comentarios={comentarios} photos={photos} />;
 }
