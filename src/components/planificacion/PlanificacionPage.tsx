@@ -1,11 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AirportFlightsModule from "./AirportFlightsModule";
 
 // Estilo de <select> alineado a los controles de la app.
 const SELECT_CLS =
   "w-full rounded-md border border-slate-400 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500";
+
+// Recuerda el aeropuerto elegido entre navegaciones / reinicios del navegador.
+const STORAGE_KEY = "igs.planificacion.airport";
 
 export type LocationLite = { id: string; name: string; iataCode: string | null; timezone: string | null };
 export type CompanyLite = { id: string; name: string; kind: string; locations: LocationLite[] };
@@ -42,6 +45,26 @@ export default function PlanificacionPage({ companies }: { companies: CompanyLit
 
   // Solo empresas de tipo aeropuerto en el desplegable.
   const airportCompanies = useMemo(() => companies.filter((c) => c.kind === "aeropuerto"), [companies]);
+
+  // Restaura la última selección guardada (si sigue existiendo).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved && airportCompanies.some((c) => c.id === saved)) setSelected(saved);
+    } catch {
+      /* localStorage no disponible (modo privado, etc.) */
+    }
+  }, [airportCompanies]);
+
+  function handleSelect(id: string) {
+    setSelected(id);
+    try {
+      if (id) localStorage.setItem(STORAGE_KEY, id);
+      else localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignora si no hay localStorage */
+    }
+  }
 
   const company = useMemo(
     () => airportCompanies.find((c) => c.id === selected) ?? null,
@@ -83,7 +106,7 @@ export default function PlanificacionPage({ companies }: { companies: CompanyLit
       {/* Aeropuerto (empresa / cliente) — define el aeropuerto de forma automática */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <label className="mb-1.5 block text-sm font-semibold text-slate-700">Aeropuerto (empresa / cliente)</label>
-        <select className={`${SELECT_CLS} sm:max-w-md`} value={selected} onChange={(e) => setSelected(e.target.value)}>
+        <select className={`${SELECT_CLS} sm:max-w-md`} value={selected} onChange={(e) => handleSelect(e.target.value)}>
           <option value="">— Selecciona —</option>
           {airportCompanies.map((c) => (
             <option key={c.id} value={c.id}>

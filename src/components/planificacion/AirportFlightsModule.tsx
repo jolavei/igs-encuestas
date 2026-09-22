@@ -24,12 +24,6 @@ const SELECT_CLS =
 const INPUT_CLS =
   "w-full rounded-md border border-slate-400 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500";
 
-const PROVIDER_LABEL: Record<string, string> = {
-  db: "base de datos (guardado)",
-  aerodatabox: "AeroDataBox (en vivo)",
-  mock: "datos de demostración (mock)",
-};
-
 // Color por aerolínea (conocidas + fallback determinístico para el resto).
 const AIRLINE_COLOR: Record<string, string> = { LA: "#003152", H2: "#2f7d92", JA: "#D9B300" };
 const PALETTE = ["#6f9cb6", "#a9772f", "#4b6b57", "#7d4b6b", "#b0553a", "#3d7593", "#8a8f57"];
@@ -386,22 +380,6 @@ export default function AirportFlightsModule({
           </div>
         </div>
       </div>
-
-      {/* ---- Fuente ---- */}
-      {data && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium ${
-              data.provider === "mock"
-                ? "border-amber-200 bg-amber-50 text-amber-700"
-                : "border-green-200 bg-green-50 text-green-700"
-            }`}
-          >
-            <span className={`h-1.5 w-1.5 rounded-full ${data.provider === "mock" ? "bg-amber-500" : "bg-green-500"}`} />
-            Fuente: {PROVIDER_LABEL[data.provider] ?? data.provider}
-          </span>
-        </div>
-      )}
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
