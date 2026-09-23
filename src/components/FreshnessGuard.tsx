@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { isAutoReloadPaused } from "@/lib/freshnessGuardPause";
 
 /**
  * Mantiene la vista fresca sin refresh manual del usuario:
@@ -32,6 +33,10 @@ export default function FreshnessGuard({ version }: { version: string }) {
         if (!r.ok) return false;
         const data = (await r.json()) as { version?: string };
         if (!cancelled && data.version && data.version !== loadedVersion) {
+          // Hay una operación sensible en curso (p. ej. subiendo un archivo): no
+          // recargar ahora y perder ese trabajo. Se reintentará en el próximo
+          // chequeo (intervalo o foco), una vez liberada la pausa.
+          if (isAutoReloadPaused()) return false;
           window.location.reload();
           return true;
         }

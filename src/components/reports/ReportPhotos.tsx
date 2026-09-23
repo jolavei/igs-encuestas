@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { pauseAutoReload } from "@/lib/freshnessGuardPause";
 
 // Panel de fotografías del informe: adjuntar desde el computador, describir cada una
 // y reordenarlas. Se suben directo a GCS (URL firmada) y quedan guardadas para este
@@ -15,6 +16,33 @@ export default function ReportPhotos({ airport, mes }: { airport: string; mes: s
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const releasePauseRef = useRef<(() => void) | null>(null);
+  const cancelPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Al abrir el selector nativo de archivos, el navegador le quita y devuelve el
+  // foco a la pestaña — justo lo que dispara el chequeo de "hay versión nueva,
+  // recargar" (ver FreshnessGuard). Si un deploy aterriza en ese instante, la
+  // recarga completa borraría el comentario y la selección en curso. Pausamos
+  // ese chequeo mientras el diálogo puede estar abierto; si se cancela (no
+  // dispara `onChange`), se libera sola a los 20s.
+  function beginPickerPause() {
+    releasePauseRef.current?.();
+    releasePauseRef.current = pauseAutoReload();
+    if (cancelPauseTimeoutRef.current) clearTimeout(cancelPauseTimeoutRef.current);
+    cancelPauseTimeoutRef.current = setTimeout(() => {
+      releasePauseRef.current?.();
+      releasePauseRef.current = null;
+    }, 20000);
+  }
+
+  function endPickerPause() {
+    if (cancelPauseTimeoutRef.current) {
+      clearTimeout(cancelPauseTimeoutRef.current);
+      cancelPauseTimeoutRef.current = null;
+    }
+    releasePauseRef.current?.();
+    releasePauseRef.current = null;
+  }
 
   async function load() {
     try {
@@ -33,8 +61,16 @@ export default function ReportPhotos({ airport, mes }: { airport: string; mes: s
     load();
   }, [airport, mes]);
 
+  useEffect(() => endPickerPause, []);
+
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
+    // Hubo una selección real: cancelar el auto-liberado de la pausa (arrancado en
+    // el click) y mantenerla activa durante toda la subida, no solo el diálogo.
+    if (cancelPauseTimeoutRef.current) {
+      clearTimeout(cancelPauseTimeoutRef.current);
+      cancelPauseTimeoutRef.current = null;
+    }
     setUploading(true);
     setError(null);
     try {
@@ -67,6 +103,7 @@ export default function ReportPhotos({ airport, mes }: { airport: string; mes: s
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
+      endPickerPause();
     }
   }
 
@@ -116,6 +153,7 @@ export default function ReportPhotos({ airport, mes }: { airport: string; mes: s
         type="file"
         accept="image/*"
         multiple
+        onClick={beginPickerPause}
         onChange={(e) => handleFiles(e.target.files)}
         disabled={uploading}
         className="mt-2 block w-full text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-brand-600 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-brand-700 disabled:opacity-50"
