@@ -1,5 +1,7 @@
 "use client";
 import { useEffect } from "react";
+import { isAutoReloadPaused } from "@/lib/freshnessGuardPause";
+import { recordAutoReload } from "@/lib/reloadBreadcrumb";
 
 // Red de seguridad para ChunkLoadError. Tras un deploy nuevo, un cliente que
 // aun tiene HTML/JS viejo (pestaña abierta, SW en transicion, skew de CDN) puede
@@ -20,7 +22,12 @@ export default function ChunkErrorReload() {
       if (!isChunkError(msg)) return;
       const last = Number(sessionStorage.getItem(RELOAD_KEY) || 0);
       if (Date.now() - last < 10_000) return; // no recargar mas de 1 vez / 10 s
+      // Hay una operación sensible en curso (p. ej. subiendo un archivo): no
+      // recargar ahora. El siguiente error (si el chunk sigue faltando) sí recargará,
+      // por el guard de tiempo de arriba.
+      if (isAutoReloadPaused()) return;
       sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+      recordAutoReload(`error cargando un recurso de la página: ${msg}`);
       window.location.reload();
     };
 

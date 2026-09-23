@@ -2,6 +2,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { isAutoReloadPaused } from "@/lib/freshnessGuardPause";
+import { recordAutoReload } from "@/lib/reloadBreadcrumb";
 
 /**
  * Mantiene la vista fresca sin refresh manual del usuario:
@@ -37,6 +38,7 @@ export default function FreshnessGuard({ version }: { version: string }) {
           // recargar ahora y perder ese trabajo. Se reintentará en el próximo
           // chequeo (intervalo o foco), una vez liberada la pausa.
           if (isAutoReloadPaused()) return false;
+          recordAutoReload("se publicó una versión nueva del sitio");
           window.location.reload();
           return true;
         }

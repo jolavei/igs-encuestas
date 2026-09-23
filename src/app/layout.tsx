@@ -4,6 +4,7 @@ import "./globals.css";
 import Providers from "./providers";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ChunkErrorReload from "@/components/ChunkErrorReload";
+import AutoReloadNotice from "@/components/AutoReloadNotice";
 
 // Google Analytics (GA4). Se puede sobreescribir el ID por entorno con
 // NEXT_PUBLIC_GA_ID; si no, usa el de la propiedad "Aeródromos IGS".
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body>
+        <AutoReloadNotice />
         <Providers>{children}</Providers>
         <ChunkErrorReload />
         <ServiceWorkerRegister />
