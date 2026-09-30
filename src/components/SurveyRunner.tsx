@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import QuestionInput, { type ClientSection } from "./QuestionInput";
 import SurveyFooter from "./SurveyFooter";
-import { validateAnswers, type RawAnswer } from "@/lib/questionTypes";
+import { FIELD_ONLY_TYPES, validateAnswers, type RawAnswer } from "@/lib/questionTypes";
 
 const QUEUE_KEY = "igs.offlineQueue";
 
@@ -50,7 +50,7 @@ type Props = {
   title?: string;
   subtitle?: string;
   offline?: boolean; // habilita cola local (campo)
-  allowFileUpload?: boolean; // muestra preguntas de carga de archivos (solo campo)
+  allowFileUpload?: boolean; // muestra preguntas solo-campo: carga de archivos y medición de flujo
   extra?: Record<string, unknown>; // campos extra en el body (ej: workPlanId)
   onDone?: () => void;
   // Si se define, activa "una respuesta por dispositivo cada 24 h" (QR público).
@@ -150,9 +150,10 @@ export default function SurveyRunner({
   onDone,
   lockKey,
 }: Props) {
-  // El QR público no muestra preguntas de carga de archivos (ni las exige).
+  // El QR público no muestra preguntas solo-campo (carga de archivos, medición de
+  // flujo) ni las exige.
   const visible = (s: ClientSection) =>
-    allowFileUpload ? s.questions : s.questions.filter((q) => q.type !== "FILE_UPLOAD");
+    allowFileUpload ? s.questions : s.questions.filter((q) => !FIELD_ONLY_TYPES.includes(q.type));
   const [answers, setAnswers] = useState<Record<string, RawAnswer>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<number[]>([0]);

@@ -53,7 +53,7 @@ export function defaultBqType(type: QuestionType): BqType {
     case "DATETIME":
       return "TIMESTAMP";
     default:
-      return "STRING"; // TEXT, PARAGRAPH, SINGLE_CHOICE, MULTI_CHOICE, DROPDOWN, FILE_UPLOAD
+      return "STRING"; // TEXT, PARAGRAPH, SINGLE_CHOICE, MULTI_CHOICE, DROPDOWN, FILE_UPLOAD, FLOW_MEASUREMENT
   }
 }
 
@@ -69,6 +69,7 @@ function valueColumn(type: QuestionType): string {
       return "a.valueDate";
     case "MULTI_CHOICE":
     case "FILE_UPLOAD":
+    case "FLOW_MEASUREMENT": // objeto {initialQueue, events, kpis}: usar JSON_VALUE en BQ
       return "a.valueJson"; // array serializado como JSON (STRING)
     default:
       return "a.valueText"; // TEXT, PARAGRAPH, SINGLE_CHOICE, DROPDOWN

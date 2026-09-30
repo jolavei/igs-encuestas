@@ -133,7 +133,7 @@ Pregunta de una versión (no del cuestionario abstracto).
 | `versionId` | String | no | Versión (cascada) |
 | `sectionId` | String | sí | Sección (null en versiones antiguas) |
 | `order` | Int | no | Orden |
-| `type` | String | no | `LIKERT` \| `NPS` \| `SINGLE_CHOICE` \| `MULTI_CHOICE` \| `TEXT` \| `DATETIME` \| `NUMBER` |
+| `type` | String | no | `LIKERT` | `NPS` | `SINGLE_CHOICE` | `MULTI_CHOICE` | `TEXT` | `DATETIME` | `NUMBER` | `FLOW_MEASUREMENT` |\| `NPS` \| `SINGLE_CHOICE` \| `MULTI_CHOICE` \| `TEXT` \| `DATETIME` \| `NUMBER` |
 | `text` | String | no | Enunciado |
 | `required` | Boolean | no | Obligatoria |
 | `config` | String (JSON) | sí | Validación por tipo: `{ min, max, step, maxLength, options, multi }` |
@@ -203,7 +203,7 @@ Un envío de encuesta (un respondente), ligado a la **versión** con que se capt
 ### `Answer`
 Formato largo: una fila por respuesta a una pregunta. Un valor según tipo:
 `valueNumber` (LIKERT/NPS/NUMBER), `valueText` (TEXT/SINGLE_CHOICE),
-`valueDate` (DATETIME), `valueJson` (MULTI_CHOICE → array). Borra en cascada con `ResponseSet`.
+`valueDate` (DATETIME), `valueJson` (MULTI_CHOICE → array; FLOW_MEASUREMENT → objeto `{process, airline, initialQueue, startedAt, endedAt, events[{t,e}], kpis}`, con `valueNumber` = tiempo prom. estimado en fila en min). Borra en cascada con `ResponseSet`.
 
 ### `QrToken`
 Token QR **estable** por sede+cuestionario; resuelve la versión `ACTIVE` en runtime para que

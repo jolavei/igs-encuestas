@@ -24,6 +24,8 @@ export type Draft = {
   afterKey?: string; // DATETIME: debe ser posterior a esta otra pregunta
   min?: number; // LIKERT: valor inicial de la escala (NUMBER legado)
   max?: number; // LIKERT: valor final de la escala (NUMBER legado)
+  flowProcesses?: string[]; // FLOW_MEASUREMENT: opciones del desplegable de proceso
+  flowAirlines?: string[]; // FLOW_MEASUREMENT: opciones del desplegable de aerolínea
   bqColumnName?: string;
   bqType?: BqType;
   bqDescription?: string;
@@ -81,6 +83,16 @@ function buildConfig(d: Draft, convGoto: (g: string) => string): Record<string, 
       return { min: d.min ?? 1, max: d.max ?? 5 };
     case "NUMBER":
       return { min: d.min, max: d.max };
+    case "FLOW_MEASUREMENT": {
+      const clean = (xs?: string[]) =>
+        Array.from(new Set((xs ?? []).map((x) => x.trim()).filter(Boolean)));
+      const cfg: Record<string, unknown> = {};
+      const procs = clean(d.flowProcesses);
+      const airlines = clean(d.flowAirlines);
+      if (procs.length) cfg.flowProcesses = procs;
+      if (airlines.length) cfg.flowAirlines = airlines;
+      return cfg;
+    }
     default:
       return {};
   }
@@ -159,6 +171,25 @@ function OptionsEditor({
   );
 }
 
+// Vista previa estática de la captura de medición de flujo.
+function FlowPreviewBox() {
+  return (
+    <div className="space-y-2 rounded-md border border-dashed border-slate-300 p-3 text-center text-sm text-slate-400">
+      <div>Proceso · Aerolínea · Pasajeros en fila · cronómetro 00:00:00</div>
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <span className="rounded border border-slate-200 py-1">En fila</span>
+        <span className="rounded border border-slate-200 py-1">Entraron</span>
+        <span className="rounded border border-slate-200 py-1">Salieron</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs font-semibold">
+        <span className="rounded bg-emerald-50 py-2 text-emerald-600">Entra</span>
+        <span className="rounded bg-red-50 py-2 text-red-600">Sale</span>
+      </div>
+      <div className="text-xs">Solo en levantamiento de campo (no aparece en el QR público).</div>
+    </div>
+  );
+}
+
 // ---- Vista previa del formato de respuesta según el tipo ----
 function AnswerPreview({
   d,
@@ -233,6 +264,38 @@ function AnswerPreview({
           <button type="button" className="btn-secondary whitespace-nowrap" disabled>
             Ahora
           </button>
+        </div>
+      );
+    case "FLOW_MEASUREMENT":
+      return (
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm text-slate-600">
+              Procesos a medir <span className="text-slate-400">(uno por línea)</span>
+              <textarea
+                className="input mt-1"
+                rows={4}
+                placeholder={"Check-in\nControl de seguridad\nEmbarque"}
+                value={(d.flowProcesses ?? []).join("\n")}
+                onChange={(e) => onChange({ flowProcesses: e.target.value.split("\n") })}
+              />
+            </label>
+            <label className="block text-sm text-slate-600">
+              Aerolíneas <span className="text-slate-400">(uno por línea, opcional)</span>
+              <textarea
+                className="input mt-1"
+                rows={4}
+                placeholder={"LATAM\nSKY\nJetSMART"}
+                value={(d.flowAirlines ?? []).join("\n")}
+                onChange={(e) => onChange({ flowAirlines: e.target.value.split("\n") })}
+              />
+            </label>
+          </div>
+          <p className="text-xs text-slate-400">
+            Cada lista se muestra como un desplegable antes de iniciar la medición (vacía = no se
+            muestra). El de aerolínea incluye «No aplica».
+          </p>
+          <FlowPreviewBox />
         </div>
       );
     case "NPS":

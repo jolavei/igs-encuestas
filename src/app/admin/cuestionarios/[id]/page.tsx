@@ -55,6 +55,8 @@ function toSections(questions: VersionQuestion[], sections: VersionSection[]): S
       maxLength: cfg.maxLength,
       min: cfg.min,
       max: cfg.max,
+      flowProcesses: cfg.flowProcesses,
+      flowAirlines: cfg.flowAirlines,
       afterKey: cfg.afterQuestionOrder ? qKeys.get(cfg.afterQuestionOrder) : undefined,
       bqColumnName: q.bqColumnName ?? undefined,
       bqType: (q.bqType as BqType) ?? undefined,

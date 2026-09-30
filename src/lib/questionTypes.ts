@@ -13,6 +13,7 @@ export type QuestionType =
   | "DATETIME" // Fecha-Hora-Minuto-Segundo
   | "NPS" // Escala NPS (0-10)
   | "LIKERT" // Escala Likert (min-max)
+  | "FLOW_MEASUREMENT" // Medición de flujo (fila + cronómetro + entradas/salidas)
   // Legado: NO se ofrece en el constructor nuevo; se conserva para leer/mostrar
   // versiones históricas y sus dashboards.
   | "NUMBER";
@@ -26,6 +27,7 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   FILE_UPLOAD: "Carga de archivos",
   RATING: "Calificación",
   DATETIME: "Fecha-Hora-Minuto-Segundo",
+  FLOW_MEASUREMENT: "Medición de flujo",
   // Legado
   NPS: "NPS (0-10)",
   LIKERT: "Escala Likert",
@@ -44,7 +46,11 @@ export const BUILDER_QUESTION_TYPES: QuestionType[] = [
   "NPS",
   "LIKERT",
   "DATETIME",
+  "FLOW_MEASUREMENT",
 ];
+
+// Tipos que solo tienen sentido en levantamiento de campo (no se muestran en el QR público).
+export const FIELD_ONLY_TYPES: QuestionType[] = ["FILE_UPLOAD", "FLOW_MEASUREMENT"];
 
 // Tipos que usan lista de opciones (editor de opciones en el constructor).
 export function hasOptions(t: QuestionType): boolean {
@@ -68,7 +74,97 @@ export type QuestionConfig = {
   // DATETIME: esta fecha/hora debe ser POSTERIOR a la de la pregunta con este 'order'
   // (ej. t2 posterior a t1). Validación cruzada entre preguntas de la misma versión.
   afterQuestionOrder?: number;
+  // FLOW_MEASUREMENT: listas para los desplegables de proceso y aerolínea. Si una
+  // lista está vacía/ausente, ese desplegable no se muestra.
+  flowProcesses?: string[];
+  flowAirlines?: string[];
 };
+
+// Valor del desplegable de aerolínea cuando la medición no corresponde a una.
+export const FLOW_AIRLINE_NA = "N/A";
+
+// ---- Medición de flujo ----------------------------------------------------------
+// Se parte con la cantidad de pasajeros en fila, se inicia un cronómetro y se marca
+// cada pasajero que ENTRA a la fila o SALE de ella. t = ms desde el inicio.
+export type FlowEvent = { t: number; e: "IN" | "OUT" };
+export type FlowKpis = {
+  durationMin: number; // duración de la medición
+  totalIn: number; // pasajeros que entraron
+  totalOut: number; // pasajeros que salieron
+  finalQueue: number; // pasajeros en fila al finalizar
+  arrivalRate: number; // pax/min que entran
+  departureRate: number; // pax/min que salen
+  avgQueue: number; // largo promedio de la fila (ponderado por tiempo)
+  avgWaitMin: number; // tiempo promedio estimado en fila (Ley de Little: L / λ)
+};
+export type FlowMeasurement = {
+  process?: string | null; // proceso medido (de config.flowProcesses)
+  airline?: string | null; // aerolínea (de config.flowAirlines) o "N/A"
+  initialQueue: number;
+  startedAt: string; // ISO
+  endedAt: string | null; // ISO; null = medición en curso
+  events: FlowEvent[];
+  kpis?: FlowKpis; // lo calcula el servidor al validar
+};
+
+const flowMeasurementSchema = z.object({
+  process: z.string().max(200).nullable().optional(),
+  airline: z.string().max(200).nullable().optional(),
+  initialQueue: z.number().int().min(0).max(100_000),
+  startedAt: z.string().datetime(),
+  endedAt: z.string().datetime().nullable(),
+  events: z
+    .array(z.object({ t: z.number().int().min(0).max(86_400_000), e: z.enum(["IN", "OUT"]) }))
+    .max(20_000),
+  kpis: z.any().optional(),
+});
+
+/** Largo de la fila tras procesar los eventos (inicial + entradas − salidas). */
+export function flowQueue(m: Pick<FlowMeasurement, "initialQueue" | "events">): number {
+  return m.events.reduce((q, ev) => q + (ev.e === "IN" ? 1 : -1), m.initialQueue);
+}
+
+/** KPIs de una medición de flujo. `endMs` (epoch) permite calcularlos en curso. */
+export function flowKpis(m: FlowMeasurement, endMs?: number): FlowKpis {
+  const start = new Date(m.startedAt).getTime();
+  const end = endMs ?? (m.endedAt ? new Date(m.endedAt).getTime() : Date.now());
+  const durMs = Math.max(0, end - start);
+  const durationMin = durMs / 60_000;
+  let q = m.initialQueue;
+  let prevT = 0;
+  let area = 0; // Σ (largo de fila × tiempo) para el promedio ponderado por tiempo
+  let totalIn = 0;
+  let totalOut = 0;
+  for (const ev of m.events) {
+    const t = Math.min(ev.t, durMs);
+    area += q * (t - prevT);
+    prevT = t;
+    if (ev.e === "IN") {
+      q++;
+      totalIn++;
+    } else {
+      q--;
+      totalOut++;
+    }
+  }
+  area += q * (durMs - prevT);
+  const avgQueue = durMs > 0 ? area / durMs : m.initialQueue;
+  const arrivalRate = durationMin > 0 ? totalIn / durationMin : 0;
+  const departureRate = durationMin > 0 ? totalOut / durationMin : 0;
+  // Ley de Little (W = L / λ). Si nadie entró, se usa la tasa de salida como flujo.
+  const lambda = arrivalRate > 0 ? arrivalRate : departureRate;
+  const avgWaitMin = lambda > 0 ? avgQueue / lambda : 0;
+  return {
+    durationMin,
+    totalIn,
+    totalOut,
+    finalQueue: q,
+    arrivalRate,
+    departureRate,
+    avgQueue,
+    avgWaitMin,
+  };
+}
 
 // Forma de un answer crudo que llega desde el form.
 export type RawAnswer = {
@@ -224,6 +320,60 @@ export function validateAnswers(
         out.valueDate = d;
         break;
       }
+      case "FLOW_MEASUREMENT": {
+        const p = flowMeasurementSchema.safeParse(a.valueJson);
+        if (!p.success) {
+          errors[q.id] = "Medición de flujo inválida.";
+          break;
+        }
+        const m = p.data;
+        const procs = (cfg.flowProcesses ?? []).filter(Boolean);
+        const airlines = (cfg.flowAirlines ?? []).filter(Boolean);
+        if (procs.length && !procs.includes(m.process ?? "")) {
+          errors[q.id] = "Selecciona el proceso que se está midiendo.";
+          break;
+        }
+        if (
+          airlines.length &&
+          m.airline !== FLOW_AIRLINE_NA &&
+          !airlines.includes(m.airline ?? "")
+        ) {
+          errors[q.id] = "Selecciona la aerolínea (o «No aplica»).";
+          break;
+        }
+        if (!m.endedAt) {
+          errors[q.id] = "Finaliza la medición antes de continuar.";
+          break;
+        }
+        const durMs = new Date(m.endedAt).getTime() - new Date(m.startedAt).getTime();
+        if (!(durMs > 0)) {
+          errors[q.id] = "La medición debe durar más de 0 segundos.";
+          break;
+        }
+        const events = m.events.slice().sort((x, y) => x.t - y.t);
+        let queue = m.initialQueue;
+        let bad = false;
+        for (const ev of events) {
+          queue += ev.e === "IN" ? 1 : -1;
+          if (queue < 0 || ev.t > durMs + 1000) bad = true;
+        }
+        if (bad) {
+          errors[q.id] = "Medición inconsistente (fila negativa o evento fuera de rango).";
+          break;
+        }
+        const clean: FlowMeasurement = {
+          process: procs.length ? m.process! : null,
+          airline: airlines.length ? m.airline! : null,
+          initialQueue: m.initialQueue,
+          startedAt: m.startedAt,
+          endedAt: m.endedAt,
+          events,
+        };
+        const kpis = flowKpis(clean);
+        out.valueJson = { ...clean, kpis };
+        out.valueNumber = Math.round(kpis.avgWaitMin * 100) / 100; // min promedio en fila
+        break;
+      }
       case "SINGLE_CHOICE":
       case "DROPDOWN": {
         const v = String(a.valueText ?? "");
@@ -263,7 +413,11 @@ export const submitSchema = z.object({
         valueNumber: z.number().finite().nullable().optional(),
         valueText: z.string().max(5000).nullable().optional(),
         valueDate: z.string().max(40).nullable().optional(),
-        valueJson: z.array(z.string().max(500)).max(100).optional(),
+        // Array de strings (MULTI_CHOICE/FILE_UPLOAD) u objeto de medición de flujo
+        // (se valida en detalle en validateAnswers).
+        valueJson: z
+          .union([z.array(z.string().max(500)).max(100), flowMeasurementSchema])
+          .optional(),
       })
     )
     .max(300), // tope de respuestas por envío

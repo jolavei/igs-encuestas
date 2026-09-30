@@ -17,6 +17,7 @@ const questionSchema = z.object({
     "FILE_UPLOAD",
     "RATING",
     "DATETIME",
+    "FLOW_MEASUREMENT",
     // legado (para recargar versiones históricas)
     "NPS",
     "LIKERT",

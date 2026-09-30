@@ -1,6 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { QuestionConfig, QuestionType, RawAnswer } from "@/lib/questionTypes";
+import {
+  FLOW_AIRLINE_NA,
+  flowKpis,
+  flowQueue,
+  type FlowMeasurement,
+  type QuestionConfig,
+  type QuestionType,
+  type RawAnswer,
+} from "@/lib/questionTypes";
 
 export type ClientQuestion = {
   id: string;
@@ -180,6 +188,10 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
 
       {q.type === "DATETIME" && (
         <DateTimeInput value={value} onChange={set} prevDatetime={prevDatetime} />
+      )}
+
+      {q.type === "FLOW_MEASUREMENT" && (
+        <FlowMeasurementInput value={value} config={cfg} onChange={set} />
       )}
 
       {q.type === "SINGLE_CHOICE" && (
@@ -568,6 +580,291 @@ function FileUploadInput({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+// "HH:MM:SS" a partir de milisegundos.
+function fmtClock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+}
+
+// Medición de flujo (ref. app "airport_flow_measurement"): pasajeros en fila al
+// iniciar + cronómetro + botones ENTRA / SALE. La medición (en curso o terminada)
+// vive en valueJson, así sobrevive a cambiar de sección; el cronómetro se deriva
+// de startedAt, no de un contador local.
+function FlowMeasurementInput({
+  value,
+  config,
+  onChange,
+}: {
+  value: RawAnswer;
+  config: QuestionConfig;
+  onChange: (patch: Partial<RawAnswer>) => void;
+}) {
+  const processes = (config.flowProcesses ?? []).filter(Boolean);
+  const airlines = (config.flowAirlines ?? []).filter(Boolean);
+  const m = (value.valueJson as FlowMeasurement | undefined) ?? null;
+  // Ref a la medición vigente: toques rápidos antes del re-render no se pierden.
+  const mRef = useRef(m);
+  mRef.current = m;
+  const [initial, setInitial] = useState(m ? String(m.initialQueue) : "");
+  // Proceso / aerolínea medidos: se eligen antes de iniciar y quedan fijos.
+  const [process, setProcess] = useState(m?.process ?? "");
+  const [airline, setAirline] = useState(m?.airline ?? "");
+  const [now, setNow] = useState(() => Date.now());
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const running = !!m && !m.endedAt;
+  const finished = !!m?.endedAt;
+
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [running]);
+
+  function save(next: FlowMeasurement | null) {
+    mRef.current = next;
+    onChange({ valueJson: next ?? undefined });
+  }
+
+  function start() {
+    const n = initial.trim() === "" ? 0 : Number(initial);
+    if (!Number.isInteger(n) || n < 0) {
+      setMsg("Ingresa una cantidad válida de pasajeros en fila (0 o más).");
+      return;
+    }
+    if (processes.length && !process) {
+      setMsg("Selecciona el proceso que vas a medir.");
+      return;
+    }
+    if (airlines.length && !airline) {
+      setMsg("Selecciona la aerolínea (o «No aplica»).");
+      return;
+    }
+    setMsg(null);
+    save({
+      process: processes.length ? process : null,
+      airline: airlines.length ? airline : null,
+      initialQueue: n,
+      startedAt: new Date().toISOString(),
+      endedAt: null,
+      events: [],
+    });
+  }
+
+  function register(e: "IN" | "OUT") {
+    const cur = mRef.current;
+    if (!cur || cur.endedAt) return;
+    if (e === "OUT" && flowQueue(cur) <= 0) {
+      setMsg("La fila ya está vacía: no puede salir nadie más.");
+      return;
+    }
+    setMsg(null);
+    const t = Math.max(0, Date.now() - new Date(cur.startedAt).getTime());
+    save({ ...cur, events: [...cur.events, { t, e }] });
+    try {
+      navigator.vibrate?.(25); // confirmación táctil en móviles
+    } catch {
+      /* sin vibración */
+    }
+  }
+
+  function undo() {
+    const cur = mRef.current;
+    if (!cur || cur.endedAt || cur.events.length === 0) return;
+    setMsg(null);
+    save({ ...cur, events: cur.events.slice(0, -1) });
+  }
+
+  function finish() {
+    const cur = mRef.current;
+    if (!cur) return;
+    save({ ...cur, endedAt: new Date().toISOString() });
+  }
+
+  function restart() {
+    if (!confirm("¿Reiniciar la medición? Se perderán los datos registrados.")) return;
+    setMsg(null);
+    save(null);
+  }
+
+  const elapsed = m
+    ? (m.endedAt ? new Date(m.endedAt).getTime() : now) - new Date(m.startedAt).getTime()
+    : 0;
+  const totalIn = m ? m.events.filter((ev) => ev.e === "IN").length : 0;
+  const totalOut = m ? m.events.length - totalIn : 0;
+  const queue = m ? flowQueue(m) : Number(initial) || 0;
+  const kpis = finished && m ? flowKpis(m) : null;
+
+  return (
+    <div className="space-y-4">
+      <div
+        className={`space-y-3 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-3 text-center ${
+          m ? "opacity-60" : ""
+        }`}
+      >
+        {(processes.length > 0 || airlines.length > 0) && (
+          <div className={`grid gap-3 text-left ${processes.length && airlines.length ? "sm:grid-cols-2" : ""}`}>
+            {processes.length > 0 && (
+              <label className="block text-sm font-semibold text-slate-700">
+                Proceso
+                <select
+                  className="input mt-1 font-normal"
+                  value={process}
+                  disabled={!!m}
+                  onChange={(e) => setProcess(e.target.value)}
+                >
+                  <option value="">— elegir —</option>
+                  {processes.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {airlines.length > 0 && (
+              <label className="block text-sm font-semibold text-slate-700">
+                Aerolínea
+                <select
+                  className="input mt-1 font-normal"
+                  value={airline}
+                  disabled={!!m}
+                  onChange={(e) => setAirline(e.target.value)}
+                >
+                  <option value="">— elegir —</option>
+                  {airlines.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                  <option value={FLOW_AIRLINE_NA}>No aplica</option>
+                </select>
+              </label>
+            )}
+          </div>
+        )}
+        <label className="block text-sm font-semibold text-slate-700">
+          Pasajeros en fila actualmente
+        </label>
+        <input
+          className="input mx-auto block text-center text-lg tabular-nums"
+          style={{ width: "7rem" }}
+          aria-label="Pasajeros en fila actualmente"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          step={1}
+          placeholder="0"
+          value={initial}
+          disabled={!!m}
+          onChange={(e) => setInitial(e.target.value)}
+        />
+      </div>
+
+      <div
+        className="text-center font-mono text-5xl font-bold tabular-nums text-brand-600"
+        aria-live="off"
+      >
+        {fmtClock(elapsed)}
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        {[
+          { label: "En fila", n: queue, accent: true },
+          { label: "Entraron", n: totalIn },
+          { label: "Salieron", n: totalOut },
+        ].map((b) => (
+          <div
+            key={b.label}
+            className={`rounded-lg border border-slate-200 bg-white p-2 text-center shadow-sm sm:p-3 ${
+              b.accent ? "border-b-4 border-b-brand-500" : ""
+            }`}
+          >
+            <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              {b.label}
+            </span>
+            <strong className="text-2xl tabular-nums text-slate-900">{b.n}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => register("IN")}
+          disabled={!running}
+          className="touch-manipulation select-none rounded-xl bg-emerald-600 py-7 text-lg font-bold text-white shadow active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+        >
+          📥
+          <br />
+          ENTRA
+        </button>
+        <button
+          type="button"
+          onClick={() => register("OUT")}
+          disabled={!running}
+          className="touch-manipulation select-none rounded-xl bg-red-600 py-7 text-lg font-bold text-white shadow active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+        >
+          📤
+          <br />
+          SALE
+        </button>
+      </div>
+
+      {msg && <p className="text-center text-sm text-amber-700">{msg}</p>}
+
+      {!m && (
+        <button type="button" className="btn w-full py-3" onClick={start}>
+          Iniciar medición
+        </button>
+      )}
+
+      {running && (
+        <div className="space-y-2">
+          <button type="button" className="btn w-full py-3" onClick={finish}>
+            Finalizar medición
+          </button>
+          <button
+            type="button"
+            className="w-full text-sm text-slate-500 underline disabled:no-underline disabled:opacity-40"
+            onClick={undo}
+            disabled={!m || m.events.length === 0}
+          >
+            Deshacer último registro
+          </button>
+        </div>
+      )}
+
+      {kpis && (
+        <div className="space-y-3">
+          <div className="rounded-xl bg-brand-600 p-4 text-sm text-white">
+            <p className="mb-2 font-semibold text-brand-200">Resultados de la medición</p>
+            <ul className="space-y-0.5">
+              {m!.process && <li>• Proceso: {m!.process}</li>}
+              {m!.airline && (
+                <li>• Aerolínea: {m!.airline === FLOW_AIRLINE_NA ? "No aplica" : m!.airline}</li>
+              )}
+              <li>• Duración: {kpis.durationMin.toFixed(2)} min</li>
+              <li>• Carga inicial: {m!.initialQueue} pax</li>
+              <li>• Tasa de entrada: {kpis.arrivalRate.toFixed(2)} pax/min</li>
+              <li>• Tasa de salida: {kpis.departureRate.toFixed(2)} pax/min</li>
+              <li>• Fila promedio: {kpis.avgQueue.toFixed(1)} pax</li>
+            </ul>
+            <p className="mt-2 font-bold">
+              Tiempo prom. en fila (estimado): {kpis.avgWaitMin.toFixed(2)} min
+            </p>
+          </div>
+          <button type="button" className="btn-secondary w-full" onClick={restart}>
+            Reiniciar medición
+          </button>
+        </div>
       )}
     </div>
   );
