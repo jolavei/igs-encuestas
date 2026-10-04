@@ -241,7 +241,7 @@ function asqSlide(pres: Pptx, r: MonthlyReport) {
   );
 
   if (!a) {
-    s.addText("Aún no hay datos de ASQ para este aeropuerto.", {
+    s.addText(`Aún no hay datos de ASQ de la temporada ${r.season.label} para este aeropuerto.`, {
       x: MX,
       y: 5,
       w: CONTENT_W,

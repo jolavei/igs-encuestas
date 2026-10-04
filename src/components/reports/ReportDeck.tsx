@@ -285,7 +285,7 @@ function AsqSlide({ data }: { data: DeckData }) {
         subtitle={a ? `${full} · ${a.seasonLabel.replace("-", " ")}` : full}
       />
       {!a ? (
-        <Centered>Aún no hay datos de ASQ para este aeropuerto.</Centered>
+        <Centered>Aún no hay datos de ASQ de la temporada {data.season.label} para este aeropuerto.</Centered>
       ) : (
         <div style={{ position: "absolute", top: 150, left: 72, right: 72, bottom: 56, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>

@@ -23,6 +23,16 @@ import { shortAirline } from "@/lib/reports/design";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
+/**
+ * Temporada ASQ (como se guarda en AsqComplianceRun) para un mes 1-12:
+ * abr–sep = SUMMER del mismo año; oct–mar = WINTER del año de inicio
+ * (oct-2026 y mar-2027 → WINTER 2026, etiqueta "Winter-2026-27").
+ */
+export function asqSeasonOf(y: number, m: number): { season: "SUMMER" | "WINTER"; year: number } {
+  if (m >= 4 && m <= 9) return { season: "SUMMER", year: y };
+  return { season: "WINTER", year: m >= 10 ? y : y - 1 };
+}
+
 /** true si el string tiene forma "YYYY-MM". */
 export function isValidMonth(month: string): boolean {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
@@ -196,10 +206,10 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
     windowEnd: fmtDate(p.windowEnd),
   }));
 
-  // ASQ: temporada más reciente disponible para el aeropuerto.
+  // ASQ: la temporada que corresponde al mes del informe (no la más reciente).
   const run = await prisma.asqComplianceRun.findFirst({
-    where: { airport: code },
-    orderBy: [{ year: "desc" }, { season: "desc" }],
+    where: { airport: code, ...asqSeasonOf(y, m) },
+    orderBy: { scrapedAt: "desc" },
     include: { rows: { orderBy: { airlineDestination: "asc" } } },
   });
   let asq: MonthlyReport["asq"] = null;
