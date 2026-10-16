@@ -32,6 +32,30 @@ type Args = {
 };
 
 /**
+ * Versión contra la que se valida un envío. El formulario envía el versionId con el
+ * que se renderizó: se usa esa versión (ACTIVE o ARCHIVED) aunque se haya publicado
+ * otra mientras la pestaña seguía abierta, así no se pierden las respuestas. Sin
+ * versionId (clientes antiguos / cola offline previa) se cae a la ACTIVE actual.
+ * Devuelve null si el versionId no es de ese cuestionario o es un borrador.
+ */
+export async function resolveSubmitVersion(
+  questionnaireId: string,
+  versionId?: string | null
+): Promise<{ id: string } | null> {
+  if (versionId) {
+    return prisma.questionnaireVersion.findFirst({
+      where: { id: versionId, questionnaireId, status: { in: ["ACTIVE", "ARCHIVED"] } },
+      select: { id: true },
+    });
+  }
+  return prisma.questionnaireVersion.findFirst({
+    where: { questionnaireId, status: "ACTIVE" },
+    orderBy: { versionNumber: "desc" },
+    select: { id: true },
+  });
+}
+
+/**
  * Valida respuestas contra las preguntas de la VERSION indicada y persiste
  * en formato largo. La respuesta queda ligada a la version, nunca al "actual".
  */
@@ -52,12 +76,32 @@ export async function createResponseSet(args: Args) {
     text: q.text,
   }));
 
+  // Formulario desactualizado: si el envío trae preguntas que no son de esta versión
+  // (p. ej. pestaña abierta con una versión anterior), validateAnswers las ignoraría
+  // y el envío quedaría vacío. Se rechaza para que el cliente recargue.
+  const versionQIds = new Set(questions.map((q) => q.id));
+  const foreign = [
+    ...(args.presentedQuestionIds ?? []),
+    ...args.raw.map((r) => r.questionId),
+  ].some((id) => !versionQIds.has(id));
+  if (foreign) {
+    return {
+      ok: false as const,
+      status: 409,
+      code: "STALE_FORM" as const,
+      error: "El formulario está desactualizado. Recarga la página y vuelve a responder.",
+    };
+  }
+
   const activeIds =
     args.presentedQuestionIds && args.presentedQuestionIds.length
       ? new Set(args.presentedQuestionIds)
       : undefined;
   const { ok, errors, answers } = validateAnswers(qLike, args.raw, activeIds);
   if (!ok) return { ok: false as const, status: 422, errors };
+  if (answers.length === 0) {
+    return { ok: false as const, status: 422, error: "El envío no contiene respuestas." };
+  }
 
   // Segmento: valor de la respuesta a la pregunta marcada por el plan (equivalenceKey).
   const segFrom = (key?: string | null): string | null => {

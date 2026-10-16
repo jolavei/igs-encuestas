@@ -33,6 +33,7 @@ export default async function Levantar({ params }: { params: { planId: string } 
       {/* El levantamiento vive en un contenedor blanco redondeado con margen vertical. */}
       <FieldSurvey
         workPlanId={data.plan.id}
+        versionId={data.versionId!}
         title={planDisplayTitle(data.plan.questionnaire.title, data.plan.name)}
         subtitle={data.plan.location?.name}
         sections={data.sections}

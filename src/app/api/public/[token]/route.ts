@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { createResponseSet } from "@/lib/responses";
+import { createResponseSet, resolveSubmitVersion } from "@/lib/responses";
 import { deviceTypeFromUA } from "@/lib/userAgent";
 import { submitSchema, type QuestionConfig } from "@/lib/questionTypes";
 import { fromJson } from "@/lib/enums";
@@ -68,9 +68,13 @@ export async function POST(
   const parsed = submitSchema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Payload inválido." }, { status: 400 });
 
+  // Versión con la que se renderizó el formulario (ver resolveSubmitVersion).
+  const version = await resolveSubmitVersion(r.qr.questionnaireId, parsed.data.versionId);
+  if (!version) return NextResponse.json({ error: "Versión del cuestionario no válida." }, { status: 400 });
+
   const userAgent = req.headers.get("user-agent");
   const result = await createResponseSet({
-    versionId: r.version.id,
+    versionId: version.id,
     source: "QR_PUBLIC",
     locationId: r.qr.locationId,
     raw: parsed.data.answers,

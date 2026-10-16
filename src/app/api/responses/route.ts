@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
-import { createResponseSet } from "@/lib/responses";
+import { createResponseSet, resolveSubmitVersion } from "@/lib/responses";
 import { submitSchema } from "@/lib/questionTypes";
 import { deviceTypeFromUA } from "@/lib/userAgent";
 
@@ -41,11 +41,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Sede no pertenece a la empresa." }, { status: 400 });
   }
 
-  const version = await prisma.questionnaireVersion.findFirst({
-    where: { questionnaireId: plan.questionnaireId, status: "ACTIVE" },
-    orderBy: { versionNumber: "desc" },
-  });
-  if (!version) return NextResponse.json({ error: "Cuestionario sin versión activa." }, { status: 400 });
+  // Se valida contra la versión con la que se llenó el formulario (no la ACTIVE de
+  // ahora): publicar una versión nueva no debe vaciar los envíos de pestañas abiertas.
+  const version = await resolveSubmitVersion(plan.questionnaireId, parsed.data.versionId);
+  if (!version) return NextResponse.json({ error: "Versión del cuestionario no válida." }, { status: 400 });
 
   const userAgent = req.headers.get("user-agent");
   const result = await createResponseSet({

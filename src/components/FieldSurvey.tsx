@@ -7,12 +7,14 @@ import type { ClientSection } from "@/components/QuestionInput";
 // Levantamiento ligado a un plan. Si el plan no fija sede, se elige aquí.
 export default function FieldSurvey({
   workPlanId,
+  versionId,
   title,
   subtitle,
   sections,
   locations,
 }: {
   workPlanId: string;
+  versionId: string; // versión con la que se renderiza el formulario
   title: string;
   subtitle?: string;
   sections: ClientSection[];
@@ -50,6 +52,7 @@ export default function FieldSurvey({
   return (
     <SurveyRunner
       sections={sections}
+      versionId={versionId}
       endpoint="/api/responses"
       title={title}
       subtitle={needsLocation ? locations!.find((l) => l.id === locationId)?.name : subtitle}

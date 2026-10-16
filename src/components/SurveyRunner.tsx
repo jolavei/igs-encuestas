@@ -46,7 +46,9 @@ function makeSubmissionId(): string {
 
 type Props = {
   sections: ClientSection[];
-  endpoint: string; // POST {answers, presentedQuestionIds}
+  endpoint: string; // POST {answers, presentedQuestionIds, versionId}
+  // Versión con la que se renderizó el formulario; el servidor valida contra ella.
+  versionId: string;
   title?: string;
   subtitle?: string;
   offline?: boolean; // habilita cola local (campo)
@@ -142,6 +144,7 @@ function stepsToSubmit(sections: ClientSection[], startIdx: number): number {
 export default function SurveyRunner({
   sections,
   endpoint,
+  versionId,
   title,
   subtitle,
   offline = false,
@@ -157,7 +160,9 @@ export default function SurveyRunner({
   const [answers, setAnswers] = useState<Record<string, RawAnswer>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<number[]>([0]);
-  const [status, setStatus] = useState<"idle" | "sending" | "ok" | "queued" | "error">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "sending" | "ok" | "queued" | "error" | "stale"
+  >("idle");
   const [pending, setPending] = useState(0);
   // Id de idempotencia de la respuesta en curso (estable entre reintentos; se renueva
   // al iniciar una respuesta nueva en reset()).
@@ -236,33 +241,47 @@ export default function SurveyRunner({
     const body = JSON.stringify({
       answers: raw,
       presentedQuestionIds: presented,
+      versionId,
       startedAt: new Date(startMs).toISOString(),
       durationMs: Math.max(0, Date.now() - startMs),
       ...extra,
       clientSubmissionId: submissionId.current,
     });
 
+    let r: Response | null = null;
     try {
-      const r = await fetch(endpoint, {
+      r = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
       });
-      if (!r.ok) throw new Error(await r.text());
+    } catch {
+      r = null; // sin red
+    }
+
+    if (r?.ok) {
       if (lockKey) markAnswered(lockKey);
       setStatus("ok");
       onDone?.();
-    } catch (e) {
-      if (offline) {
-        const q = readQueue();
-        q.push({ endpoint, body, at: Date.now() });
-        writeQueue(q);
-        setPending(q.length);
-        setStatus("queued");
-        onDone?.();
-      } else {
-        setStatus("error");
-      }
+      return;
+    }
+    // Rechazo definitivo del servidor (4xx): no se encola, porque reenviarlo no lo
+    // arreglaría y el encuestador lo vería como "pendiente" sin estarlo. 409 =
+    // formulario desactualizado (hay que recargar). 401/429 sí son transitorios.
+    if (r && r.status >= 400 && r.status < 500 && r.status !== 401 && r.status !== 429) {
+      setStatus(r.status === 409 ? "stale" : "error");
+      return;
+    }
+    // Sin red o error transitorio: en campo se encola para reenviar después.
+    if (offline) {
+      const q = readQueue();
+      q.push({ endpoint, body, at: Date.now() });
+      writeQueue(q);
+      setPending(q.length);
+      setStatus("queued");
+      onDone?.();
+    } else {
+      setStatus("error");
     }
   }
 
@@ -405,6 +424,15 @@ export default function SurveyRunner({
 
       {status === "error" && (
         <p className="pt-4 text-sm text-red-600">Error al enviar. Intenta de nuevo.</p>
+      )}
+      {status === "stale" && (
+        <p className="pt-4 text-sm text-red-600">
+          El formulario está desactualizado (se publicó una versión nueva). Recarga la página
+          y vuelve a responder.{" "}
+          <button type="button" className="underline" onClick={() => window.location.reload()}>
+            Recargar
+          </button>
+        </p>
       )}
 
       <div className="flex justify-center gap-3 pt-6">

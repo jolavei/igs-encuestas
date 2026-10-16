@@ -424,6 +424,9 @@ export const submitSchema = z.object({
   // Preguntas efectivamente mostradas (secciones visitadas). Si viene, solo se
   // exigen esas; las de secciones saltadas no bloquean el envío.
   presentedQuestionIds: z.array(z.string().max(60)).max(300).optional(),
+  // Versión con la que se renderizó el formulario: el servidor valida contra ella
+  // (ver resolveSubmitVersion). Opcional por compatibilidad con la cola offline previa.
+  versionId: z.string().max(60).optional(),
   // Idempotencia: UUID generado en el cliente por envío. Reintentos y reenvíos de
   // la cola offline con el mismo id no crean duplicados (ver createResponseSet).
   clientSubmissionId: z.string().uuid().optional(),

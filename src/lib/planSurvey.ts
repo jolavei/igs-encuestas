@@ -30,5 +30,5 @@ export async function getPlanSurvey(planId: string) {
     ? null
     : plan.company.locations.map((l) => ({ id: l.id, name: l.name }));
 
-  return { plan, hasVersion: !!version, sections, locations };
+  return { plan, hasVersion: !!version, versionId: version?.id ?? null, sections, locations };
 }

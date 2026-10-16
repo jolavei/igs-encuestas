@@ -67,6 +67,7 @@ export default async function PublicSurvey({
           </p>
           <SurveyRunner
             sections={sections}
+            versionId={version.id}
             endpoint={`/api/public/${params.token}`}
             title={qr.questionnaire.title}
             subtitle={`${qr.location.name}`}
