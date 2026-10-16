@@ -7,10 +7,15 @@
 //    que referencia los chunks con hash. Si servimos HTML viejo desde cache,
 //    apunta a chunks que un deploy nuevo ya borro -> 404 -> ChunkLoadError.
 //    Solo caemos a cache cuando NO hay red (offline real).
-//  - Estaticos con hash (/_next/static/, iconos, etc.) -> CACHE-FIRST. Son
-//    inmutables (el hash cambia con cada build), asi que servirlos desde cache
-//    es seguro y rapido.
-const CACHE = "igs-shell-v2";
+//  - Estaticos con hash (/_next/static/) -> CACHE-FIRST. Son inmutables (el
+//    hash cambia con cada build), asi que servirlos desde cache es seguro.
+//  - Todo lo demas (payloads RSC de la navegacion cliente, imagenes y archivos
+//    de /public sin hash) -> NO se intercepta. Antes caia en cache-first y el
+//    payload RSC de /encuestador/levantar/[planId] quedaba guardado para
+//    siempre: al entrar por un <Link> la tablet seguia mostrando la version
+//    vieja del cuestionario (envios vacios PMC, oct-2026).
+// Cambiar CACHE purga lo guardado por versiones anteriores (ver "activate").
+const CACHE = "igs-shell-v3";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -57,7 +62,8 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Cache-first para estaticos con hash (inmutables).
+  // Cache-first SOLO para estaticos con hash (inmutables). Lo demas va a la red.
+  if (!url.pathname.startsWith("/_next/static/")) return;
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const cached = await cache.match(req);
