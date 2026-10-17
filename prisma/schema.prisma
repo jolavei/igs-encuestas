@@ -320,6 +320,7 @@ model Answer {
   valueText     String?
   valueDate     DateTime?
   valueJson     String?
+  highlight     SurveyHighlight? // respuesta abierta destacada para el informe ("Voz del pasajero")
 
   @@index([responseSetId])
   @@index([questionId])
@@ -537,4 +538,28 @@ model FlightSchedule {
 
   @@unique([airportIata, direction, flightNumber, date, time, origin, destination])
   @@index([airportIata, date])
+}
+
+// Respuesta abierta (TEXT) destacada con ★ desde el Dashboard de encuestas. Las
+// destacadas del mes se muestran en la diapositiva "Voz del pasajero" del informe.
+model SurveyHighlight {
+  id          String   @id @default(cuid())
+  answerId    String   @unique
+  answer      Answer   @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdAt   DateTime @default(now())
+}
+
+// Apreciación general del administrador sobre las respuestas abiertas de un
+// cuestionario, por plan y mes. Se edita en el Dashboard y se muestra en el informe.
+model SurveyAppraisal {
+  id          String   @id @default(cuid())
+  view        String // vista del dashboard: "aga-pasajeros" | "aga-acompanantes" | "hotel"
+  scope       String // id del WorkPlan, o "all" si la vista no filtra por plan
+  mes         String // "YYYY-MM"
+  text        String
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([view, scope, mes])
 }

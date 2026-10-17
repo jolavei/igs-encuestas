@@ -20,6 +20,7 @@ import {
 import { queryTiempos, queryTiemposByAirline, type AirlineSerieRow } from "@/lib/reports/tiemposQuery";
 import { planDisplayTitle } from "@/lib/planTitle";
 import { shortAirline } from "@/lib/reports/design";
+import { getAgaSurveys, type AgaSurvey } from "@/lib/reports/agaSurvey";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -174,6 +175,7 @@ export type MonthlyReport = {
   } | null;
   processes: ReportProcess[];
   bqError: string | null; // mensaje si no se pudieron leer los tiempos (ASQ sí puede venir)
+  aga: AgaSurvey[]; // Encuestas AGA (Módulo 03); vacío si el aeropuerto no tiene plan AGA vigente
 };
 
 /** Devuelve null si el aeropuerto no está mapeado (no hay identidad de aeropuerto). */
@@ -205,6 +207,9 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
     windowStart: fmtDate(p.windowStart),
     windowEnd: fmtDate(p.windowEnd),
   }));
+
+  // Encuestas AGA (Postgres): de los planes vigentes cuyo cuestionario es AGA.
+  const aga = await getAgaSurveys(plansRaw, month);
 
   // ASQ: la temporada que corresponde al mes del informe (no la más reciente).
   const run = await prisma.asqComplianceRun.findFirst({
@@ -361,6 +366,7 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
     asq,
     processes,
     bqError,
+    aga,
   };
 }
 

@@ -15,7 +15,8 @@ import {
   BookIcon,
 } from "@/components/icons";
 
-type NavItem = { href: string; label: string; icon: IconName; exact?: boolean };
+type NavChild = { href: string; label: string };
+type NavItem = { href: string; label: string; icon: IconName; exact?: boolean; children?: NavChild[] };
 
 // Manual de usuario en PDF por rol (servido desde /public/manuales).
 const MANUAL_HREF: Record<Role, string> = {
@@ -27,7 +28,18 @@ const MANUAL_HREF: Record<Role, string> = {
 const NAV: Record<Role, NavItem[]> = {
   ADMIN: [
     { href: "/admin", label: "Inicio", icon: "home", exact: true },
-    { href: "/admin/dashboard", label: "Dashboard", icon: "dashboard" },
+    {
+      href: "/admin/dashboard",
+      label: "Dashboard",
+      icon: "dashboard",
+      // Una vista por cuestionario vigente.
+      children: [
+        { href: "/admin/dashboard/tiempos", label: "Mediciones de tiempos" },
+        { href: "/admin/dashboard/aga-pasajeros", label: "AGA Pasajeros" },
+        { href: "/admin/dashboard/aga-acompanantes", label: "AGA Acompañantes" },
+        { href: "/admin/dashboard/hotel", label: "Satisfacción hotelera" },
+      ],
+    },
     { href: "/admin/planificacion", label: "Planificación", icon: "planning" },
     { href: "/admin/informes", label: "Informes", icon: "report" },
     { href: "/admin/levantar", label: "Levantar encuesta", icon: "workplan" },
@@ -130,34 +142,66 @@ export default function AppShell({
 
   const items = NAV[role];
 
-  // Lista de navegación reutilizada en escritorio y en el drawer móvil.
+  // Lista de navegación reutilizada en escritorio y en el drawer móvil. Los ítems con
+  // `children` (Dashboard) despliegan su submenú cuando la ruta actual está dentro de
+  // ellos; con el sidebar colapsado (solo íconos) el submenú no se muestra.
   function NavList({ showLabels }: { showLabels: boolean }) {
     return (
       <nav className="flex-1 space-y-1 px-3 py-4">
         {items.map((item) => {
           const Icon = NAV_ICONS[item.icon];
           const active = isActive(pathname, item);
+          const sub = showLabels && active && item.children ? item.children : null;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={showLabels ? undefined : item.label}
-              aria-current={active ? "page" : undefined}
-              className={`group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                showLabels ? "" : "justify-center"
-              } ${
-                active
-                  ? "bg-brand-50 text-brand-700"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-              }`}
-            >
-              <Icon
-                className={
-                  active ? "text-brand-600" : "text-slate-400 group-hover:text-slate-600"
-                }
-              />
-              {showLabels && <span className="truncate">{item.label}</span>}
-            </Link>
+            <div key={item.href}>
+              <Link
+                href={item.children ? item.children[0].href : item.href}
+                title={showLabels ? undefined : item.label}
+                aria-current={active && !item.children ? "page" : undefined}
+                className={`group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 ${
+                  showLabels ? "" : "justify-center"
+                } ${
+                  active
+                    ? "bg-brand-50 text-brand-700"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                <Icon
+                  className={
+                    active ? "text-brand-600" : "text-slate-400 group-hover:text-slate-600"
+                  }
+                />
+                {showLabels && <span className="truncate">{item.label}</span>}
+                {showLabels && item.children && (
+                  <ChevronDownIcon
+                    className={`ml-auto h-4 w-4 transition-transform ${active ? "" : "-rotate-90"} ${
+                      active ? "text-brand-600" : "text-slate-400"
+                    }`}
+                  />
+                )}
+              </Link>
+              {sub && (
+                <div className="ml-5 mt-1 space-y-0.5 border-l border-slate-200 pl-1.5">
+                  {sub.map((c) => {
+                    const childActive = pathname === c.href || pathname.startsWith(c.href + "/");
+                    return (
+                      <Link
+                        key={c.href}
+                        href={c.href}
+                        aria-current={childActive ? "page" : undefined}
+                        className={`block truncate rounded-md px-2 py-1.5 text-sm transition-colors duration-150 ${
+                          childActive
+                            ? "font-medium text-brand-700"
+                            : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                        }`}
+                      >
+                        {c.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>

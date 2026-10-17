@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import {
   ComposedChart,
   Area,
@@ -12,7 +12,16 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
-import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct } from "@/lib/reports/design";
+import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct, fmtScore, fmtNps, scoreColor, npsColor } from "@/lib/reports/design";
+import {
+  AGA_GUIDE_KPIS,
+  AGA_GUIDE_PERIOD_NOTE,
+  AGA_GUIDE_ATTRIBUTES,
+  AGA_GUIDE_SERVICES,
+  AGA_GUIDE_SCALE_NOTE,
+  AGA_GUIDE_EXAMPLE_ATTRIBUTE,
+  AGA_GUIDE_EXAMPLE_SERVICE,
+} from "@/lib/reports/agaGuide";
 
 // Datos serializables que arma la página (server). Estructuralmente compatible
 // con MonthlyReport de src/lib/reports/monthlyReport.ts.
@@ -50,6 +59,29 @@ export type DeckData = {
     }[];
   }[];
   bqError: string | null;
+  aga: AgaDeck[];
+};
+
+type AgaScoreDeck = { label: string; avg: number | null; n: number };
+type AgaStatsDeck = {
+  n: number;
+  nps: number | null;
+  promotersPct: number | null;
+  passivesPct: number | null;
+  detractorsPct: number | null;
+  sat: number | null;
+  satTop2: number | null;
+  attributes: AgaScoreDeck[];
+  services: (AgaScoreDeck & { usePct: number | null; useN: number })[];
+};
+type AgaVoiceDeck = { appraisal: string | null; quotes: { label: string; text: string; nps: number | null }[] };
+type AgaDeck = {
+  audience: string;
+  planTitle: string;
+  target: number;
+  month: AgaStatsDeck;
+  period: AgaStatsDeck;
+  voice: AgaVoiceDeck;
 };
 
 const SLIDE_W = 1280;
@@ -153,6 +185,30 @@ export default function ReportDeck({
           ))
         )}
 
+        {/* Módulo 03: Encuestas AGA (solo si el aeropuerto tiene plan AGA vigente) */}
+        {data.aga.length > 0 && (
+          <>
+            <Frame scale={scale}>
+              <Section module="Módulo 03" title="Encuestas AGA · Experiencia" />
+            </Frame>
+            <Frame scale={scale}>
+              <AgaGuideSlide data={data} />
+            </Frame>
+            {data.aga.map((s) => (
+              <Fragment key={`aga-${s.audience}-${s.planTitle}`}>
+                <Frame scale={scale}>
+                  <AgaSlide data={data} s={s} />
+                </Frame>
+                {(s.voice.appraisal || s.voice.quotes.length > 0) && (
+                  <Frame scale={scale}>
+                    <VoiceSlide data={data} s={s} />
+                  </Frame>
+                )}
+              </Fragment>
+            ))}
+          </>
+        )}
+
         {/* Comentarios y sugerencias (opcional, justo antes del cierre) */}
         {comments && (
           <Frame scale={scale}>
@@ -228,7 +284,10 @@ function Cover({ data }: { data: DeckData }) {
         </div>
         <div style={{ fontSize: 22, color: hx(AIGS.body), marginTop: 20 }}>{data.airport.companyName}</div>
         <div style={{ fontSize: 16, color: hx(AIGS.muted), marginTop: 8 }}>
-          Cumplimiento de Encuestas ASQ y mediciones de tiempos · {data.monthLabel}
+          {data.aga.length > 0
+            ? "Cumplimiento de Encuestas ASQ, mediciones de tiempos y Encuestas AGA"
+            : "Cumplimiento de Encuestas ASQ y mediciones de tiempos"}{" "}
+          · {data.monthLabel}
         </div>
       </div>
       <div style={{ position: "absolute", left: 72, bottom: 48, fontSize: 13, color: hx(AIGS.muted) }}>
@@ -584,6 +643,369 @@ function EmptyTiempos({ data }: { data: DeckData }) {
   );
 }
 
+// Encuesta AGA de un público (Pasajeros / Acompañantes) en una sola diapositiva:
+// KPIs del mes (con el acumulado del periodo abajo) + barras de atributos y servicios.
+function AgaSlide({ data, s }: { data: DeckData; s: AgaDeck }) {
+  const m = s.month;
+  const p = s.period;
+  const hasMonth = m.n > 0;
+  // Las barras usan el mes; si el mes no tuvo encuestas, el acumulado del periodo.
+  const shown = hasMonth ? m : p;
+  const full = airportFull(data);
+  const subtitle = `${full} · ${data.monthLabel} · ${s.planTitle}${
+    hasMonth || p.n === 0 ? "" : " · sin encuestas este mes (se muestra el acumulado del periodo)"
+  }`;
+  const rows = Math.max(shown.attributes.length, shown.services.length, 1);
+  const rowH = Math.min(30, 318 / rows);
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title={`Encuestas AGA · ${s.audience}`} subtitle={subtitle} />
+      {p.n === 0 ? (
+        <Centered>Aún no hay encuestas registradas para este plan.</Centered>
+      ) : (
+        <>
+          <div style={{ position: "absolute", top: 140, left: 72, right: 72 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+              <Kpi
+                label="NPS"
+                value={hasMonth ? fmtNps(m.nps) : "—"}
+                valueColor={npsColor(hasMonth ? m.nps : null)}
+                sub={`Periodo ${fmtNps(p.nps)}`}
+                extra={hasMonth ? <NpsBar st={m} /> : undefined}
+              />
+              <Kpi
+                label="Satisfacción general"
+                value={hasMonth ? `${fmtScore(m.sat)} / 5` : "—"}
+                valueColor={scoreColor(hasMonth ? m.sat : null)}
+                sub={`Periodo ${fmtScore(p.sat)} / 5`}
+              />
+              <Kpi
+                label="Satisfechos (nota 4–5)"
+                value={hasMonth && m.satTop2 != null ? `${m.satTop2}%` : "—"}
+                sub={`Periodo ${p.satTop2 != null ? `${p.satTop2}%` : "—"}`}
+              />
+              <Kpi
+                label="Encuestas del mes"
+                value={fmtInt(m.n)}
+                sub={`Periodo ${fmtInt(p.n)}${s.target > 0 ? ` de ${fmtInt(s.target)} (${pct(p.n, s.target)}%)` : ""}`}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              top: 300,
+              left: 72,
+              right: 72,
+              bottom: 60,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 40,
+              overflow: "hidden",
+            }}
+          >
+            <ScorePanel title="Atributos de la experiencia" note="nota 1–5" rows={shown.attributes} rowH={rowH} />
+            <ScorePanel title="Servicios evaluados" note="nota 1–5 · % que lo usó" rows={shown.services} rowH={rowH} />
+          </div>
+        </>
+      )}
+      {p.n > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            right: 72,
+            bottom: 24,
+            display: "flex",
+            gap: 12,
+            fontSize: 11,
+            color: hx(AIGS.muted),
+          }}
+        >
+          <LegendDot color={AIGS.up} label="≥ 4,0" />
+          <LegendDot color={AIGS.yellow} label="3,5 – 3,9" />
+          <LegendDot color={AIGS.down} label="< 3,5" />
+          <span>· N/A no se considera</span>
+        </div>
+      )}
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Diapositiva explicativa previa a las de Pasajeros / Acompañantes: qué es cada KPI y
+// cómo leer las listas de atributos y servicios (textos en lib/reports/agaGuide.ts).
+function AgaGuideSlide({ data }: { data: DeckData }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Cómo leer las Encuestas AGA" subtitle={`${airportFull(data)} · Indicadores y leyenda`} />
+      <div
+        style={{
+          position: "absolute",
+          top: 140,
+          left: 72,
+          right: 72,
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 14,
+        }}
+      >
+        {AGA_GUIDE_KPIS.map((k) => (
+          <div
+            key={k.title}
+            style={{
+              border: `1px solid ${hx(AIGS.hairline)}`,
+              borderRadius: 12,
+              background: "#fff",
+              padding: "16px 18px",
+              height: 232,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 700, color: hx(AIGS.blue) }}>{k.title}</div>
+            <div style={{ fontSize: 12, fontStyle: "italic", color: hx(AIGS.muted), lineHeight: 1.35 }}>{k.question}</div>
+            <div style={{ fontSize: 13, color: hx(AIGS.body), lineHeight: 1.4, flex: 1 }}>{k.how}</div>
+            {k.color && <div style={{ fontSize: 11.5, color: hx(AIGS.ink) }}>{k.color}</div>}
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", top: 384, left: 72, right: 72, fontSize: 13, color: hx(AIGS.muted) }}>
+        {AGA_GUIDE_PERIOD_NOTE}
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          top: 424,
+          left: 72,
+          right: 72,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 40,
+        }}
+      >
+        {[
+          { title: "Atributos de la experiencia", note: "nota 1–5 · ejemplo", row: AGA_GUIDE_EXAMPLE_ATTRIBUTE, text: AGA_GUIDE_ATTRIBUTES },
+          { title: "Servicios evaluados", note: "nota 1–5 · % que lo usó · ejemplo", row: AGA_GUIDE_EXAMPLE_SERVICE, text: AGA_GUIDE_SERVICES },
+        ].map((b) => (
+          <div key={b.title} style={{ minWidth: 0 }}>
+            <ScorePanel title={b.title} note={b.note} rows={[b.row]} rowH={30} />
+            <div style={{ fontSize: 13, color: hx(AIGS.body), lineHeight: 1.45, marginTop: 10 }}>{b.text}</div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          right: 72,
+          bottom: 24,
+          display: "flex",
+          gap: 12,
+          fontSize: 11,
+          color: hx(AIGS.muted),
+        }}
+      >
+        <LegendDot color={AIGS.up} label="≥ 4,0" />
+        <LegendDot color={AIGS.yellow} label="3,5 – 3,9" />
+        <LegendDot color={AIGS.down} label="< 3,5" />
+        <span>· {AGA_GUIDE_SCALE_NOTE}</span>
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
+// "Voz del pasajero / acompañante": apreciación general (escrita en el Dashboard) +
+// citas destacadas con ★ de las respuestas abiertas del mes.
+function VoiceSlide({ data, s }: { data: DeckData; s: AgaDeck }) {
+  const { appraisal, quotes } = s.voice;
+  const shown = quotes.slice(0, appraisal ? 4 : 6);
+  const who = s.audience === "Acompañantes" ? "acompañante" : "pasajero";
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title={`Voz del ${who}`} subtitle={`${airportFull(data)} · ${data.monthLabel} · ${s.planTitle}`} />
+      <div
+        style={{
+          position: "absolute",
+          top: 140,
+          left: 72,
+          right: 72,
+          bottom: 64,
+          display: "grid",
+          gridTemplateColumns: appraisal && shown.length ? "0.9fr 1.1fr" : "1fr",
+          gap: 28,
+        }}
+      >
+        {appraisal && (
+          <div
+            style={{
+              background: hx(AIGS.surfaceSoft),
+              border: `1px solid ${hx(AIGS.hairline)}`,
+              borderRadius: 14,
+              padding: "22px 26px",
+              overflow: "hidden",
+              minHeight: 0,
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: hx(AIGS.blue) }}>
+              Apreciación general
+            </div>
+            <div style={{ fontSize: 17, lineHeight: 1.5, color: hx(AIGS.body), marginTop: 12, whiteSpace: "pre-wrap" }}>{appraisal}</div>
+          </div>
+        )}
+        {shown.length > 0 && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: appraisal ? "1fr" : "1fr 1fr",
+              alignContent: "start",
+              gap: 12,
+              minHeight: 0,
+              overflow: "hidden",
+            }}
+          >
+            {shown.map((q, i) => {
+              const tone = q.nps == null ? AIGS.muted : q.nps >= 9 ? AIGS.up : q.nps <= 6 ? AIGS.down : AIGS.muted;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    border: `1px solid ${hx(AIGS.hairline)}`,
+                    borderLeft: `4px solid ${hx(tone)}`,
+                    borderRadius: 0,
+                    padding: "10px 16px",
+                    overflow: "hidden",
+                    minHeight: 0,
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: hx(AIGS.muted), letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                    {q.label}
+                    {q.nps != null ? ` · NPS ${q.nps}` : ""}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      lineHeight: 1.4,
+                      color: hx(AIGS.ink),
+                      marginTop: 4,
+                      fontStyle: "italic",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    “{q.text}”
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <span style={{ width: 8, height: 8, borderRadius: 999, background: hx(color), display: "inline-block" }} />
+      {label}
+    </span>
+  );
+}
+
+// Composición del NPS: promotores / pasivos / detractores.
+function NpsBar({ st }: { st: AgaStatsDeck }) {
+  const parts = [
+    { v: st.promotersPct ?? 0, c: AIGS.up },
+    { v: st.passivesPct ?? 0, c: AIGS.hairline },
+    { v: st.detractorsPct ?? 0, c: AIGS.down },
+  ];
+  return (
+    <div>
+      <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: hx(AIGS.surfaceStrong) }}>
+        {parts.map((x, i) => (
+          <div key={i} style={{ width: `${x.v}%`, background: hx(x.c) }} />
+        ))}
+      </div>
+      <div style={{ fontSize: 10, color: hx(AIGS.muted), marginTop: 3 }}>
+        Prom. {st.promotersPct ?? 0}% · Pas. {st.passivesPct ?? 0}% · Det. {st.detractorsPct ?? 0}%
+      </div>
+    </div>
+  );
+}
+
+type ScoreRowData = AgaScoreDeck & { usePct?: number | null };
+
+function ScorePanel({
+  title,
+  note,
+  rows,
+  rowH,
+}: {
+  title: string;
+  note: string;
+  rows: ScoreRowData[];
+  rowH: number;
+}) {
+  const fs = Math.max(10, Math.min(13, Math.floor(rowH * 0.48)));
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 8 }}>
+        {title} <span style={{ fontSize: 12, fontWeight: 400, color: hx(AIGS.muted) }}>· {note}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 13, color: hx(AIGS.muted) }}>Sin calificaciones.</div>
+      ) : (
+        rows.map((r) => <ScoreRow key={r.label} r={r} rowH={rowH} fs={fs} />)
+      )}
+    </div>
+  );
+}
+
+function ScoreRow({ r, rowH, fs }: { r: ScoreRowData; rowH: number; fs: number }) {
+  return (
+          <div
+            key={r.label}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr) 24% 34px 74px",
+              alignItems: "center",
+              gap: 8,
+              height: rowH,
+              fontSize: fs,
+              borderTop: `1px solid ${hx(AIGS.hairline)}`,
+            }}
+          >
+            <span style={{ color: hx(AIGS.body), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {r.label}
+            </span>
+            <span style={{ height: 8, borderRadius: 4, background: hx(AIGS.surfaceStrong), overflow: "hidden" }}>
+              <span
+                style={{
+                  display: "block",
+                  height: "100%",
+                  width: `${r.avg != null ? (r.avg / 5) * 100 : 0}%`,
+                  background: hx(scoreColor(r.avg)),
+                }}
+              />
+            </span>
+            <span style={{ fontFamily: FONT.mono, fontWeight: 700, textAlign: "right", color: hx(AIGS.ink) }}>
+              {fmtScore(r.avg)}
+            </span>
+            <span style={{ fontSize: Math.max(9, fs - 2), color: hx(AIGS.muted), textAlign: "right", whiteSpace: "nowrap" }}>
+              {r.usePct !== undefined ? `${r.usePct != null ? `${r.usePct}%` : "—"} · ` : ""}n={r.n}
+            </span>
+          </div>
+  );
+}
+
 function Comments({ data, comentarios }: { data: DeckData; comentarios: string }) {
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
@@ -729,12 +1151,14 @@ function Kpi({
   sub,
   valueColor = AIGS.blue,
   subColor = AIGS.muted,
+  extra,
 }: {
   label: string;
   value: string;
   sub?: string;
   valueColor?: string;
   subColor?: string;
+  extra?: React.ReactNode; // contenido opcional entre el valor y el sub (p. ej. composición del NPS)
 }) {
   return (
     <div
@@ -755,6 +1179,7 @@ function Kpi({
       <div style={{ fontFamily: FONT.mono, fontSize: 30, fontWeight: 700, color: hx(valueColor), lineHeight: 1.1 }}>
         {value}
       </div>
+      {extra}
       {sub && <div style={{ fontSize: 12, color: hx(subColor) }}>{sub}</div>}
     </div>
   );

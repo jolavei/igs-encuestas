@@ -1,8 +1,7 @@
-import TiemposPage from "@/components/dashboard/TiemposPage";
+import { redirect } from "next/navigation";
 
-// La autorización (ADMIN) la aplica el layout de /admin. Datos siempre frescos.
-export const dynamic = "force-dynamic";
-
+// El Dashboard tiene una vista por cuestionario vigente (submenú del sidebar);
+// la raíz abre Mediciones de tiempos, que era la vista única original.
 export default function DashboardPage() {
-  return <TiemposPage />;
+  redirect("/admin/dashboard/tiempos");
 }
