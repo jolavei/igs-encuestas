@@ -72,7 +72,7 @@ export type QuestionConfig = {
   fileTypes?: string[]; // FILE_UPLOAD: extensiones/mime permitidos
   maxFiles?: number; // FILE_UPLOAD: máximo de archivos
   // DATETIME: esta fecha/hora debe ser POSTERIOR a la de la pregunta con este 'order'
-  // (ej. t2 posterior a t1). Validación cruzada entre preguntas de la misma versión.
+  // (ej. t2 posterior a t1). Referencial: el servidor no rechaza envíos que no la cumplan.
   afterQuestionOrder?: number;
   // FLOW_MEASUREMENT: listas para los desplegables de proceso y aerolínea. Si una
   // lista está vacía/ausente, ese desplegable no se muestra.
@@ -305,18 +305,8 @@ export function validateAnswers(
           errors[q.id] = "Fecha inválida.";
           break;
         }
-        // Validación cruzada: debe ser posterior a otra medición (ej. t2 > t1).
-        if (cfg.afterQuestionOrder != null) {
-          const ref = questions.find((qq) => qq.order === cfg.afterQuestionOrder);
-          const refRaw = ref ? byId.get(ref.id) : undefined;
-          const refDate = refRaw
-            ? new Date(String(refRaw.valueDate ?? refRaw.valueText))
-            : null;
-          if (refDate && !isNaN(refDate.getTime()) && d <= refDate) {
-            errors[q.id] = `Debe ser posterior a "${ref?.text ?? "la medición anterior"}".`;
-            break;
-          }
-        }
+        // afterQuestionOrder (t2 posterior a t1) NO se exige aquí: una hora igual o
+        // anterior a la previa se guarda igual, para no perder la medición en campo.
         out.valueDate = d;
         break;
       }

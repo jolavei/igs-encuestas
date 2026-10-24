@@ -62,6 +62,15 @@ type Props = {
 
 type Queued = { endpoint: string; body: string; at: number };
 
+// Cuerpo JSON de una respuesta de error; null si no es JSON.
+async function readJson(r: Response): Promise<{ error?: unknown; errors?: unknown } | null> {
+  try {
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 function readQueue(): Queued[] {
   try {
     return JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
@@ -164,6 +173,8 @@ export default function SurveyRunner({
     "idle" | "sending" | "ok" | "queued" | "error" | "stale"
   >("idle");
   const [pending, setPending] = useState(0);
+  // Motivo(s) del último envío fallido, tal como los explica el servidor.
+  const [errorMsgs, setErrorMsgs] = useState<string[]>([]);
   // Id de idempotencia de la respuesta en curso (estable entre reintentos; se renueva
   // al iniciar una respuesta nueva en reset()).
   const submissionId = useRef<string | null>(null);
@@ -269,7 +280,11 @@ export default function SurveyRunner({
     // arreglaría y el encuestador lo vería como "pendiente" sin estarlo. 409 =
     // formulario desactualizado (hay que recargar). 401/429 sí son transitorios.
     if (r && r.status >= 400 && r.status < 500 && r.status !== 401 && r.status !== 429) {
-      setStatus(r.status === 409 ? "stale" : "error");
+      if (r.status === 409) {
+        setStatus("stale");
+        return;
+      }
+      showServerError(r.status, await readJson(r));
       return;
     }
     // Sin red o error transitorio: en campo se encola para reenviar después.
@@ -280,9 +295,45 @@ export default function SurveyRunner({
       setPending(q.length);
       setStatus("queued");
       onDone?.();
-    } else {
+    } else if (!r) {
+      setErrorMsgs(["No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo."]);
       setStatus("error");
+    } else {
+      showServerError(r.status, await readJson(r));
     }
+  }
+
+  // Traduce el rechazo del servidor a un mensaje legible. Si trae errores por
+  // pregunta (422), los marca en su pregunta y vuelve a la sección de la primera.
+  function showServerError(code: number, data: { error?: unknown; errors?: unknown } | null) {
+    const perQ =
+      data?.errors && typeof data.errors === "object"
+        ? (data.errors as Record<string, string>)
+        : null;
+    const msgs: string[] = [];
+    if (perQ && Object.keys(perQ).length) {
+      for (const [qid, msg] of Object.entries(perQ)) {
+        const q = sections.flatMap((s) => s.questions).find((x) => x.id === qid);
+        msgs.push(q ? `«${q.text}»: ${msg}` : String(msg));
+      }
+      setErrors(perQ);
+      const firstId = Object.keys(perQ)[0];
+      const k = history.findIndex((i) => sections[i]?.questions.some((q) => q.id === firstId));
+      if (k >= 0 && k < history.length - 1) {
+        setHistory((h) => h.slice(0, k + 1));
+        window.scrollTo({ top: 0 });
+      }
+    } else if (typeof data?.error === "string" && data.error) {
+      msgs.push(data.error);
+    } else if (code === 401) {
+      msgs.push("Tu sesión expiró. Inicia sesión de nuevo en otra pestaña y vuelve a enviar.");
+    } else if (code === 429) {
+      msgs.push("Demasiados envíos seguidos. Espera un momento e intenta de nuevo.");
+    } else {
+      msgs.push(`Error del servidor (código ${code}). Intenta de nuevo en unos minutos.`);
+    }
+    setErrorMsgs(msgs);
+    setStatus("error");
   }
 
   function onNext() {
@@ -423,7 +474,18 @@ export default function SurveyRunner({
       </div>
 
       {status === "error" && (
-        <p className="pt-4 text-sm text-red-600">Error al enviar. Intenta de nuevo.</p>
+        <div className="pt-4 text-sm text-red-600" role="alert">
+          <p className="font-medium">No se pudo enviar la respuesta.</p>
+          {errorMsgs.length === 1 ? (
+            <p className="mt-0.5">{errorMsgs[0]}</p>
+          ) : (
+            <ul className="mt-1 list-disc pl-5">
+              {errorMsgs.map((m, i) => (
+                <li key={i}>{m}</li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {status === "stale" && (
         <p className="pt-4 text-sm text-red-600">
