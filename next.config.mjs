@@ -54,7 +54,16 @@ const nextConfig = {
     staleTimes: { dynamic: 0, static: 0 },
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // El dominio *.vercel.app sirve lo mismo que portal.aerodromosigs.cl:
+      // que Google no lo indexe como duplicado.
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "(?<sub>.*)\\.vercel\\.app" }],
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+    ];
   },
 };
 

@@ -5,15 +5,20 @@ import Providers from "./providers";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ChunkErrorReload from "@/components/ChunkErrorReload";
 import AutoReloadNotice from "@/components/AutoReloadNotice";
+import { SITE_URL } from "@/lib/site";
 
 // Google Analytics (GA4). Se puede sobreescribir el ID por entorno con
 // NEXT_PUBLIC_GA_ID; si no, usa el de la propiedad "Aeródromos IGS".
 const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID ?? "G-JFR58BMDXJ";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "Aeródromos IGS — Encuestas",
   description: "Plataforma de encuestas y benchmarking de satisfacción.",
   manifest: "/manifest.json",
+  // Por defecto nada se indexa (paneles, /denegado, encuestas /s/<token>);
+  // solo /login lo habilita en su propio layout.
+  robots: { index: false, follow: false },
   // El favicon y el ícono de Apple se generan por convención de archivos:
   // src/app/icon.png y src/app/apple-icon.png (Next inyecta los <link> solo).
 };
