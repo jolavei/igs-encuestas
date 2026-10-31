@@ -3,6 +3,7 @@ import { buildOutline, type OutlineInput, type SlideSpec } from "./outline";
 import { applyToggles, defaultTemplate, enabledKeys, parseNotes, parseTemplate } from "./modules";
 
 const base = (over: Partial<OutlineInput> = {}): OutlineInput => ({
+  kind: "MENSUAL",
   modules: enabledKeys(defaultTemplate("MENSUAL")),
   notes: {},
   comentarios: "",
@@ -82,6 +83,39 @@ describe("outline del informe mensual", () => {
     // La nota de tiempos va justo después de su último proceso.
     const at = s.findIndex((x) => x.type === "text");
     expect(s[at - 1]).toEqual({ type: "proceso", index: 1 });
+  });
+});
+
+describe("outline semestral", () => {
+  it("resumen ejecutivo, tiempos con resumen/histórico/franjas, AGA con evolución y recomendaciones", () => {
+    const s = buildOutline(
+      base({
+        kind: "SEMESTRAL",
+        modules: enabledKeys(defaultTemplate("SEMESTRAL")),
+        notes: { recomendaciones: "Priorizar climatización" },
+        season: { history: true, hours: true },
+      })
+    );
+    expect(types(s)).toEqual([
+      "cover",
+      "exec-summary",
+      "section:Mediciones de tiempos",
+      "tiempos-summary",
+      "proceso",
+      "proceso",
+      "tiempos-history",
+      "tiempos-hours",
+      "section:Encuestas AGA · Experiencia",
+      "aga-guide",
+      "aga",
+      "aga-evolution",
+      "voice",
+      "aga",
+      "aga-evolution",
+      "text",
+      "closing",
+    ]);
+    expect(s.find((x) => x.type === "section")).toMatchObject({ module: "Módulo 01" });
   });
 });
 

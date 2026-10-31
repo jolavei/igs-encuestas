@@ -16,11 +16,13 @@ export type ModuleKey =
   | "aga-pasajeros"
   | "aga-acompanantes"
   | "fotos-comentarios"
-  | "analisis";
+  | "analisis"
+  | "recomendaciones";
 
 export type ModuleDef = {
   key: ModuleKey;
   label: string;
+  labels?: Partial<Record<ReportKind, string>>; // nombre según el tipo de informe
   source: string; // de dónde salen los datos (se muestra en el editor)
   supports: ReportKind[]; // tipos en que el módulo puede aparecer
   ready: ReportKind[]; // tipos en que ya genera diapositivas (el resto: próxima fase)
@@ -39,9 +41,10 @@ export const MODULES: ModuleDef[] = [
   {
     key: "analisis",
     label: "Análisis y recomendaciones",
+    labels: { SEMESTRAL: "Resumen ejecutivo", ANUAL: "Resumen ejecutivo" },
     source: "Texto del consultor",
     supports: ALL,
-    ready: ["MENSUAL"],
+    ready: ALL,
     defaultOn: { MENSUAL: false, SEMESTRAL: true, ANUAL: true },
     notes: true,
   },
@@ -50,7 +53,7 @@ export const MODULES: ModuleDef[] = [
     label: "ACI ASQ · Avance",
     source: "Scraper diario del portal ACI (Encuestas ASQ)",
     supports: ALL,
-    ready: ["MENSUAL"],
+    ready: ALL,
     defaultOn: { MENSUAL: true, SEMESTRAL: false, ANUAL: false },
     notes: true,
   },
@@ -68,16 +71,16 @@ export const MODULES: ModuleDef[] = [
     label: "Mediciones de tiempos",
     source: "Cuestionario «Mediciones de tiempos» + histórico Sheets",
     supports: ALL,
-    ready: ["MENSUAL"],
+    ready: ALL,
     defaultOn: { MENSUAL: true, SEMESTRAL: true, ANUAL: true },
     notes: true,
   },
   {
     key: "aga-pasajeros",
     label: "AGA Pasajeros",
-    source: "«Encuesta AGA - Pasajeros»",
+    source: "«Encuesta AGA - Pasajeros» + histórico Sheets",
     supports: ALL,
-    ready: ["MENSUAL"],
+    ready: ALL,
     defaultOn: { MENSUAL: true, SEMESTRAL: true, ANUAL: true },
     notes: true,
     group: "aga",
@@ -86,9 +89,9 @@ export const MODULES: ModuleDef[] = [
   {
     key: "aga-acompanantes",
     label: "AGA Acompañantes",
-    source: "«Encuesta AGA - Acompañantes»",
+    source: "«Encuesta AGA - Acompañantes» + histórico Sheets",
     supports: ALL,
-    ready: ["MENSUAL"],
+    ready: ALL,
     defaultOn: { MENSUAL: true, SEMESTRAL: true, ANUAL: true },
     notes: true,
     group: "aga",
@@ -99,13 +102,25 @@ export const MODULES: ModuleDef[] = [
     label: "Fotos y comentarios",
     source: "Carga manual en esta edición",
     supports: ALL,
-    ready: ["MENSUAL"],
+    ready: ALL,
     defaultOn: { MENSUAL: true, SEMESTRAL: false, ANUAL: false },
     notes: false,
+  },
+  {
+    key: "recomendaciones",
+    label: "Recomendaciones",
+    source: "Texto del consultor",
+    supports: ["SEMESTRAL", "ANUAL"],
+    ready: ["SEMESTRAL", "ANUAL"],
+    defaultOn: { SEMESTRAL: true, ANUAL: true },
+    notes: true,
   },
 ];
 
 export const moduleDef = (key: string): ModuleDef | null => MODULES.find((m) => m.key === key) ?? null;
+
+/** Nombre del módulo en un tipo de informe ("Análisis…" en el mensual, "Resumen ejecutivo" en semestral/anual). */
+export const moduleLabel = (def: ModuleDef, kind: ReportKind) => def.labels?.[kind] ?? def.label;
 
 export type TemplateEntry = { key: ModuleKey; enabled: boolean };
 
@@ -113,8 +128,26 @@ export type TemplateEntry = { key: ModuleKey; enabled: boolean };
 // comentarios); en semestral/anual abre el informe como resumen ejecutivo.
 const DEFAULT_ORDER: Record<ReportKind, ModuleKey[]> = {
   MENSUAL: ["asq-avance", "tiempos", "aga-pasajeros", "aga-acompanantes", "analisis", "fotos-comentarios"],
-  SEMESTRAL: ["analisis", "asq-resultados", "tiempos", "aga-pasajeros", "aga-acompanantes", "asq-avance", "fotos-comentarios"],
-  ANUAL: ["analisis", "asq-resultados", "tiempos", "aga-pasajeros", "aga-acompanantes", "asq-avance", "fotos-comentarios"],
+  SEMESTRAL: [
+    "analisis",
+    "asq-resultados",
+    "tiempos",
+    "aga-pasajeros",
+    "aga-acompanantes",
+    "asq-avance",
+    "recomendaciones",
+    "fotos-comentarios",
+  ],
+  ANUAL: [
+    "analisis",
+    "asq-resultados",
+    "tiempos",
+    "aga-pasajeros",
+    "aga-acompanantes",
+    "asq-avance",
+    "recomendaciones",
+    "fotos-comentarios",
+  ],
 };
 
 /**

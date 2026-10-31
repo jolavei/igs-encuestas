@@ -240,3 +240,8 @@ export function periodOptions(kind: ReportKind, month: string, n = 12): PeriodOp
   }
   return out;
 }
+
+/** Clave de periodo válida en cualquier tipo: "2026-10", "SU26" o "2025". */
+export function isValidPeriodKey(key: string): boolean {
+  return isValidMonth(key) || isValidSeasonCode(key) || isValidAsqYear(key);
+}

@@ -230,3 +230,106 @@ export async function countTiemposByAirport(p: {
   });
   return rows.map((r) => ({ airport: String(r.airport), window: num(r.w), month: num(r.m) }));
 }
+
+// ---------------------------------------------------------------------------
+// Informes semestrales / anuales
+// ---------------------------------------------------------------------------
+
+const durExprOf = (proceso: Proceso, fase?: Fase) =>
+  proceso === "Retiro de equipajes" ? DUR_RETIRO[hasFase(proceso) ? fase ?? "espera" : "espera"] : DUR[proceso];
+
+// Inicio de la medición de cada proceso (para la franja horaria).
+const T1: Record<string, string> = {
+  "Check in": "checkin_t1",
+  AVSEC: "avsec_t1",
+  "Pasaporte emigración": "passport_outbound_t1",
+  "Pasaporte inmigración": "passport_inbound_t1",
+  "Control aduana / SAG": "border_protection_t1",
+  "Retiro de equipajes": "baggage_claim_t1",
+};
+
+// Código de temporada ASQ ("SU26" / "WI25") de la fecha de respuesta, en hora de Chile.
+const SEASON_CODE_SQL = `
+  CASE
+    WHEN EXTRACT(MONTH FROM DATETIME(responded_at, 'America/Santiago')) BETWEEN 4 AND 9
+      THEN CONCAT('SU', FORMAT('%02d', MOD(EXTRACT(YEAR FROM DATETIME(responded_at, 'America/Santiago')), 100)))
+    WHEN EXTRACT(MONTH FROM DATETIME(responded_at, 'America/Santiago')) >= 10
+      THEN CONCAT('WI', FORMAT('%02d', MOD(EXTRACT(YEAR FROM DATETIME(responded_at, 'America/Santiago')), 100)))
+    ELSE CONCAT('WI', FORMAT('%02d', MOD(EXTRACT(YEAR FROM DATETIME(responded_at, 'America/Santiago')) - 1, 100)))
+  END`;
+
+export type SeasonAggRow = { code: string; n: number; prom: number; med: number; p90: number };
+
+/**
+ * Agregado por temporada de un proceso en un aeropuerto, desde el inicio del histórico
+ * hasta `hasta`, con el corte de fuente del informe (Sheets antes del 1-oct-2026, web después).
+ */
+export async function queryTiemposBySeason(p: {
+  proceso: Proceso;
+  fase?: Fase;
+  airport: string;
+  hasta: string;
+}): Promise<SeasonAggRow[]> {
+  const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
+  const sql = `
+    SELECT code, COUNT(*) AS n, AVG(dur) AS prom,
+      APPROX_QUANTILES(dur, 100)[OFFSET(50)] AS med,
+      APPROX_QUANTILES(dur, 100)[OFFSET(90)] AS p90
+    FROM (
+      SELECT ${SEASON_CODE_SQL} AS code, ${durExprOf(p.proceso, p.fase)} AS dur
+      FROM ${table}
+      WHERE process = @proceso AND location_name = @airport
+        AND DATE(responded_at, 'America/Santiago') <= DATE(@hasta)${reportSourceClause}
+    )
+    WHERE dur >= 0 AND dur <= @cap
+    GROUP BY code`;
+  const rows = await bqQuery<Record<string, unknown>>(sql, {
+    proceso: p.proceso,
+    airport: p.airport,
+    hasta: p.hasta,
+    cap: CAP_MIN,
+    sourceCutoff: REPORT_SOURCE_CUTOFF,
+  });
+  return rows.map((r) => ({
+    code: String(r.code),
+    n: num(r.n),
+    prom: num(r.prom),
+    med: num(r.med),
+    p90: num(r.p90),
+  }));
+}
+
+/** Franjas horarias del inicio de la medición (hora de Chile). */
+export const HOUR_BANDS = ["00–06 h", "06–12 h", "12–18 h", "18–24 h"] as const;
+
+/** Promedio y n por franja horaria (índice de HOUR_BANDS) de un proceso en una ventana. */
+export async function queryTiemposByHourBand(p: {
+  proceso: Proceso;
+  fase?: Fase;
+  airport: string;
+  desde: string;
+  hasta: string;
+}): Promise<{ band: number; n: number; prom: number }[]> {
+  const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
+  const t1 = T1[p.proceso];
+  const sql = `
+    SELECT band, COUNT(*) AS n, AVG(dur) AS prom
+    FROM (
+      SELECT DIV(EXTRACT(HOUR FROM DATETIME(${t1}, 'America/Santiago')), 6) AS band,
+        ${durExprOf(p.proceso, p.fase)} AS dur
+      FROM ${table}
+      WHERE process = @proceso AND location_name = @airport AND ${t1} IS NOT NULL
+        AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)${reportSourceClause}
+    )
+    WHERE dur >= 0 AND dur <= @cap AND band IS NOT NULL
+    GROUP BY band ORDER BY band`;
+  const rows = await bqQuery<Record<string, unknown>>(sql, {
+    proceso: p.proceso,
+    airport: p.airport,
+    desde: p.desde,
+    hasta: p.hasta,
+    cap: CAP_MIN,
+    sourceCutoff: REPORT_SOURCE_CUTOFF,
+  });
+  return rows.map((r) => ({ band: num(r.band), n: num(r.n), prom: num(r.prom) }));
+}

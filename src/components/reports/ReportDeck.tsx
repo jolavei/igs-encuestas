@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import {
   ComposedChart,
   Area,
+  Bar,
   Line,
   XAxis,
   YAxis,
@@ -21,13 +22,27 @@ import {
   AGA_GUIDE_SCALE_NOTE,
   AGA_GUIDE_EXAMPLE_ATTRIBUTE,
   AGA_GUIDE_EXAMPLE_SERVICE,
+  AGA_GUIDE_KPIS_SEASON,
+  AGA_GUIDE_PERIOD_NOTE_SEASON,
 } from "@/lib/reports/agaGuide";
+import {
+  HISTORY_COLORS,
+  KIND_BADGE,
+  agaTopRows,
+  coverScope,
+  execSummaryCards,
+  tiemposSummaryRows,
+} from "@/lib/reports/seasonSlides";
+import type { SeasonExtras } from "@/lib/reports/seasonReport";
+import type { ReportKind } from "@/lib/reports/period";
 import { buildOutline, outlineInputFrom, type SlideSpec } from "@/lib/reports/outline";
 import type { ModuleKey, ModuleNotes } from "@/lib/reports/modules";
 
 // Datos serializables que arma la página (server). Estructuralmente compatible
 // con MonthlyReport de src/lib/reports/monthlyReport.ts.
 export type DeckData = {
+  kind?: ReportKind; // semestral/anual: monthLabel = periodo; "mes" = temporada de detalle
+  seasonal?: SeasonExtras;
   airport: { code: string; name: string; short: string | null; companyName: string; sedeLabel: string | null };
   month: string;
   monthLabel: string;
@@ -75,6 +90,8 @@ type AgaStatsDeck = {
   detractorsPct: number | null;
   sat: number | null;
   satTop2: number | null;
+  ratingAvg?: number | null;
+  ratingTop2?: number | null;
   attributes: AgaScoreDeck[];
   services: (AgaScoreDeck & { usePct: number | null; useN: number })[];
 };
@@ -200,6 +217,16 @@ function SlideFor({ spec, data, photos }: { spec: SlideSpec; data: DeckData; pho
       );
     case "closing":
       return <Closing />;
+    case "exec-summary":
+      return <ExecSummarySlide data={data} body={spec.body} />;
+    case "tiempos-summary":
+      return <TiemposSummarySlide data={data} />;
+    case "tiempos-history":
+      return <TiemposHistorySlide data={data} />;
+    case "tiempos-hours":
+      return <TiemposHoursSlide data={data} />;
+    case "aga-evolution":
+      return <AgaEvolutionSlide data={data} s={data.aga[spec.index]} index={spec.index} />;
   }
 }
 
@@ -249,16 +276,13 @@ function Cover({ data }: { data: DeckData }) {
         <Logo />
       </div>
       <div style={{ position: "absolute", left: 72, top: 300, right: 72 }}>
-        <Badge color={AIGS.blue}>Informe mensual</Badge>
+        <Badge color={AIGS.blue}>{KIND_BADGE[data.kind ?? "MENSUAL"]}</Badge>
         <div style={{ fontSize: 60, lineHeight: 1.02, letterSpacing: "-0.02em", marginTop: 16 }}>
           {data.airport.name}
         </div>
         <div style={{ fontSize: 22, color: hx(AIGS.body), marginTop: 20 }}>{data.airport.companyName}</div>
         <div style={{ fontSize: 16, color: hx(AIGS.muted), marginTop: 8 }}>
-          {data.aga.length > 0
-            ? "Cumplimiento de Encuestas ASQ, mediciones de tiempos y Encuestas AGA"
-            : "Cumplimiento de Encuestas ASQ y mediciones de tiempos"}{" "}
-          · {data.monthLabel}
+          {coverScope(data)} · {data.monthLabel}
         </div>
       </div>
       <div style={{ position: "absolute", left: 72, bottom: 48, fontSize: 13, color: hx(AIGS.muted) }}>
@@ -451,26 +475,30 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
   const subtitle = p.monthHasData
     ? `${full} · ${data.monthLabel}`
     : `${full} · ${data.monthLabel} · sin mediciones este mes (se muestra el acumulado de la temporada)`;
+  // Mensual: abajo va el acumulado de la temporada ("Periodo"). Semestral/anual: solo la
+  // temporada (la evolución va en el gráfico y en el evolutivo por temporada).
+  const seasonal = (data.kind ?? "MENSUAL") !== "MENSUAL";
+  const sub = (v: string) => (seasonal ? undefined : `Periodo ${v}`);
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
       <SlideHead title={title} subtitle={subtitle} />
       {/* KPIs: número del mes en grande + promedio del periodo abajo (pequeño) */}
       <div style={{ position: "absolute", top: 150, left: 72, right: 72 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
-          <Kpi label="Promedio" value={kpi ? fmtMMSS(kpi.prom) : "—"} sub={`Periodo ${fmtMMSS(p.kpiSeason.prom)}`} />
-          <Kpi label="P90" value={kpi ? fmtMMSS(kpi.p90) : "—"} sub={`Periodo ${fmtMMSS(p.kpiSeason.p90)}`} />
-          <Kpi label="Mediana" value={kpi ? fmtMMSS(kpi.med) : "—"} sub={`Periodo ${fmtMMSS(p.kpiSeason.med)}`} />
+          <Kpi label="Promedio" value={kpi ? fmtMMSS(kpi.prom) : "—"} sub={sub(fmtMMSS(p.kpiSeason.prom))} />
+          <Kpi label="P90" value={kpi ? fmtMMSS(kpi.p90) : "—"} sub={sub(fmtMMSS(p.kpiSeason.p90))} />
+          <Kpi label="Mediana" value={kpi ? fmtMMSS(kpi.med) : "—"} sub={sub(fmtMMSS(p.kpiSeason.med))} />
           {p.meta == null ? (
             <Kpi label="Estándar IATA" value="—" sub="sin estándar" />
           ) : (
             <Kpi
               label="Margen vs Est. IATA"
               value={fmtMMSS(p.margin)}
-              sub={`Periodo ${fmtMMSS(seasonMargin)}`}
+              sub={sub(fmtMMSS(seasonMargin))}
               valueColor={p.margin == null ? AIGS.muted : marginOk ? AIGS.up : AIGS.down}
             />
           )}
-          <Kpi label="N° de mediciones" value={fmtInt(kpi ? kpi.n : 0)} sub={`Periodo ${fmtInt(p.kpiSeason.n)}`} />
+          <Kpi label="N° de mediciones" value={fmtInt(kpi ? kpi.n : 0)} sub={sub(fmtInt(p.kpiSeason.n))} />
         </div>
       </div>
 
@@ -623,6 +651,7 @@ function EmptyTiempos({ data }: { data: DeckData }) {
 // Encuesta AGA de un público (Pasajeros / Acompañantes) en una sola diapositiva:
 // KPIs del mes (con el acumulado del periodo abajo) + barras de atributos y servicios.
 function AgaSlide({ data, s }: { data: DeckData; s: AgaDeck }) {
+  if ((data.kind ?? "MENSUAL") !== "MENSUAL") return <AgaSeasonSlide data={data} s={s} />;
   const m = s.month;
   const p = s.period;
   const hasMonth = m.n > 0;
@@ -710,6 +739,8 @@ function AgaSlide({ data, s }: { data: DeckData; s: AgaDeck }) {
   );
 }
 
+const guideKpis = (data: DeckData) => ((data.kind ?? "MENSUAL") === "MENSUAL" ? AGA_GUIDE_KPIS : AGA_GUIDE_KPIS_SEASON);
+
 // Diapositiva explicativa previa a las de Pasajeros / Acompañantes: qué es cada KPI y
 // cómo leer las listas de atributos y servicios (textos en lib/reports/agaGuide.ts).
 function AgaGuideSlide({ data }: { data: DeckData }) {
@@ -723,11 +754,11 @@ function AgaGuideSlide({ data }: { data: DeckData }) {
           left: 72,
           right: 72,
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateColumns: `repeat(${guideKpis(data).length}, 1fr)`,
           gap: 14,
         }}
       >
-        {AGA_GUIDE_KPIS.map((k) => (
+        {guideKpis(data).map((k) => (
           <div
             key={k.title}
             style={{
@@ -749,7 +780,7 @@ function AgaGuideSlide({ data }: { data: DeckData }) {
         ))}
       </div>
       <div style={{ position: "absolute", top: 384, left: 72, right: 72, fontSize: 13, color: hx(AIGS.muted) }}>
-        {AGA_GUIDE_PERIOD_NOTE}
+        {(data.kind ?? "MENSUAL") === "MENSUAL" ? AGA_GUIDE_PERIOD_NOTE : AGA_GUIDE_PERIOD_NOTE_SEASON}
       </div>
 
       <div
@@ -976,12 +1007,369 @@ function ScoreRow({ r, rowH, fs }: { r: ScoreRowData; rowH: number; fs: number }
             <span style={{ fontFamily: FONT.mono, fontWeight: 700, textAlign: "right", color: hx(AIGS.ink) }}>
               {fmtScore(r.avg)}
             </span>
+
             <span style={{ fontSize: Math.max(9, fs - 2), color: hx(AIGS.muted), textAlign: "right", whiteSpace: "nowrap" }}>
               {r.usePct !== undefined ? `${r.usePct != null ? `${r.usePct}%` : "—"} · ` : ""}n={r.n}
             </span>
           </div>
   );
 }
+
+/* ---------- Semestral / anual ---------- */
+
+// Resumen ejecutivo: cifras clave de cada módulo + texto del consultor (si lo hay).
+function ExecSummarySlide({ data, body }: { data: DeckData; body: string }) {
+  const cards = execSummaryCards(data).slice(0, 4);
+  const text = body.trim();
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Resumen ejecutivo" subtitle={`${airportFull(data)} · ${data.monthLabel}`} />
+      {cards.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: 140,
+            left: 72,
+            right: 72,
+            display: "grid",
+            gridTemplateColumns: `repeat(${cards.length}, 1fr)`,
+            gap: 14,
+          }}
+        >
+          {cards.map((c) => (
+            <Kpi key={c.label} label={c.label} value={c.value} sub={c.sub} valueColor={c.valueColor} />
+          ))}
+        </div>
+      )}
+      {text && (
+        <div
+          style={{
+            position: "absolute",
+            left: 72,
+            right: 72,
+            top: cards.length ? 320 : 150,
+            bottom: 64,
+            border: `1px solid ${hx(AIGS.hairline)}`,
+            background: hx(AIGS.surfaceSoft),
+            borderRadius: 14,
+            padding: "24px 30px",
+            fontSize: 17,
+            lineHeight: 1.5,
+            color: hx(AIGS.body),
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+            overflow: "hidden",
+          }}
+        >
+          {text}
+        </div>
+      )}
+      {!text && cards.length === 0 && <Centered>Sin datos para resumir en este periodo.</Centered>}
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Tabla de todos los procesos de la temporada frente al Estándar IATA y a la temporada de comparación.
+function TiemposSummarySlide({ data }: { data: DeckData }) {
+  const rows = tiemposSummaryRows(data);
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Tiempos vs Estándar IATA" subtitle={`${airportFull(data)} · ${data.monthLabel}`} />
+      <div style={{ position: "absolute", top: 150, left: 72, right: 72, bottom: 64, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15, tableLayout: "fixed" }}>
+          <thead>
+            <tr style={{ background: hx(AIGS.surfaceSoft), color: hx(AIGS.muted) }}>
+              <Th align="left" w="34%">Proceso</Th>
+              <Th align="right" w="11%">Promedio</Th>
+              <Th align="right" w="11%">Mediana</Th>
+              <Th align="right" w="11%">P90</Th>
+              <Th align="right" w="11%">Mediciones</Th>
+              <Th align="right" w="11%">Est. IATA</Th>
+              <Th align="right" w="11%">Margen</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.label} style={{ borderTop: `1px solid ${hx(AIGS.hairline)}`, height: 52 }}>
+                <Td align="left" color={AIGS.ink}>{r.label}</Td>
+                <Td align="right" mono bold color={AIGS.ink}>{fmtMMSS(r.prom)}</Td>
+                <Td align="right" mono>{fmtMMSS(r.med)}</Td>
+                <Td align="right" mono>{fmtMMSS(r.p90)}</Td>
+                <Td align="right" mono>{fmtInt(r.n)}</Td>
+                <Td align="right" mono>{r.meta != null ? fmtMMSS(r.meta) : "—"}</Td>
+                <Td
+                  align="right"
+                  mono
+                  bold
+                  color={r.margin == null ? AIGS.muted : r.margin >= 0 ? AIGS.up : AIGS.down}
+                >
+                  {r.margin == null ? "—" : `${r.margin >= 0 ? "" : "−"}${fmtMMSS(Math.abs(r.margin))}`}
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{ fontSize: 12, color: hx(AIGS.muted), marginTop: 14, lineHeight: 1.5 }}>
+          Margen = Estándar IATA − promedio (verde: dentro del estándar). La evolución por temporada va en el
+          evolutivo de tiempos.
+          {data.seasonal && data.season.to < "2026-10-01" ? " Hasta septiembre de 2026 se mide solo el tiempo de fila." : ""}
+        </div>
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Promedio de cada proceso por temporada, desde la primera con mediciones.
+function TiemposHistorySlide({ data }: { data: DeckData }) {
+  const h = data.seasonal!.tiemposHistory;
+  const chartData = h.seasons.map((s, i) => {
+    const row: Record<string, string | number | null> = { label: s.code };
+    h.series.forEach((x, j) => (row[`s${j}`] = x.values[i]));
+    return row;
+  });
+  const yMax = niceMax(Math.max(0, ...h.series.flatMap((x) => x.values.map((v) => v ?? 0))));
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead
+        title="Tiempos · evolutivo por temporada"
+        subtitle={`${airportFull(data)} · promedio por temporada hasta ${data.seasonal!.focusLabel}`}
+      />
+      <div style={{ position: "absolute", top: 140, left: 72, right: 72, display: "flex", flexWrap: "wrap", gap: 18 }}>
+        {h.series.map((x, j) => (
+          <LegendItem key={x.label} color={HISTORY_COLORS[j % HISTORY_COLORS.length]} label={x.label} />
+        ))}
+      </div>
+      <div style={{ position: "absolute", top: 180, left: 60, right: 72, bottom: 70 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={chartData} margin={{ top: 8, right: 16, bottom: 4, left: 8 }}>
+            <CartesianGrid stroke="#eef2f6" vertical={false} />
+            <XAxis dataKey="label" tick={{ fill: hx(AIGS.muted), fontSize: 12 }} tickLine={false} axisLine={{ stroke: hx(AIGS.hairline) }} />
+            <YAxis
+              tickFormatter={(v) => fmtMMSS(Number(v))}
+              tick={{ fill: hx(AIGS.muted), fontSize: 12 }}
+              tickLine={false}
+              axisLine={false}
+              width={56}
+              domain={[0, yMax]}
+            />
+            <Tooltip formatter={(v: number, n) => [fmtMMSS(v), h.series[Number(String(n).slice(1))]?.label ?? n]} />
+            {h.series.map((x, j) => (
+              <Line
+                key={x.label}
+                type="monotone"
+                dataKey={`s${j}`}
+                stroke={hx(HISTORY_COLORS[j % HISTORY_COLORS.length])}
+                strokeWidth={2}
+                dot={{ r: 3, fill: hx(HISTORY_COLORS[j % HISTORY_COLORS.length]) }}
+                isAnimationActive={false}
+                connectNulls
+              />
+            ))}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{ position: "absolute", right: 72, bottom: 26, fontSize: 11, color: hx(AIGS.muted) }}>
+        SU = Summer (abr–sep) · WI = Winter (oct–mar) · temporadas sin mediciones no aparecen
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Promedio por franja horaria (inicio de la medición) en la temporada de detalle.
+function TiemposHoursSlide({ data }: { data: DeckData }) {
+  const t = data.seasonal!.tiemposHours;
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead
+        title="Tiempos · por franja horaria"
+        subtitle={`${airportFull(data)} · ${data.seasonal!.focusLabel} · promedio y cantidad de mediciones`}
+      />
+      <div style={{ position: "absolute", top: 150, left: 72, right: 72, bottom: 64, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15, tableLayout: "fixed" }}>
+          <thead>
+            <tr style={{ background: hx(AIGS.surfaceSoft), color: hx(AIGS.muted) }}>
+              <Th align="left" w="32%">Proceso</Th>
+              {t.bands.map((b) => (
+                <Th key={b} align="right" w={`${68 / t.bands.length}%`}>{b}</Th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {t.rows.map((r) => (
+              <tr key={r.label} style={{ borderTop: `1px solid ${hx(AIGS.hairline)}`, height: 58 }}>
+                <Td align="left" color={AIGS.ink}>{r.label}</Td>
+                {r.cells.map((c, i) => {
+                  const over = r.meta != null && c.prom != null ? c.prom > r.meta : null;
+                  return (
+                    <Td key={i} align="right" mono bold={c.n > 0} color={over == null ? AIGS.ink : over ? AIGS.down : AIGS.up}>
+                      {c.n > 0 ? (
+                        <>
+                          {fmtMMSS(c.prom)}
+                          <span style={{ fontSize: 11, fontWeight: 400, color: hx(AIGS.muted), marginLeft: 6 }}>n={fmtInt(c.n)}</span>
+                        </>
+                      ) : (
+                        <span style={{ color: hx(AIGS.muted), fontWeight: 400 }}>—</span>
+                      )}
+                    </Td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{ fontSize: 12, color: hx(AIGS.muted), marginTop: 14 }}>
+          Franja = hora de inicio de la medición (hora de Chile). Verde: dentro del Estándar IATA; rojo: sobre el estándar.
+        </div>
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Encuesta AGA de un público en la temporada: nota promedio y % de notas 4–5 (comparables
+// con el histórico; el NPS no se informa en semestral/anual) y mejores/peores atributos y servicios.
+function AgaSeasonSlide({ data, s }: { data: DeckData; s: AgaDeck }) {
+  const m = s.month;
+  const attrs = agaTopRows(s, "attributes", 10);
+  const svcs = agaTopRows(s, "services", 10);
+  const rowH = Math.min(30, 318 / Math.max(attrs.length, svcs.length, 1));
+  const pctTxt = (v: number | null | undefined) => (v != null ? `${v}%` : "—");
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead
+        title={`Encuestas AGA · ${s.audience}`}
+        subtitle={`${airportFull(data)} · ${data.monthLabel}`}
+      />
+      {m.n === 0 ? (
+        <Centered>Sin encuestas en esta temporada.</Centered>
+      ) : (
+        <>
+          <div style={{ position: "absolute", top: 140, left: 72, right: 72 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+              <Kpi
+                label="Nota promedio"
+                value={`${fmtScore(m.ratingAvg)} / 5`}
+                valueColor={scoreColor(m.ratingAvg ?? null)}
+                sub="todas las notas de atributos y servicios"
+              />
+              <Kpi label="Notas 4–5" value={pctTxt(m.ratingTop2)} sub="% de notas 4 o 5" />
+              <Kpi label="Encuestas de la temporada" value={fmtInt(m.n)} sub={data.seasonal?.focusLabel} />
+            </div>
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              top: 300,
+              left: 72,
+              right: 72,
+              bottom: 60,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 40,
+              overflow: "hidden",
+            }}
+          >
+            <ScorePanel
+              title={m.attributes.length > 10 ? "Atributos · 5 mejores y 5 peores" : "Atributos de la experiencia"}
+              note="nota 1–5"
+              rows={attrs}
+              rowH={rowH}
+            />
+            <ScorePanel
+              title={m.services.length > 10 ? "Servicios · 5 mejores y 5 peores" : "Servicios evaluados"}
+              note="nota 1–5 · % que lo usó"
+              rows={svcs}
+              rowH={rowH}
+            />
+          </div>
+        </>
+      )}
+      <div style={{ position: "absolute", right: 72, bottom: 24, display: "flex", gap: 12, fontSize: 11, color: hx(AIGS.muted) }}>
+        <LegendDot color={AIGS.up} label="≥ 4,0" />
+        <LegendDot color={AIGS.yellow} label="3,5 – 3,9" />
+        <LegendDot color={AIGS.down} label="< 3,5" />
+        <span>· N/A no se considera</span>
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Evolución de una Encuesta AGA: por mes en la ventana del informe y por temporada.
+function AgaEvolutionSlide({ data, s, index }: { data: DeckData; s: AgaDeck; index: number }) {
+  const h = data.seasonal!.agaHistory[index];
+  const charts = [
+    { title: "Por mes", rows: h.months.map((x) => ({ label: x.label.split(" ")[0], n: x.n, nota: x.ratingAvg })) },
+    { title: "Por temporada", rows: h.seasons.map((x) => ({ label: x.code, n: x.n, nota: x.ratingAvg })) },
+  ];
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead
+        title={`Encuestas AGA · ${s.audience} · evolución`}
+        subtitle={`${airportFull(data)} · nota promedio (línea) y encuestas (barras)`}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: 140,
+          left: 72,
+          right: 72,
+          bottom: 92,
+          display: "grid",
+          gridTemplateColumns: "1fr 1.4fr",
+          gap: 36,
+        }}
+      >
+        {charts.map((c) => (
+          <div key={c.title} style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 8 }}>{c.title}</div>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={c.rows} margin={{ top: 8, right: 4, bottom: 4, left: 0 }}>
+                  <CartesianGrid stroke="#eef2f6" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fill: hx(AIGS.muted), fontSize: 11 }} tickLine={false} axisLine={{ stroke: hx(AIGS.hairline) }} interval={0} />
+                  <YAxis yAxisId="n" tick={{ fill: hx(AIGS.muted), fontSize: 11 }} tickLine={false} axisLine={false} width={36} allowDecimals={false} />
+                  <YAxis
+                    yAxisId="nota"
+                    orientation="right"
+                    domain={[1, 5]}
+                    ticks={[1, 2, 3, 4, 5]}
+                    tick={{ fill: hx(AIGS.muted), fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={26}
+                  />
+                  <Tooltip />
+                  <Bar yAxisId="n" dataKey="n" name="Encuestas" fill={hx(AIGS.surfaceStrong)} isAnimationActive={false} />
+                  <Line
+                    yAxisId="nota"
+                    type="monotone"
+                    dataKey="nota"
+                    name="Nota promedio"
+                    stroke={hx(AIGS.blue)}
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: hx(AIGS.blue) }}
+                    isAnimationActive={false}
+                    connectNulls
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", left: 72, right: 72, bottom: 56, fontSize: 12, color: hx(AIGS.muted) }}>
+        Hasta septiembre de 2026, formulario antiguo (Google Forms); desde octubre de 2026, formulario web. Nota
+        promedio = todas las calificaciones de atributos y servicios (1 a 5).
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
 
 // Diapositiva de texto: comentarios y sugerencias, análisis por módulo o recomendaciones.
 function TextSlide({ data, title, body }: { data: DeckData; title: string; body: string }) {

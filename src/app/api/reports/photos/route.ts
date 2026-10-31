@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
-import { isValidMonth } from "@/lib/reports/monthlyReport";
+import { isValidPeriodKey } from "@/lib/reports/period";
 
-// Listar las fotos de un informe (aeropuerto + mes), con una URL para mostrarlas
+// Listar las fotos de un informe (aeropuerto + periodo: "2026-10", "SU26" o "2025"), con una URL para mostrarlas
 // (proxeadas por /api/reports/photos/[id]/raw, sin exponer el objectPath de GCS).
 export async function GET(req: Request) {
   const { user, status } = await apiUser(["ADMIN"]);
@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const airport = (url.searchParams.get("airport") || "").trim().toUpperCase();
   const mes = url.searchParams.get("mes") || "";
-  if (!airport || !isValidMonth(mes)) {
+  if (!airport || !isValidPeriodKey(mes)) {
     return NextResponse.json({ error: "Parámetros inválidos." }, { status: 400 });
   }
 
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   const d = parsed.data;
 
   const airport = d.airport.trim().toUpperCase();
-  if (!isValidMonth(d.mes)) return NextResponse.json({ error: "Mes inválido (YYYY-MM)." }, { status: 400 });
+  if (!isValidPeriodKey(d.mes)) return NextResponse.json({ error: "Periodo inválido." }, { status: 400 });
   if (!d.contentType.startsWith("image/")) {
     return NextResponse.json({ error: "Solo se admiten imágenes." }, { status: 400 });
   }

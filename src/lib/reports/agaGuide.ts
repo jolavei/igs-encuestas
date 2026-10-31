@@ -58,3 +58,34 @@ export const AGA_GUIDE_SCALE_NOTE = "Ambas listas se ordenan de mejor a peor not
 // Filas de ejemplo (ilustrativas) para mostrar cómo se ve cada lista.
 export const AGA_GUIDE_EXAMPLE_ATTRIBUTE = { label: "Limpieza general del terminal", avg: 4.2, n: 60 };
 export const AGA_GUIDE_EXAMPLE_SERVICE = { label: "Comidas y bebidas", avg: 3.7, n: 20, usePct: 32, useN: 62 };
+
+// Semestral/anual: el histórico del formulario antiguo no tenía NPS ni satisfacción
+// general (el NPS es un indicador nuevo y por ahora no se informa en estos informes), así
+// que los indicadores son la nota promedio y el % de notas 4–5 de atributos y servicios.
+export const AGA_GUIDE_KPIS_SEASON: AgaGuideKpi[] = [
+  {
+    title: "Nota promedio",
+    question: "Todas las notas de atributos y servicios (1 a 5)",
+    how:
+      "Promedio de todas las calificaciones de la temporada. Es comparable con el histórico " +
+      "del formulario antiguo, que no tenía satisfacción general ni NPS.",
+    color: "Verde ≥ 4,0 · amarillo 3,5–3,9 · rojo < 3,5",
+  },
+  {
+    title: "Notas 4–5",
+    question: "Mismas calificaciones",
+    how: "% de todas las notas que fueron 4 o 5. Indica qué tan extendida es la buena evaluación.",
+    color: "",
+  },
+  {
+    title: "Encuestas de la temporada",
+    question: "Encuestas realizadas en la temporada",
+    how:
+      "Antes del 1-oct-2026 vienen del formulario antiguo (Google Forms); desde ahí, del formulario web. " +
+      "Con pocos casos (menos de 30) los resultados son referenciales.",
+    color: "",
+  },
+];
+
+export const AGA_GUIDE_PERIOD_NOTE_SEASON =
+  "Las tarjetas muestran la temporada del informe; la evolución por mes y por temporada va en la diapositiva siguiente.";

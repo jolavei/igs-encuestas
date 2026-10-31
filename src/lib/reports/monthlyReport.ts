@@ -23,6 +23,8 @@ import { shortAirline } from "@/lib/reports/design";
 import { getAgaSurveys, type AgaSurvey } from "@/lib/reports/agaSurvey";
 import { isValidMonth, currentMonth, monthLabel } from "@/lib/reports/period";
 import type { ModuleKey } from "@/lib/reports/modules";
+import type { ReportKind } from "@/lib/reports/period";
+import type { SeasonExtras } from "@/lib/reports/seasonReport";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -190,6 +192,9 @@ export type ReportProcess = {
 };
 
 export type MonthlyReport = {
+  // Semestral/anual (getSeasonReport): "month"/"monthLabel" = el periodo del informe.
+  kind?: ReportKind;
+  seasonal?: SeasonExtras;
   airport: {
     code: string;
     name: string;

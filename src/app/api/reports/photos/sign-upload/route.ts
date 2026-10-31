@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import { apiUser } from "@/lib/rbac";
 import { gcsConfigured, signUploadUrl } from "@/lib/gcs";
-import { isValidMonth } from "@/lib/reports/monthlyReport";
+import { isValidPeriodKey } from "@/lib/reports/period";
 
 const schema = z.object({
   airport: z.string().min(1).max(20),
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   const d = parsed.data;
 
   const airport = d.airport.trim().toUpperCase();
-  if (!isValidMonth(d.mes)) return NextResponse.json({ error: "Mes inválido (YYYY-MM)." }, { status: 400 });
+  if (!isValidPeriodKey(d.mes)) return NextResponse.json({ error: "Periodo inválido." }, { status: 400 });
   if (!d.contentType.startsWith("image/")) {
     return NextResponse.json({ error: "Solo se admiten imágenes." }, { status: 400 });
   }

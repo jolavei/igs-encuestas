@@ -14,7 +14,17 @@ import {
   AGA_GUIDE_SCALE_NOTE,
   AGA_GUIDE_EXAMPLE_ATTRIBUTE,
   AGA_GUIDE_EXAMPLE_SERVICE,
+  AGA_GUIDE_KPIS_SEASON,
+  AGA_GUIDE_PERIOD_NOTE_SEASON,
 } from "@/lib/reports/agaGuide";
+import {
+  HISTORY_COLORS,
+  KIND_BADGE,
+  agaTopRows,
+  coverScope,
+  execSummaryCards,
+  tiemposSummaryRows,
+} from "@/lib/reports/seasonSlides";
 import { buildOutline, outlineInputFrom } from "@/lib/reports/outline";
 import type { ModuleKey, ModuleNotes } from "@/lib/reports/modules";
 
@@ -30,6 +40,7 @@ type Slide = any;
 type Pptx = any;
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
+const isSeasonal = (r: MonthlyReport) => (r.kind ?? "MENSUAL") !== "MENSUAL";
 
 /** Wordmark "AERÓDROMOS.IGS" (solo texto) en la esquina inferior de las diapositivas de contenido. */
 function addBottomLogo(slide: Slide) {
@@ -178,7 +189,7 @@ function coverSlide(pres: Pptx, r: MonthlyReport) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
   addLogo(s);
-  addBadge(s, pres, "Informe mensual", MX, 4.3, AIGS.blue);
+  addBadge(s, pres, KIND_BADGE[r.kind ?? "MENSUAL"], MX, 4.3, AIGS.blue);
   s.addText(r.airport.name, {
     x: MX,
     y: 4.9,
@@ -195,11 +206,7 @@ function coverSlide(pres: Pptx, r: MonthlyReport) {
     [
       { text: r.airport.companyName + "\n", options: { fontSize: 22, color: AIGS.body } },
       {
-        text: `${
-          r.aga.length > 0
-            ? "Cumplimiento de Encuestas ASQ, mediciones de tiempos y Encuestas AGA"
-            : "Cumplimiento de Encuestas ASQ y mediciones de tiempos"
-        } · ${r.monthLabel}`,
+        text: `${coverScope(r)} · ${r.monthLabel}`,
         options: { fontSize: 16, color: AIGS.muted },
       },
     ],
@@ -435,13 +442,15 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   const kpi = p.kpi;
   const marginOk = p.margin != null && p.margin >= 0;
   const seasonMargin = p.meta != null ? p.meta - p.kpiSeason.prom : null;
+  // Mensual: abajo el acumulado de la temporada ("Periodo"); semestral/anual: solo la temporada.
+  const sub = (v: string) => (isSeasonal(r) ? undefined : `Periodo ${v}`);
   const marginCard =
     p.meta == null
       ? { label: "Estándar IATA", value: "—", sub: "sin estándar" }
       : {
           label: "Margen vs Est. IATA",
           value: fmtMMSS(p.margin),
-          sub: `Periodo ${fmtMMSS(seasonMargin)}`,
+          sub: sub(fmtMMSS(seasonMargin)),
           valueColor: p.margin == null ? AIGS.muted : marginOk ? AIGS.up : AIGS.down,
         };
 
@@ -450,11 +459,11 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     s,
     pres,
     [
-      { label: "Promedio", value: kpi ? fmtMMSS(kpi.prom) : "—", sub: `Periodo ${fmtMMSS(p.kpiSeason.prom)}` },
-      { label: "P90", value: kpi ? fmtMMSS(kpi.p90) : "—", sub: `Periodo ${fmtMMSS(p.kpiSeason.p90)}` },
-      { label: "Mediana", value: kpi ? fmtMMSS(kpi.med) : "—", sub: `Periodo ${fmtMMSS(p.kpiSeason.med)}` },
+      { label: "Promedio", value: kpi ? fmtMMSS(kpi.prom) : "—", sub: sub(fmtMMSS(p.kpiSeason.prom)) },
+      { label: "P90", value: kpi ? fmtMMSS(kpi.p90) : "—", sub: sub(fmtMMSS(p.kpiSeason.p90)) },
+      { label: "Mediana", value: kpi ? fmtMMSS(kpi.med) : "—", sub: sub(fmtMMSS(p.kpiSeason.med)) },
       marginCard,
-      { label: "N° de mediciones", value: fmtInt(kpi ? kpi.n : 0), sub: `Periodo ${fmtInt(p.kpiSeason.n)}` },
+      { label: "N° de mediciones", value: fmtInt(kpi ? kpi.n : 0), sub: sub(fmtInt(p.kpiSeason.n)) },
     ],
     2.1
   );
@@ -616,10 +625,11 @@ function agaGuideSlide(pres: Pptx, r: MonthlyReport) {
   slideTitle(s, "Cómo leer las Encuestas AGA", `${airportFull(r)} · Indicadores y leyenda`);
 
   const gap = 0.3;
-  const cardW = (CONTENT_W - gap * 3) / 4;
+  const kpis = isSeasonal(r) ? AGA_GUIDE_KPIS_SEASON : AGA_GUIDE_KPIS;
+  const cardW = (CONTENT_W - gap * (kpis.length - 1)) / kpis.length;
   const cardY = 2.15;
   const cardH = 3.65;
-  AGA_GUIDE_KPIS.forEach((k, i) => {
+  kpis.forEach((k, i) => {
     const x = MX + i * (cardW + gap);
     s.addShape(pres.ShapeType.roundRect, {
       x, y: cardY, w: cardW, h: cardH, fill: { color: AIGS.white }, line: { color: AIGS.hairline, width: 0.75 }, rectRadius: 0.1,
@@ -630,7 +640,7 @@ function agaGuideSlide(pres: Pptx, r: MonthlyReport) {
     s.addText(k.how, { ...tx, y: cardY + 1.4, h: 1.65, fontSize: 12, color: AIGS.body, lineSpacingMultiple: 1.15, fit: "shrink" });
     if (k.color) s.addText(k.color, { ...tx, y: cardY + cardH - 0.5, h: 0.35, fontSize: 10.5, color: AIGS.ink, valign: "middle" });
   });
-  s.addText(AGA_GUIDE_PERIOD_NOTE, {
+  s.addText(isSeasonal(r) ? AGA_GUIDE_PERIOD_NOTE_SEASON : AGA_GUIDE_PERIOD_NOTE, {
     x: MX, y: cardY + cardH + 0.15, w: CONTENT_W, h: 0.35, fontFace: FONT.face, fontSize: 12, color: AIGS.muted, margin: 0,
   });
 
@@ -657,6 +667,7 @@ function agaGuideSlide(pres: Pptx, r: MonthlyReport) {
 
 /** Encuesta AGA de un público en una diapositiva: KPIs + atributos + servicios. */
 function agaSlide(pres: Pptx, r: MonthlyReport, a: AgaSurvey) {
+  if (isSeasonal(r)) return agaSeasonSlide(pres, r, a);
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
   const m = a.month;
@@ -914,7 +925,7 @@ export async function buildDeck(r: MonthlyReport, edition: DeckEdition): Promise
   pres.defineLayout({ name: "AIGS", width: W, height: H });
   pres.layout = "AIGS";
   pres.author = "Aeródromos IGS";
-  pres.title = `Informe mensual ${r.airport.name} · ${r.monthLabel}`;
+  pres.title = `${KIND_BADGE[r.kind ?? "MENSUAL"]} ${r.airport.name} · ${r.monthLabel}`;
 
   const slides = buildOutline(
     outlineInputFrom(r, {
@@ -960,6 +971,21 @@ export async function buildDeck(r: MonthlyReport, edition: DeckEdition): Promise
       case "closing":
         closingSlide(pres);
         break;
+      case "exec-summary":
+        execSummarySlide(pres, r, spec.body);
+        break;
+      case "tiempos-summary":
+        tiemposSummarySlide(pres, r);
+        break;
+      case "tiempos-history":
+        tiemposHistorySlide(pres, r);
+        break;
+      case "tiempos-hours":
+        tiemposHoursSlide(pres, r);
+        break;
+      case "aga-evolution":
+        agaEvolutionSlide(pres, r, spec.index);
+        break;
     }
   }
 
@@ -976,6 +1002,216 @@ function emptyTiemposSlide(pres: Pptx, r: MonthlyReport) {
       ? "No se pudieron leer las mediciones de tiempos (credenciales de BigQuery)."
       : "Sin mediciones de tiempos registradas en esta temporada.",
     { x: MX, y: 5, w: CONTENT_W, h: 1, fontFace: FONT.face, fontSize: 18, color: AIGS.muted, align: "center", margin: 0 }
+  );
+  addBottomLogo(s);
+}
+
+// ---------------------------------------------------------------------------
+// Semestral / anual
+// ---------------------------------------------------------------------------
+
+type Cell = { text: string; options: Record<string, unknown> };
+const headCell = (t: string, align: "left" | "right"): Cell => ({
+  text: t,
+  options: { bold: true, color: AIGS.muted, fill: { color: AIGS.surfaceSoft }, align, valign: "middle", fontSize: 12 },
+});
+
+/** Resumen ejecutivo: cifras clave de cada módulo + texto del consultor (si lo hay). */
+function execSummarySlide(pres: Pptx, r: MonthlyReport, body: string) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Resumen ejecutivo", `${airportFull(r)} · ${r.monthLabel}`);
+  const cards = execSummaryCards(r).slice(0, 4);
+  if (cards.length) kpiRow(s, pres, cards, 2.1, 2.6);
+  const text = body.trim();
+  if (text) {
+    const y = cards.length ? 5.1 : 2.2;
+    const h = H - y - 0.9;
+    s.addShape(pres.ShapeType.roundRect, {
+      x: MX, y, w: CONTENT_W, h, fill: { color: AIGS.surfaceSoft }, line: { color: AIGS.hairline, width: 0.75 }, rectRadius: 0.1,
+    });
+    s.addText(text, {
+      x: MX + 0.4, y: y + 0.3, w: CONTENT_W - 0.8, h: h - 0.6, fontFace: FONT.face, fontSize: 17, color: AIGS.body,
+      align: "left", valign: "top", margin: 0, lineSpacingMultiple: 1.2, fit: "shrink",
+    });
+  }
+  addBottomLogo(s);
+}
+
+/** Todos los procesos de la temporada vs Estándar IATA y vs la temporada de comparación. */
+function tiemposSummarySlide(pres: Pptx, r: MonthlyReport) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Tiempos vs Estándar IATA", `${airportFull(r)} · ${r.monthLabel}`);
+  const rows = tiemposSummaryRows(r);
+  const head = ["Proceso", "Promedio", "Mediana", "P90", "Mediciones", "Est. IATA", "Margen"].map((t, i) =>
+    headCell(t, i === 0 ? "left" : "right")
+  );
+  const mono = (text: string, color: string = AIGS.body, bold = false): Cell => ({
+    text,
+    options: { align: "right", fontFace: FONT.mono, color, bold },
+  });
+  const body = rows.map((x) => [
+    { text: x.label, options: { align: "left", color: AIGS.ink } },
+    mono(fmtMMSS(x.prom), AIGS.ink, true),
+    mono(fmtMMSS(x.med)),
+    mono(fmtMMSS(x.p90)),
+    mono(fmtInt(x.n)),
+    mono(x.meta != null ? fmtMMSS(x.meta) : "—"),
+    mono(
+      x.margin == null ? "—" : `${x.margin >= 0 ? "" : "−"}${fmtMMSS(Math.abs(x.margin))}`,
+      x.margin == null ? AIGS.muted : x.margin >= 0 ? AIGS.up : AIGS.down,
+      true
+    ),
+  ]);
+  const colW = [0.34, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11].map((f) => CONTENT_W * f);
+  s.addTable([head, ...body], {
+    x: MX, y: 2.2, w: CONTENT_W, colW, rowH: 0.62, fontFace: FONT.face, fontSize: 14, color: AIGS.body, valign: "middle",
+    border: { type: "solid", color: AIGS.hairline, pt: 0.5 }, autoPage: false,
+  });
+  s.addText(
+    `Margen = Estándar IATA − promedio (verde: dentro del estándar). La evolución por temporada va en el evolutivo de tiempos.${
+      r.season.to < "2026-10-01" ? " Hasta septiembre de 2026 se mide solo el tiempo de fila." : ""
+    }`,
+    { x: MX, y: 2.2 + 0.62 * (body.length + 1) + 0.25, w: CONTENT_W, h: 0.7, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0, valign: "top" }
+  );
+  addBottomLogo(s);
+}
+
+/** Promedio de cada proceso por temporada (gráfico de líneas nativo). */
+function tiemposHistorySlide(pres: Pptx, r: MonthlyReport) {
+  const h = r.seasonal!.tiemposHistory;
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Tiempos · evolutivo por temporada", `${airportFull(r)} · promedio por temporada hasta ${r.seasonal!.focusLabel}`);
+  const labels = h.seasons.map((x) => x.code);
+  const data = h.series.map((x) => ({ name: x.label, labels, values: x.values.map((v) => (v == null ? null : round1(v))) }));
+  const yMax = niceMax(Math.max(0, ...h.series.flatMap((x) => x.values.map((v) => v ?? 0))));
+  s.addChart(pres.ChartType.line, data, {
+    x: MX, y: 2.1, w: CONTENT_W, h: 7.6,
+    chartColors: h.series.map((_, j) => HISTORY_COLORS[j % HISTORY_COLORS.length]),
+    lineSize: 2.25, lineDataSymbol: "circle", lineDataSymbolSize: 6,
+    showLegend: true, legendPos: "t", legendFontFace: FONT.face, legendFontSize: 12, legendColor: AIGS.body,
+    catAxisLabelFontFace: FONT.face, catAxisLabelFontSize: 11, catAxisLabelColor: AIGS.muted,
+    valAxisLabelFontFace: FONT.face, valAxisLabelFontSize: 11, valAxisLabelColor: AIGS.muted,
+    valAxisMinVal: 0, valAxisMaxVal: yMax, valAxisTitle: "minutos", showValAxisTitle: true, valAxisTitleFontSize: 11,
+    valGridLine: { color: "EEF2F6", size: 0.5 }, catGridLine: { style: "none" },
+  });
+  s.addText("SU = Summer (abr–sep) · WI = Winter (oct–mar) · temporadas sin mediciones no aparecen", {
+    x: W - MX - 12, y: H - 0.62, w: 12, h: 0.3, fontFace: FONT.face, fontSize: 10, color: AIGS.muted, align: "right", margin: 0,
+  });
+  addBottomLogo(s);
+}
+
+/** Promedio y n por franja horaria (inicio de la medición) en la temporada de detalle. */
+function tiemposHoursSlide(pres: Pptx, r: MonthlyReport) {
+  const t = r.seasonal!.tiemposHours;
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Tiempos · por franja horaria", `${airportFull(r)} · ${r.seasonal!.focusLabel} · promedio y cantidad de mediciones`);
+  const head = [headCell("Proceso", "left"), ...t.bands.map((b) => headCell(b, "right"))];
+  const body = t.rows.map((row) => [
+    { text: row.label, options: { align: "left", color: AIGS.ink } },
+    ...row.cells.map((c) => {
+      if (c.n === 0) return { text: "—", options: { align: "right", color: AIGS.muted } };
+      const over = row.meta != null && c.prom != null ? c.prom > row.meta : null;
+      return {
+        text: [
+          { text: fmtMMSS(c.prom), options: { bold: true, fontFace: FONT.mono, color: over == null ? AIGS.ink : over ? AIGS.down : AIGS.up } },
+          { text: `  n=${fmtInt(c.n)}`, options: { fontSize: 10, color: AIGS.muted } },
+        ],
+        options: { align: "right" },
+      };
+    }),
+  ]);
+  const colW = [CONTENT_W * 0.32, ...t.bands.map(() => (CONTENT_W * 0.68) / t.bands.length)];
+  s.addTable([head, ...body] as unknown[], {
+    x: MX, y: 2.2, w: CONTENT_W, colW, rowH: 0.7, fontFace: FONT.face, fontSize: 14, color: AIGS.body, valign: "middle",
+    border: { type: "solid", color: AIGS.hairline, pt: 0.5 }, autoPage: false,
+  });
+  s.addText("Franja = hora de inicio de la medición (hora de Chile). Verde: dentro del Estándar IATA; rojo: sobre el estándar.", {
+    x: MX, y: 2.2 + 0.7 * (body.length + 1) + 0.25, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0,
+  });
+  addBottomLogo(s);
+}
+
+/** Encuesta AGA en la temporada: nota promedio, % notas 4–5 y encuestas (sin NPS) + mejores/peores. */
+function agaSeasonSlide(pres: Pptx, r: MonthlyReport, a: AgaSurvey) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  const m = a.month;
+  const pctTxt = (v: number | null | undefined) => (v != null ? `${v}%` : "—");
+  slideTitle(s, `Encuestas AGA · ${a.audience}`, `${airportFull(r)} · ${r.monthLabel}`);
+  if (m.n === 0) {
+    s.addText("Sin encuestas en esta temporada.", {
+      x: MX, y: 5, w: CONTENT_W, h: 1, fontFace: FONT.face, fontSize: 18, color: AIGS.muted, align: "center", margin: 0,
+    });
+    addBottomLogo(s);
+    return;
+  }
+  kpiRow(
+    s,
+    pres,
+    [
+      { label: "Nota promedio", value: `${fmtScore(m.ratingAvg)} / 5`, valueColor: scoreColor(m.ratingAvg), sub: "todas las notas de atributos y servicios" },
+      { label: "Notas 4–5", value: pctTxt(m.ratingTop2), sub: "% de notas 4 o 5" },
+      { label: "Encuestas de la temporada", value: fmtInt(m.n), sub: r.seasonal?.focusLabel },
+    ],
+    2.1,
+    2.6
+  );
+  const attrs = agaTopRows(a, "attributes", 10);
+  const svcs = agaTopRows(a, "services", 10);
+  const gap = 0.6;
+  const colW = (CONTENT_W - gap) / 2;
+  const top = 5.0;
+  const rowH = Math.min(0.45, (H - 0.95 - (top + 0.5)) / Math.max(attrs.length, svcs.length, 1));
+  scorePanel(s, pres, {
+    x: MX, y: top, w: colW, rowH,
+    title: m.attributes.length > 10 ? "Atributos · 5 mejores y 5 peores" : "Atributos de la experiencia",
+    note: "nota 1–5",
+    rows: attrs,
+  });
+  scorePanel(s, pres, {
+    x: MX + colW + gap, y: top, w: colW, rowH,
+    title: m.services.length > 10 ? "Servicios · 5 mejores y 5 peores" : "Servicios evaluados",
+    note: "nota 1–5 · % que lo usó",
+    rows: svcs,
+  });
+  scoreLegend(s, "N/A no se considera");
+  addBottomLogo(s);
+}
+
+/** Evolución de una Encuesta AGA: nota promedio por mes y por temporada, con la cantidad de encuestas. */
+function agaEvolutionSlide(pres: Pptx, r: MonthlyReport, index: number) {
+  const a = r.aga[index];
+  const h = r.seasonal!.agaHistory[index];
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, `Encuestas AGA · ${a.audience} · evolución`, `${airportFull(r)} · nota promedio (1 a 5) y encuestas`);
+  const blocks = [
+    { title: "Por mes", rows: h.months.map((x) => ({ label: x.label.split(" ")[0], n: x.n, nota: x.ratingAvg })), x: MX, w: CONTENT_W * 0.4 },
+    { title: "Por temporada", rows: h.seasons.map((x) => ({ label: x.code, n: x.n, nota: x.ratingAvg })), x: MX + CONTENT_W * 0.45, w: CONTENT_W * 0.55 },
+  ];
+  for (const b of blocks) {
+    s.addText(b.title, { x: b.x, y: 2.1, w: b.w, h: 0.4, fontFace: FONT.face, fontSize: 14, bold: true, color: AIGS.ink, margin: 0 });
+    const labels = b.rows.map((x) => x.label);
+    s.addChart(pres.ChartType.line, [{ name: "Nota promedio", labels, values: b.rows.map((x) => x.nota) }], {
+      x: b.x, y: 2.55, w: b.w, h: 5.6,
+      chartColors: [AIGS.blue], lineSize: 2.25, lineDataSymbol: "circle", lineDataSymbolSize: 6,
+      showLegend: false, showValue: true, dataLabelFormatCode: "0.0", dataLabelFontSize: 9, dataLabelColor: AIGS.ink, dataLabelPosition: "t",
+      catAxisLabelFontFace: FONT.face, catAxisLabelFontSize: 10, catAxisLabelColor: AIGS.muted,
+      valAxisLabelFontFace: FONT.face, valAxisLabelFontSize: 10, valAxisLabelColor: AIGS.muted,
+      valAxisMinVal: 1, valAxisMaxVal: 5, valAxisMajorUnit: 1,
+      valGridLine: { color: "EEF2F6", size: 0.5 }, catGridLine: { style: "none" },
+    });
+    s.addText(`Encuestas: ${b.rows.map((x) => `${x.label} ${fmtInt(x.n)}`).join(" · ")}`, {
+      x: b.x, y: 8.2, w: b.w, h: 0.9, fontFace: FONT.face, fontSize: 10, color: AIGS.muted, margin: 0, valign: "top", fit: "shrink",
+    });
+  }
+  s.addText(
+    "Hasta septiembre de 2026, formulario antiguo (Google Forms); desde octubre de 2026, formulario web. Nota promedio = todas las calificaciones de atributos y servicios.",
+    { x: MX, y: H - 1.2, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 10.5, color: AIGS.muted, margin: 0 }
   );
   addBottomLogo(s);
 }

@@ -13,7 +13,8 @@ import {
   type PeriodContext,
   type ReportKind,
 } from "@/lib/reports/period";
-import { moduleDef } from "@/lib/reports/modules";
+import { moduleDef, moduleLabel } from "@/lib/reports/modules";
+import { reportUrls } from "@/lib/reports/reportLoader";
 import { loadEditions, type EditionState } from "@/lib/reports/editions";
 import { monthlyReadiness, seasonOverview } from "@/lib/reports/readiness";
 import PeriodPicker from "@/components/reports/PeriodPicker";
@@ -28,12 +29,11 @@ function periodNote(ctx: PeriodContext): string {
   if (ctx.kind === "MENSUAL") {
     return `${ctx.label} en detalle, con el acumulado de la temporada ${ctx.season.label} hasta el cierre del mes.`;
   }
-  const compare = ctx.compare.map((s) => s.label).join(" y ");
   if (ctx.kind === "SEMESTRAL") {
-    return `${ctx.season.label} en detalle, comparada con ${compare}. Los evolutivos usan todas las temporadas disponibles.`;
+    return `${ctx.season.label} en detalle. Los evolutivos muestran todas las temporadas disponibles.`;
   }
   const [su, wi] = seasonsOfAsqYear(Number(ctx.key));
-  return `${ctx.season.label} en detalle, con ${su.label} y ${wi.label} comparadas. Los evolutivos usan todas las temporadas disponibles.`;
+  return `${su.label} y ${wi.label}, con ${ctx.season.label} en detalle. Los evolutivos muestran todas las temporadas disponibles.`;
 }
 
 function editionStatus(ed: EditionState | undefined): string {
@@ -122,8 +122,8 @@ export default async function InformesIndex({
         {periodNote(ctx)}
         {kind !== "MENSUAL" && (
           <span className="block text-xs text-slate-500">
-            El informe {KIND_LABEL[kind].toLowerCase()} se habilita en las próximas fases (tiempos y AGA primero,
-            luego ACI ASQ). Ya puedes ver qué módulos tendrá cada aeropuerto.
+            Ya incluye mediciones de tiempos, Encuestas AGA, resumen ejecutivo y recomendaciones. El detalle de
+            resultados ACI ASQ llega en la próxima fase.
           </span>
         )}
       </p>
@@ -166,26 +166,24 @@ export default async function InformesIndex({
                 <ul className="space-y-1.5 border-t border-slate-100 pt-3">
                   {rows.map(({ def, ready }) => (
                     <li key={def.key} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
-                      <span className="text-slate-700">{def.label}</span>
-                      {ready && <ReadinessChip state={ready.state} text={ready.text} />}
+                      <span className="text-slate-700">{moduleLabel(def, kind)}</span>
+                      {def.ready.includes(kind) ? (
+                        ready && <ReadinessChip state={ready.state} text={ready.text} />
+                      ) : (
+                        <ReadinessChip state="off" text={`Próxima fase${ready ? ` · ${ready.text}` : ""}`} />
+                      )}
                     </li>
                   ))}
                 </ul>
 
                 <div className="mt-auto flex items-center justify-between gap-2 pt-1">
                   <span className="text-xs text-slate-500">{editionStatus(ed)}</span>
-                  {kind === "MENSUAL" ? (
-                    <Link
-                      href={`/admin/informes/${slug}/${encodeURIComponent(a.code)}/${ctx.key}`}
-                      className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
-                    >
-                      {ed?.id ? "Abrir edición" : "Preparar informe"}
-                    </Link>
-                  ) : (
-                    <span className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-400">
-                      Próximamente
-                    </span>
-                  )}
+                  <Link
+                    href={reportUrls(a.code, ctx).edit}
+                    className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
+                  >
+                    {ed?.id ? "Abrir edición" : "Preparar informe"}
+                  </Link>
                 </div>
               </div>
             );

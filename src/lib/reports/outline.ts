@@ -2,18 +2,24 @@
 // orden de la plantilla) y de lo que hay en los datos. La comparten el deck HTML, el
 // PPTX y la vista previa del editor, así los tres muestran siempre lo mismo.
 //
-// Puro (sin BD). Hoy cubre el informe mensual; los módulos de semestral/anual
-// agregan aquí sus diapositivas cuando se construyan.
+// Puro (sin BD). Semestral y anual reutilizan las diapositivas del mensual (con la
+// temporada de detalle en lugar del mes) y agregan las propias: resumen ejecutivo,
+// resumen de tiempos vs Estándar IATA, histórico por temporada, franjas horarias,
+// evolución AGA y recomendaciones.
 
 import { moduleDef, type ModuleKey, type ModuleNotes } from "@/lib/reports/modules";
+import type { ReportKind } from "@/lib/reports/period";
 
 export type OutlineInput = {
+  kind: ReportKind;
   modules: ModuleKey[]; // encendidos, en orden
   notes: ModuleNotes;
   comentarios: string;
   photosCount: number;
   processes: { label: string }[]; // una diapositiva por proceso/fase de tiempos
   aga: { audience: "Pasajeros" | "Acompañantes"; hasVoice: boolean }[]; // planes AGA vigentes
+  // Semestral/anual: si hay histórico por temporada y franjas horarias de tiempos.
+  season?: { history: boolean; hours: boolean };
 };
 
 export type SlideSpec =
@@ -25,7 +31,12 @@ export type SlideSpec =
   | { type: "aga-guide" }
   | { type: "aga"; index: number } // índice en el arreglo `aga` de los datos
   | { type: "voice"; index: number }
-  | { type: "text"; role: "note" | "analisis" | "comentarios"; title: string; body: string }
+  | { type: "text"; role: "note" | "analisis" | "recomendaciones" | "comentarios"; title: string; body: string }
+  | { type: "exec-summary"; body: string }
+  | { type: "tiempos-summary" }
+  | { type: "tiempos-history" }
+  | { type: "tiempos-hours" }
+  | { type: "aga-evolution"; index: number }
   | { type: "photos"; start: number; count: number; index: number; total: number }
   | { type: "closing" };
 
@@ -33,6 +44,7 @@ export const PHOTOS_PER_SLIDE = 4;
 
 export function buildOutline(input: OutlineInput): SlideSpec[] {
   const out: SlideSpec[] = [{ type: "cover" }];
+  const seasonal = input.kind !== "MENSUAL";
   let section = 0;
   const addSection = (title: string) =>
     out.push({ type: "section", module: `Módulo ${String(++section).padStart(2, "0")}`, title });
@@ -54,7 +66,12 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
       case "tiempos":
         addSection("Mediciones de tiempos");
         if (input.processes.length === 0) out.push({ type: "tiempos-empty" });
-        else input.processes.forEach((_, index) => out.push({ type: "proceso", index }));
+        else {
+          if (seasonal) out.push({ type: "tiempos-summary" });
+          input.processes.forEach((_, index) => out.push({ type: "proceso", index }));
+          if (seasonal && input.season?.history) out.push({ type: "tiempos-history" });
+          if (seasonal && input.season?.hours) out.push({ type: "tiempos-hours" });
+        }
         addNote(key);
         break;
 
@@ -75,6 +92,7 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
         for (const b of blocks) {
           for (const s of b.surveys) {
             out.push({ type: "aga", index: s.index });
+            if (seasonal) out.push({ type: "aga-evolution", index: s.index });
             if (s.hasVoice) out.push({ type: "voice", index: s.index });
           }
           if (b.surveys.length > 0) addNote(b.key);
@@ -83,6 +101,11 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
       }
 
       case "analisis": {
+        // Semestral/anual: resumen ejecutivo (cifras del informe + texto del consultor).
+        if (seasonal) {
+          out.push({ type: "exec-summary", body: input.notes.analisis ?? "" });
+          break;
+        }
         const body = input.notes.analisis;
         if (body) out.push({ type: "text", role: "analisis", title: "Análisis y recomendaciones", body });
         break;
@@ -105,6 +128,12 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
         break;
       }
 
+      case "recomendaciones": {
+        const body = input.notes.recomendaciones;
+        if (body) out.push({ type: "text", role: "recomendaciones", title: "Recomendaciones", body });
+        break;
+      }
+
       case "asq-resultados":
         // Semestral/anual: se construye en la fase 3.
         break;
@@ -123,7 +152,7 @@ export function slideLabel(s: SlideSpec, input: OutlineInput): string {
     case "section":
       return `${s.module} · ${s.title}`;
     case "asq":
-      return "Encuestas ACI ASQ · avance de la temporada";
+      return input.kind === "MENSUAL" ? "Encuestas ACI ASQ · avance de la temporada" : "Encuestas ACI ASQ · cumplimiento";
     case "tiempos-empty":
       return "Mediciones de tiempos · sin mediciones en la temporada";
     case "proceso":
@@ -140,19 +169,38 @@ export function slideLabel(s: SlideSpec, input: OutlineInput): string {
       return s.total > 1 ? `Fotografías (${s.index + 1}/${s.total})` : "Fotografías";
     case "closing":
       return "Cierre";
+    case "exec-summary":
+      return "Resumen ejecutivo";
+    case "tiempos-summary":
+      return "Tiempos vs Estándar IATA";
+    case "tiempos-history":
+      return "Tiempos · evolutivo por temporada";
+    case "tiempos-hours":
+      return "Tiempos · por franja horaria";
+    case "aga-evolution":
+      return `Encuesta AGA · ${input.aga[s.index]?.audience ?? ""} · evolución`;
   }
 }
 
 /** Arma la entrada del outline desde los datos del informe mensual (o el deck serializado). */
 export function outlineInputFrom(
   data: {
+    kind?: ReportKind;
     processes: { proceso: string; faseLabel: string | null }[];
     aga: { audience: string; voice: { appraisal: string | null; quotes: unknown[] } }[];
+    seasonal?: { tiemposHistory: { seasons: unknown[] }; tiemposHours: { rows: unknown[] } };
   },
   edition: { modules: ModuleKey[]; notes: ModuleNotes; comentarios: string; photosCount: number }
 ): OutlineInput {
   return {
     ...edition,
+    kind: data.kind ?? "MENSUAL",
+    season: data.seasonal
+      ? {
+          history: data.seasonal.tiemposHistory.seasons.length > 1,
+          hours: data.seasonal.tiemposHours.rows.length > 0,
+        }
+      : undefined,
     processes: data.processes.map((p) => ({ label: `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}` })),
     aga: data.aga.map((a) => ({
       audience: a.audience === "Acompañantes" ? "Acompañantes" : "Pasajeros",

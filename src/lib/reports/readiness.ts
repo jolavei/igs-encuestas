@@ -216,6 +216,8 @@ export async function seasonOverview(ctx: PeriodContext): Promise<SeasonOverview
 
   const readiness = new Map<string, ModuleReadiness>();
   const airports: ReportAirportListItem[] = [];
+  // En el anual los conteos son del año ASQ completo (las dos temporadas).
+  const inYear = ctx.kind === "ANUAL" ? " en el año" : "";
 
   for (const ap of candidates) {
     const r: ModuleReadiness = {};
@@ -253,8 +255,8 @@ export async function seasonOverview(ctx: PeriodContext): Promise<SeasonOverview
         n === 0
           ? { state: "off", text: "Sin mediciones en la temporada" }
           : ctx.window.to < REPORT_SOURCE_CUTOFF
-            ? { state: "ok", text: `${fmt(n)} mediciones · solo tiempo de fila` }
-            : { state: "ok", text: `${fmt(n)} mediciones` };
+            ? { state: "ok", text: `${fmt(n)} mediciones${inYear} · solo tiempo de fila` }
+            : { state: "ok", text: `${fmt(n)} mediciones${inYear}` };
     }
 
     // Encuestas AGA.
@@ -270,7 +272,7 @@ export async function seasonOverview(ctx: PeriodContext): Promise<SeasonOverview
       if (n > 0) hasData = true;
       r[key] =
         n > 0
-          ? { state: "ok", text: `${fmt(n)} encuestas` }
+          ? { state: "ok", text: `${fmt(n)} encuestas${inYear}` }
           : ctx.window.from < REPORT_SOURCE_CUTOFF
             ? { state: "bad", text: "Sin histórico importado de Sheets" }
             : { state: "off", text: "Sin encuestas en la temporada" };

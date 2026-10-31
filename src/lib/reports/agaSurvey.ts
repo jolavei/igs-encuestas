@@ -31,6 +31,11 @@ export type AgaStats = {
   sat: number | null; // satisfacción general, promedio 1–5
   satN: number;
   satTop2: number | null; // % que puso 4 o 5
+  // Todas las notas de atributos y servicios (sin la satisfacción general): comparables
+  // con el histórico del formulario antiguo, que no tenía NPS ni satisfacción general.
+  ratingAvg: number | null;
+  ratingTop2: number | null; // % de notas 4–5
+  ratingN: number;
   attributes: AgaScore[]; // orden: mejor -> peor
   services: AgaService[]; // orden: mejor -> peor
   // Cada ítem calificado (excepto la satisfacción general), con su sección (sin "— evaluación").
@@ -119,6 +124,14 @@ export function aggregateAga(responses: AgaAnswerRow[][]): AgaStats {
     items.set(k, it);
   };
   let n = 0;
+  let ratingSum = 0;
+  let ratingN = 0;
+  let ratingTop2 = 0;
+  const addRating = (v: number) => {
+    ratingSum += v;
+    ratingN++;
+    if (v >= 4) ratingTop2++;
+  };
 
   for (const answers of responses) {
     if (answers.length === 0) continue;
@@ -151,6 +164,7 @@ export function aggregateAga(responses: AgaAnswerRow[][]): AgaStats {
         const base = m[1].trim();
         if (gateOf.get(base) === false) continue; // dijo que no lo usó
         addItem(base, cleanLabel(a.text), a.num);
+        addRating(a.num);
         const s = svc.get(base) ?? { sum: 0, count: 0, resp: 0 };
         s.sum += a.num;
         s.count++;
@@ -164,6 +178,7 @@ export function aggregateAga(responses: AgaAnswerRow[][]): AgaStats {
       } else {
         const label = cleanLabel(a.text);
         addItem((a.section ?? "").trim(), label, a.num);
+        addRating(a.num);
         const arr = attr.get(label) ?? [];
         arr.push(a.num);
         attr.set(label, arr);
@@ -202,6 +217,9 @@ export function aggregateAga(responses: AgaAnswerRow[][]): AgaStats {
     sat: satScores.length ? round1(satScores.reduce((a, b) => a + b, 0) / satScores.length) : null,
     satN: satScores.length,
     satTop2: pctOf(satScores.filter((s) => s >= 4).length, satScores.length),
+    ratingAvg: ratingN ? round1(ratingSum / ratingN) : null,
+    ratingTop2: pctOf(ratingTop2, ratingN),
+    ratingN,
     attributes,
     services,
     items: [...items.values()].map((it) => ({ ...it, avg: it.n ? round1(it.sum / it.n) : null })),

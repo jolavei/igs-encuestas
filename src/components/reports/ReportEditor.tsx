@@ -4,7 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ReportPhotos from "@/components/reports/ReportPhotos";
 import ReadinessChip from "@/components/reports/ReadinessChip";
 import { pauseAutoReload } from "@/lib/freshnessGuardPause";
-import { enabledKeys, moduleDef, type ModuleKey, type ModuleNotes, type TemplateEntry } from "@/lib/reports/modules";
+import {
+  enabledKeys,
+  moduleDef,
+  moduleLabel,
+  type ModuleKey,
+  type ModuleNotes,
+  type TemplateEntry,
+} from "@/lib/reports/modules";
 import { buildOutline, outlineInputFrom, slideLabel } from "@/lib/reports/outline";
 import type { ReportKind } from "@/lib/reports/period";
 import type { EditionState } from "@/lib/reports/editions";
@@ -12,9 +19,21 @@ import type { ModuleReadiness } from "@/lib/reports/readiness";
 
 type OutlineData = Parameters<typeof outlineInputFrom>[0];
 
-const NOTE_HINT: Partial<Record<ModuleKey, string>> = {
-  analisis: "Resumen del mes y recomendaciones. Sale como diapositiva «Análisis y recomendaciones».",
-};
+// Ayuda bajo el texto de cada módulo (por defecto: «Análisis · X» al final del módulo).
+function noteHint(key: ModuleKey, kind: ReportKind, label: string): string {
+  if (key === "analisis")
+    return kind === "MENSUAL"
+      ? "Resumen del mes y recomendaciones. Sale como diapositiva «Análisis y recomendaciones»."
+      : "Va en la primera diapositiva, «Resumen ejecutivo», junto a las cifras clave de la temporada.";
+  if (key === "recomendaciones") return "Sale como diapositiva «Recomendaciones» al final del informe.";
+  return `Si escribes algo, se agrega «Análisis · ${label}» al final del módulo.`;
+}
+
+function notePlaceholder(key: ModuleKey, kind: ReportKind): string {
+  if (key === "analisis") return kind === "MENSUAL" ? "Análisis y recomendaciones del mes…" : "Hallazgos principales de la temporada…";
+  if (key === "recomendaciones") return "Recomendaciones priorizadas para el aeropuerto…";
+  return "Análisis de este módulo (opcional)…";
+}
 
 const fmtTime = (iso: string) =>
   new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", dateStyle: "medium", timeStyle: "short" }).format(
@@ -28,6 +47,9 @@ export default function ReportEditor({
   airport,
   kind,
   periodKey,
+  focusSeason,
+  focusOptions,
+  urls,
   initial,
   readiness,
   outlineData,
@@ -35,6 +57,9 @@ export default function ReportEditor({
   airport: string;
   kind: ReportKind;
   periodKey: string;
+  focusSeason: string | null; // anual: temporada de detalle
+  focusOptions: { value: string; label: string }[];
+  urls: { view: string; pptx: string; edit: string };
   initial: EditionState;
   readiness: ModuleReadiness;
   outlineData: OutlineData;
@@ -77,7 +102,7 @@ export default function ReportEditor({
     setDirty(true);
   }
 
-  async function save(nextStatus?: "BORRADOR" | "EMITIDO"): Promise<boolean> {
+  async function save(nextStatus?: "BORRADOR" | "EMITIDO", focus?: string): Promise<boolean> {
     setSaving(true);
     setError(null);
     try {
@@ -91,6 +116,7 @@ export default function ReportEditor({
           modules: Object.fromEntries(entries.map((e) => [e.key, e.enabled])),
           notes,
           comentarios,
+          focusSeason: focus ?? focusSeason,
           ...(nextStatus ? { status: nextStatus } : {}),
         }),
       });
@@ -116,25 +142,59 @@ export default function ReportEditor({
       w?.close();
       return;
     }
-    const url = `/informe/${encodeURIComponent(airport)}?mes=${periodKey}`;
-    if (w) w.location.href = url;
-    else window.location.href = url;
+    if (w) w.location.href = urls.view;
+    else window.location.href = urls.view;
   }
 
   async function downloadPptx() {
     if (dirty && !(await save())) return;
-    window.location.href = `/api/reports/pptx?airport=${encodeURIComponent(airport)}&mes=${periodKey}`;
+    window.location.href = urls.pptx;
+  }
+
+  // Anual: cambiar la temporada de detalle guarda la edición y recarga sus datos.
+  async function changeFocus(code: string) {
+    if (!(await save(undefined, code))) return;
+    window.location.href = urls.edit.replace(/foco=[^&]+/, `foco=${code}`);
   }
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
       <div className="space-y-3">
+        {focusOptions.length > 0 && (
+          <div className="card flex flex-wrap items-center justify-between gap-3 !p-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Temporada de detalle</p>
+              <p className="text-xs text-slate-500">
+                Las diapositivas de tiempos y AGA muestran esta temporada en detalle; los gráficos mensuales cubren el año.
+              </p>
+            </div>
+            <select
+              value={focusSeason ?? ""}
+              onChange={(ev) => changeFocus(ev.target.value)}
+              disabled={saving}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            >
+              {focusOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {entries.map((e) => {
           const def = moduleDef(e.key)!;
+          const label = moduleLabel(def, kind);
+          // Módulo que este tipo de informe aún no genera (ACI ASQ resultados: fase 3).
+          const pending = !def.ready.includes(kind);
           // Fotos/comentarios y análisis se editan aquí mismo: su estado del servidor quedaría desfasado.
-          const ready = e.key === "fotos-comentarios" || e.key === "analisis" ? undefined : readiness[e.key];
+          const serverReady =
+            e.key === "fotos-comentarios" || e.key === "analisis" || e.key === "recomendaciones" ? undefined : readiness[e.key];
+          const ready = pending
+            ? { state: "off" as const, text: `Próxima fase${serverReady ? ` · ${serverReady.text}` : ""}` }
+            : serverReady;
           const na = ready?.state === "na";
-          const on = e.enabled && !na;
+          const on = e.enabled && !na && !pending;
           return (
             <div key={e.key} className={`card !p-4 ${on ? "" : "bg-slate-50"}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -142,11 +202,11 @@ export default function ReportEditor({
                   <input
                     type="checkbox"
                     checked={on}
-                    disabled={na}
+                    disabled={na || pending}
                     onChange={(ev) => toggle(e.key, ev.target.checked)}
                     className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
-                  {def.label}
+                  {label}
                 </label>
                 {ready && <ReadinessChip state={ready.state} text={na ? `No aplica · ${ready.text.toLowerCase()}` : ready.text} />}
               </div>
@@ -181,17 +241,13 @@ export default function ReportEditor({
                       setNotes((n) => ({ ...n, [e.key]: v }));
                       setDirty(true);
                     }}
-                    rows={e.key === "analisis" ? 4 : 2}
+                    rows={e.key === "analisis" || e.key === "recomendaciones" ? 4 : 2}
                     maxLength={3000}
-                    placeholder={
-                      e.key === "analisis"
-                        ? "Análisis y recomendaciones del mes…"
-                        : "Análisis de este módulo (opcional)…"
-                    }
+                    placeholder={notePlaceholder(e.key, kind)}
                     className="input resize-y"
                   />
                   <p className="mt-1 text-xs text-slate-500">
-                    {NOTE_HINT[e.key] ?? `Si escribes algo, se agrega «Análisis · ${def.label}» al final del módulo.`}
+                    {noteHint(e.key, kind, label)}
                   </p>
                 </div>
               )}
