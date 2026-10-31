@@ -67,6 +67,17 @@ export type AgaAnswerRow = {
 const EVAL_SECTION = /^(.*?)\s*[—–-]\s*evaluaci[oó]n\s*$/i;
 const GLOBAL_SAT = /satisfacci[oó]n general/i;
 
+/** source de los ResponseSet importados desde los Google Sheets del formulario antiguo. */
+export const AGA_HISTORIC_SOURCE = "IMPORT_SHEETS";
+
+/**
+ * Fuente válida de una encuesta AGA según su fecha (día de Chile, "YYYY-MM-DD"): antes
+ * del corte, solo el histórico importado de Sheets; desde el corte, solo la web.
+ */
+export function isValidAgaSource(day: string, source: string, cutoff: string): boolean {
+  return day < cutoff ? source === AGA_HISTORIC_SOURCE : source !== AGA_HISTORIC_SOURCE;
+}
+
 export function audienceOf(questionnaireTitle: string): AgaAudience {
   return /acompa/i.test(questionnaireTitle) ? "Acompañantes" : "Pasajeros";
 }

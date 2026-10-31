@@ -108,6 +108,36 @@ export async function listReportAirportsBetween(start: Date, end: Date): Promise
   return items;
 }
 
+/**
+ * Todos los aeropuertos asociados a una empresa en Encuestas ASQ (AsqAirportMapping), con
+ * cuántos planes (de cualquier estado salvo cancelado) solapan la ventana. Semestral/anual
+ * parten de esta lista y dejan los que tienen datos en la temporada.
+ */
+export async function listMappedAirports(start: Date, end: Date): Promise<ReportAirportListItem[]> {
+  const [plans, mappings] = await Promise.all([
+    prisma.workPlan.findMany({
+      where: { status: { not: "CANCELLED" }, windowStart: { lte: end }, windowEnd: { gte: start } },
+      select: { companyId: true },
+    }),
+    prisma.asqAirportMapping.findMany({ include: { company: true, location: true } }),
+  ]);
+  const items: ReportAirportListItem[] = [];
+  for (const m of mappings) {
+    if (!m.companyId || !m.company) continue;
+    const ap = airportByCode(m.airport);
+    items.push({
+      code: m.airport,
+      companyId: m.companyId,
+      name: ap?.name ?? m.company.name,
+      short: ap?.short ?? null,
+      companyName: m.company.name,
+      sedeLabel: `${m.company.name}${m.location ? ` · ${m.location.name}` : ""}`,
+      plans: plans.filter((p) => p.companyId === m.companyId).length,
+    });
+  }
+  return items.sort((a, b) => a.code.localeCompare(b.code));
+}
+
 /** Identidad de un aeropuerto para el editor (aunque no tenga plan vigente en el mes). */
 export async function getReportAirportItem(code: string, month: string): Promise<ReportAirportListItem | null> {
   const listed = (await listReportAirports(month)).find((a) => a.code === code);

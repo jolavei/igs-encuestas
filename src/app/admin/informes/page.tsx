@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listReportAirports, listReportAirportsBetween } from "@/lib/reports/monthlyReport";
+import { listReportAirports } from "@/lib/reports/monthlyReport";
 import {
   KIND_LABEL,
   KIND_SLUG,
@@ -15,7 +15,7 @@ import {
 } from "@/lib/reports/period";
 import { moduleDef } from "@/lib/reports/modules";
 import { loadEditions, type EditionState } from "@/lib/reports/editions";
-import { monthlyReadiness, type ModuleReadiness } from "@/lib/reports/readiness";
+import { monthlyReadiness, seasonOverview } from "@/lib/reports/readiness";
 import PeriodPicker from "@/components/reports/PeriodPicker";
 import ReadinessChip from "@/components/reports/ReadinessChip";
 
@@ -42,6 +42,16 @@ function editionStatus(ed: EditionState | undefined): string {
   return ed.updatedAt ? `Borrador · guardado el ${fmtDate(ed.updatedAt)}` : "Borrador";
 }
 
+async function monthlyOverview(ctx: PeriodContext) {
+  const airports = await listReportAirports(ctx.key);
+  const editions = await loadEditions(
+    airports.map((a) => a.code),
+    ctx.kind,
+    ctx.key
+  );
+  return { airports, editions, readiness: await monthlyReadiness(airports, ctx, editions) };
+}
+
 export default async function InformesIndex({
   searchParams,
 }: {
@@ -58,20 +68,10 @@ export default async function InformesIndex({
   const options = periodOptions(kind, today, 12);
   if (!options.some((o) => o.value === ctx.key)) options.unshift({ value: ctx.key, label: ctx.label });
 
-  const airports =
-    kind === "MENSUAL"
-      ? await listReportAirports(ctx.key)
-      : await listReportAirportsBetween(
-          new Date(`${ctx.window.from}T00:00:00Z`),
-          new Date(`${ctx.window.to}T23:59:59Z`)
-        );
-  const editions = await loadEditions(
-    airports.map((a) => a.code),
-    kind,
-    ctx.key
-  );
-  const readiness: Map<string, ModuleReadiness> | null =
-    kind === "MENSUAL" ? await monthlyReadiness(airports, ctx, editions) : null;
+  // Mensual: aeropuertos con plan vigente en el mes. Semestral/anual: aeropuertos con
+  // datos válidos en la temporada (Sheets, base ACI ASQ, AGA), sin mirar planes.
+  const { airports, editions, readiness } =
+    kind === "MENSUAL" ? await monthlyOverview(ctx) : await seasonOverview(ctx);
 
   const slug = KIND_SLUG[kind];
   const focus =
@@ -87,8 +87,10 @@ export default async function InformesIndex({
       <div>
         <h1 className="text-2xl font-bold">Informes</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Un informe por aeropuerto con plan de trabajo vigente. Cada tarjeta muestra si los datos de cada módulo
-          están listos.
+          {kind === "MENSUAL"
+            ? "Un informe por aeropuerto con plan de trabajo vigente."
+            : "Un informe por aeropuerto con datos en la temporada."}{" "}
+          Cada tarjeta muestra si los datos de cada módulo están listos.
         </p>
       </div>
 
@@ -128,10 +130,21 @@ export default async function InformesIndex({
 
       {airports.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          Ningún aeropuerto con plan de trabajo vigente en {ctx.label}.
-          <br />
-          Revisa que existan planes activos (Planes de trabajo) y que el aeropuerto esté asociado a una empresa en
-          Encuestas ASQ.
+          {kind === "MENSUAL" ? (
+            <>
+              Ningún aeropuerto con plan de trabajo vigente en {ctx.label}.
+              <br />
+              Revisa que existan planes activos (Planes de trabajo) y que el aeropuerto esté asociado a una empresa
+              en Encuestas ASQ.
+            </>
+          ) : (
+            <>
+              Ningún aeropuerto con datos en {ctx.label}.
+              <br />
+              Revisa que el aeropuerto esté asociado a una empresa en Encuestas ASQ y que la temporada tenga base
+              ACI ASQ, mediciones de tiempos o encuestas AGA.
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -154,11 +167,7 @@ export default async function InformesIndex({
                   {rows.map(({ def, ready }) => (
                     <li key={def.key} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
                       <span className="text-slate-700">{def.label}</span>
-                      {def.ready.includes(kind) ? (
-                        ready && <ReadinessChip state={ready.state} text={ready.text} />
-                      ) : (
-                        <ReadinessChip state="off" text="Próxima fase" />
-                      )}
+                      {ready && <ReadinessChip state={ready.state} text={ready.text} />}
                     </li>
                   ))}
                 </ul>

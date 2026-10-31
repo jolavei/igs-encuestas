@@ -5,12 +5,20 @@
 
 import { prisma } from "@/lib/prisma";
 import { AIRPORTS } from "@/lib/dashboardTiempos";
-import { audienceOf, isAgaQuestionnaire, ymOf } from "@/lib/reports/agaSurvey";
-import { countTiemposByAirport } from "@/lib/reports/tiemposQuery";
-import { fmtDay, loadAsqProgress, monthBounds, type ReportAirportListItem } from "@/lib/reports/monthlyReport";
+import { audienceOf, isAgaQuestionnaire, isValidAgaSource, ymOf } from "@/lib/reports/agaSurvey";
+import { REPORT_SOURCE_CUTOFF, countTiemposByAirport } from "@/lib/reports/tiemposQuery";
+import {
+  fmtDay,
+  listMappedAirports,
+  loadAsqProgress,
+  monthBounds,
+  type ReportAirportListItem,
+} from "@/lib/reports/monthlyReport";
+import { bqQuery } from "@/lib/bigquery";
+import { asqTableRef } from "@/lib/asq/ingestDepartures";
 import { moduleDef, type ModuleKey } from "@/lib/reports/modules";
-import type { EditionState } from "@/lib/reports/editions";
-import type { PeriodContext } from "@/lib/reports/period";
+import { loadEditions, type EditionState } from "@/lib/reports/editions";
+import { seasonsOfAsqYear, type PeriodContext } from "@/lib/reports/period";
 
 // ok = listo · warn = sale, con una salvedad · bad = falta un dato · off = vacío u
 // opcional · na = no aplica a este aeropuerto (no se muestra).
@@ -123,4 +131,168 @@ export async function monthlyReadiness(
     out.set(ap.code, r);
   });
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Semestral / anual
+// ---------------------------------------------------------------------------
+
+/** Encuestas ACI ASQ (microdata) por aeropuerto y temporada ("SU26"). null si BigQuery falla. */
+async function countAsqMicrodata(codes: string[], quarters: string[]): Promise<Map<string, number> | null> {
+  try {
+    const rows = await bqQuery<Record<string, unknown>>(
+      `SELECT Airport AS airport, Quarter AS quarter, COUNT(*) AS n FROM \`${asqTableRef()}\`
+       WHERE Airport IN UNNEST(@codes) AND Quarter IN UNNEST(@quarters) GROUP BY airport, quarter`,
+      { codes, quarters }
+    );
+    const out = new Map<string, number>();
+    for (const r of rows) out.set(`${r.airport}|${r.quarter}`, Number((r.n as { value?: unknown })?.value ?? r.n) || 0);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+const chileDayOf = (d: Date) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+
+export type SeasonOverview = {
+  airports: ReportAirportListItem[];
+  editions: Map<string, EditionState>;
+  readiness: Map<string, ModuleReadiness>;
+};
+
+/**
+ * Aeropuertos y estado por módulo de un informe semestral o anual. Parte de todos los
+ * aeropuertos asociados a una empresa (Encuestas ASQ) y deja los que tienen datos válidos
+ * en la ventana en alguna fuente, sin mirar planes de trabajo:
+ *  - ACI ASQ: microdata de la temporada (Ingesta ASQ).
+ *  - Tiempos: antes del 1-oct-2026 solo el histórico de Sheets; desde ahí, solo la web.
+ *  - AGA: antes del corte solo el histórico importado de Sheets; desde ahí, solo la web.
+ */
+export async function seasonOverview(ctx: PeriodContext): Promise<SeasonOverview> {
+  const start = new Date(`${ctx.window.from}T00:00:00Z`);
+  const end = new Date(`${ctx.window.to}T23:59:59Z`);
+  const candidates = await listMappedAirports(start, end);
+  const codes = candidates.map((a) => a.code);
+  const quarters = ctx.kind === "ANUAL" ? seasonsOfAsqYear(Number(ctx.key)).map((s) => s.code) : [ctx.season.code];
+
+  const canonical = (code: string): string | null => AIRPORTS.find((a) => a.code === code)?.name ?? null;
+  const bqAirports = codes.map(canonical).filter((n): n is string => !!n);
+
+  const [asq, tiempos, plans, runs] = await Promise.all([
+    codes.length ? countAsqMicrodata(codes, quarters) : Promise.resolve(new Map<string, number>()),
+    bqAirports.length
+      ? countTiemposByAirport({ airports: bqAirports, desde: ctx.window.from, hasta: ctx.window.to, month: "" }).catch(
+          () => null
+        )
+      : Promise.resolve([]),
+    // Planes AGA de cualquier estado y época (incluido el del histórico importado):
+    // dicen si el aeropuerto aplica al módulo y agrupan sus respuestas.
+    prisma.workPlan.findMany({
+      where: { companyId: { in: candidates.map((a) => a.companyId) } },
+      select: { id: true, companyId: true, questionnaire: { select: { title: true } } },
+    }),
+    prisma.asqComplianceRun.findMany({
+      where: { airport: { in: codes }, season: ctx.season.type, year: ctx.season.year },
+      select: { airport: true, rows: { select: { target: true, collected: true } } },
+    }),
+  ]);
+  const aga = plans.filter((p) => isAgaQuestionnaire(p.questionnaire.title));
+  const sets = aga.length
+    ? await prisma.responseSet.findMany({
+        where: {
+          workPlanId: { in: aga.map((p) => p.id) },
+          answers: { some: {} },
+          createdAt: { gte: new Date(start.getTime() - 86400000), lte: new Date(end.getTime() + 86400000) },
+        },
+        select: { workPlanId: true, createdAt: true, source: true },
+      })
+    : [];
+  const valid = sets.filter((s) => {
+    const day = chileDayOf(s.createdAt);
+    return day >= ctx.window.from && day <= ctx.window.to && isValidAgaSource(day, s.source, REPORT_SOURCE_CUTOFF);
+  });
+
+  const readiness = new Map<string, ModuleReadiness>();
+  const airports: ReportAirportListItem[] = [];
+
+  for (const ap of candidates) {
+    const r: ModuleReadiness = {};
+    let hasData = false;
+
+    // ACI ASQ · Resultados: microdata de la temporada de detalle (en el anual, ambas).
+    if (asq === null) r["asq-resultados"] = { state: "warn", text: "BigQuery no disponible" };
+    else {
+      const parts = quarters.map((q) => ({ q, n: asq.get(`${ap.code}|${q}`) ?? 0 }));
+      const focus = parts.find((x) => x.q === ctx.season.code)!;
+      if (parts.some((x) => x.n > 0)) hasData = true;
+      r["asq-resultados"] =
+        focus.n === 0
+          ? { state: "bad", text: `${ctx.season.code} sin cargar en Ingesta ASQ` }
+          : { state: "ok", text: parts.filter((x) => x.n > 0).map((x) => `${x.q}: ${fmt(x.n)} encuestas`).join(" · ") };
+    }
+
+    // ACI ASQ · Avance: cumplimiento del levantamiento de la temporada.
+    const run = runs.find((x) => x.airport === ap.code);
+    if (run) {
+      const target = run.rows.reduce((a, b) => a + b.target, 0);
+      const collected = run.rows.reduce((a, b) => a + b.collected, 0);
+      const pctDone = target > 0 ? Math.min(100, Math.round((collected / target) * 100)) : 0;
+      r["asq-avance"] = { state: "ok", text: `${fmt(collected)} de ${fmt(target)} · ${pctDone}%` };
+    } else r["asq-avance"] = { state: "off", text: "Sin avance registrado" };
+
+    // Mediciones de tiempos (el corte de fuente lo aplica la consulta).
+    const name = canonical(ap.code);
+    if (!name) r.tiempos = { state: "na", text: "Sin mediciones para este aeropuerto" };
+    else if (tiempos === null) r.tiempos = { state: "warn", text: "BigQuery no disponible" };
+    else {
+      const n = tiempos.find((x) => x.airport === name)?.window ?? 0;
+      if (n > 0) hasData = true;
+      r.tiempos =
+        n === 0
+          ? { state: "off", text: "Sin mediciones en la temporada" }
+          : ctx.window.to < REPORT_SOURCE_CUTOFF
+            ? { state: "ok", text: `${fmt(n)} mediciones · solo tiempo de fila` }
+            : { state: "ok", text: `${fmt(n)} mediciones` };
+    }
+
+    // Encuestas AGA.
+    for (const key of ["aga-pasajeros", "aga-acompanantes"] as const) {
+      const audience = moduleDef(key)!.survey!.audience;
+      const mine = aga.filter((p) => p.companyId === ap.companyId && audienceOf(p.questionnaire.title) === audience);
+      if (mine.length === 0) {
+        r[key] = { state: "na", text: "Sin encuesta AGA" };
+        continue;
+      }
+      const ids = new Set(mine.map((p) => p.id));
+      const n = valid.filter((s) => s.workPlanId && ids.has(s.workPlanId)).length;
+      if (n > 0) hasData = true;
+      r[key] =
+        n > 0
+          ? { state: "ok", text: `${fmt(n)} encuestas` }
+          : ctx.window.from < REPORT_SOURCE_CUTOFF
+            ? { state: "bad", text: "Sin histórico importado de Sheets" }
+            : { state: "off", text: "Sin encuestas en la temporada" };
+    }
+
+    if (hasData) {
+      airports.push(ap);
+      readiness.set(ap.code, r);
+    }
+  }
+
+  const editions = await loadEditions(
+    airports.map((a) => a.code),
+    ctx.kind,
+    ctx.key
+  );
+  for (const ap of airports) {
+    const r = readiness.get(ap.code)!;
+    r.analisis = editions.get(ap.code)?.notes.analisis
+      ? { state: "ok", text: "Redactado" }
+      : { state: "off", text: "Sin redactar" };
+    r["fotos-comentarios"] = { state: "off", text: "Opcional" };
+  }
+  return { airports, editions, readiness };
 }
