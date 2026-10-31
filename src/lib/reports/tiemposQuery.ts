@@ -333,3 +333,164 @@ export async function queryTiemposByHourBand(p: {
   });
   return rows.map((r) => ({ band: num(r.band), n: num(r.n), prom: num(r.prom) }));
 }
+
+// ---------------------------------------------------------------------------
+// Fila vs atención (desde el 1-oct-2026)
+// ---------------------------------------------------------------------------
+//
+// Hitos de la app (cuestionario v6+): t1 ingreso a la fila · t2 salida de la fila (inicio
+// de la atención) · t3 fin de la atención. Fila = t2 − t1 (lo que se informa desde siempre
+// y a lo que aplica el Estándar IATA); atención = t3 − t2 (sin meta); total = t3 − t1.
+// El histórico de Sheets solo medía la fila: la atención se informa desde SERVICE_FROM y
+// solo con datos de la app. Retiro de equipajes no aplica (ya tiene sus dos tramos).
+
+export const SERVICE_FROM = REPORT_SOURCE_CUTOFF;
+
+const T2: Record<string, string> = {
+  "Check in": "checkin_t2",
+  AVSEC: "avsec_t2",
+  "Pasaporte emigración": "passport_outbound_t2",
+  "Pasaporte inmigración": "passport_inbound_t2",
+  "Control aduana / SAG": "border_protection_t2",
+};
+const T3: Record<string, string> = {
+  "Check in": "checkin_t3",
+  AVSEC: "avsec_t3",
+  "Pasaporte emigración": "passport_outbound_t3",
+  "Pasaporte inmigración": "passport_inbound_t3",
+  "Control aduana / SAG": "border_protection_t3",
+};
+
+/** ¿El proceso tiene tramo de atención (t3)? Retiro de equipajes no. */
+export const hasService = (proceso: Proceso) => proceso in T3;
+
+let serviceColumns: { ok: boolean; at: number } | null = null;
+
+/**
+ * ¿La tabla consolidada ya trae los terceros hitos (*_t3)? Hasta que se despliegue la nueva
+ * definición de Dataform no existen: los informes muestran solo la fila, sin error.
+ * Se cachea (un "no" se vuelve a revisar a los 10 minutos).
+ */
+export async function hasServiceColumns(): Promise<boolean> {
+  if (serviceColumns && (serviceColumns.ok || Date.now() - serviceColumns.at < 600_000)) return serviceColumns.ok;
+  try {
+    const rows = await bqQuery<Record<string, unknown>>(
+      `SELECT COUNT(*) AS n FROM \`${bqProjectId()}.encuestas.INFORMATION_SCHEMA.COLUMNS\`
+       WHERE table_name = 'mediciones_tiempos_consolidado' AND column_name IN UNNEST(@cols)`,
+      { cols: Object.values(T3) }
+    );
+    serviceColumns = { ok: num(rows[0]?.n) === Object.keys(T3).length, at: Date.now() };
+  } catch {
+    serviceColumns = { ok: false, at: Date.now() };
+  }
+  return serviceColumns.ok;
+}
+
+export type ServiceAgg = { n: number; prom: number; med: number; p90: number; totProm: number; totMed: number; totP90: number };
+export type ServiceStats = {
+  all: ServiceAgg | null; // toda la ventana (desde SERVICE_FROM)
+  months: ({ ym: string } & ServiceAgg)[];
+  airlines: { airline: string; ym: string; n: number; prom: number }[]; // solo Check in
+};
+
+/**
+ * Atención y total de un proceso en una ventana (se recorta a SERVICE_FROM), solo con
+ * mediciones de la app que tienen los tres hitos válidos (sin negativos, máx. CAP_MIN).
+ */
+export async function queryServiceStats(p: {
+  proceso: Proceso;
+  airport: string;
+  desde: string;
+  hasta: string;
+}): Promise<ServiceStats> {
+  const empty: ServiceStats = { all: null, months: [], airlines: [] };
+  const t1 = T1[p.proceso];
+  const t2 = T2[p.proceso];
+  const t3 = T3[p.proceso];
+  if (!t3) return empty;
+  const desde = p.desde > SERVICE_FROM ? p.desde : SERVICE_FROM;
+  if (p.hasta < desde) return empty;
+  const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
+  const aggs = `COUNT(*) AS n, AVG(aten) AS prom,
+      APPROX_QUANTILES(aten, 100)[OFFSET(50)] AS med, APPROX_QUANTILES(aten, 100)[OFFSET(90)] AS p90,
+      AVG(tot) AS tot_prom, APPROX_QUANTILES(tot, 100)[OFFSET(50)] AS tot_med, APPROX_QUANTILES(tot, 100)[OFFSET(90)] AS tot_p90`;
+  const sql = `
+    WITH m AS (
+      SELECT FORMAT_TIMESTAMP('%Y-%m', responded_at, 'America/Santiago') AS ym,
+        ${p.proceso === "Check in" ? "checkin_airline" : "CAST(NULL AS STRING)"} AS airline,
+        TIMESTAMP_DIFF(${t3}, ${t2}, SECOND) / 60.0 AS aten,
+        TIMESTAMP_DIFF(${t3}, ${t1}, SECOND) / 60.0 AS tot,
+        TIMESTAMP_DIFF(${t2}, ${t1}, SECOND) / 60.0 AS fila
+      FROM ${table}
+      WHERE process = @proceso AND location_name = @airport AND origen = 'app'
+        AND ${t1} IS NOT NULL AND ${t2} IS NOT NULL AND ${t3} IS NOT NULL
+        AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)
+    ),
+    v AS (SELECT * FROM m WHERE fila >= 0 AND aten >= 0 AND tot >= 0 AND tot <= @cap)
+    SELECT 'all' AS k, '' AS ym, '' AS airline, ${aggs} FROM v
+    UNION ALL
+    SELECT 'month', ym, '', ${aggs} FROM v GROUP BY ym
+    UNION ALL
+    SELECT 'airline', ym, airline, ${aggs} FROM v WHERE airline IS NOT NULL AND airline != '' GROUP BY ym, airline`;
+  const rows = await bqQuery<Record<string, unknown>>(sql, {
+    proceso: p.proceso,
+    airport: p.airport,
+    desde,
+    hasta: p.hasta,
+    cap: CAP_MIN,
+  });
+  const agg = (r: Record<string, unknown>): ServiceAgg => ({
+    n: num(r.n),
+    prom: num(r.prom),
+    med: num(r.med),
+    p90: num(r.p90),
+    totProm: num(r.tot_prom),
+    totMed: num(r.tot_med),
+    totP90: num(r.tot_p90),
+  });
+  const all = rows.find((r) => r.k === "all");
+  return {
+    all: all && num(all.n) > 0 ? agg(all) : null,
+    months: rows.filter((r) => r.k === "month").map((r) => ({ ym: String(r.ym), ...agg(r) })),
+    airlines: rows
+      .filter((r) => r.k === "airline")
+      .map((r) => ({ airline: String(r.airline), ym: String(r.ym), n: num(r.n), prom: num(r.prom) })),
+  };
+}
+
+/** Atención promedio por franja horaria (índice de HOUR_BANDS) en una ventana, desde SERVICE_FROM. */
+export async function queryServiceByHourBand(p: {
+  proceso: Proceso;
+  airport: string;
+  desde: string;
+  hasta: string;
+}): Promise<{ band: number; n: number; prom: number }[]> {
+  const t1 = T1[p.proceso];
+  const t2 = T2[p.proceso];
+  const t3 = T3[p.proceso];
+  if (!t3) return [];
+  const desde = p.desde > SERVICE_FROM ? p.desde : SERVICE_FROM;
+  if (p.hasta < desde) return [];
+  const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
+  const sql = `
+    SELECT band, COUNT(*) AS n, AVG(aten) AS prom
+    FROM (
+      SELECT DIV(EXTRACT(HOUR FROM DATETIME(${t1}, 'America/Santiago')), 6) AS band,
+        TIMESTAMP_DIFF(${t3}, ${t2}, SECOND) / 60.0 AS aten,
+        TIMESTAMP_DIFF(${t3}, ${t1}, SECOND) / 60.0 AS tot
+      FROM ${table}
+      WHERE process = @proceso AND location_name = @airport AND origen = 'app'
+        AND ${t1} IS NOT NULL AND ${t2} IS NOT NULL AND ${t3} IS NOT NULL
+        AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)
+    )
+    WHERE aten >= 0 AND tot >= 0 AND tot <= @cap AND band IS NOT NULL
+    GROUP BY band ORDER BY band`;
+  const rows = await bqQuery<Record<string, unknown>>(sql, {
+    proceso: p.proceso,
+    airport: p.airport,
+    desde,
+    hasta: p.hasta,
+    cap: CAP_MIN,
+  });
+  return rows.map((r) => ({ band: num(r.band), n: num(r.n), prom: num(r.prom) }));
+}

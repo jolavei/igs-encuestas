@@ -25,7 +25,7 @@ export const FONT = { face: "Arial", mono: "Courier New" } as const;
 export const hx = (c: string) => `#${c}`;
 
 // Colores de las series del evolutivo (idénticos al dashboard).
-export const SERIES = { prom: AIGS.blue, med: "3D7593", p90: "A9B2BF", meta: "D9B300" } as const;
+export const SERIES = { prom: AIGS.blue, med: "3D7593", p90: "A9B2BF", meta: "D9B300", at: "E5893B" } as const;
 
 const nfInt = new Intl.NumberFormat("es-CL");
 

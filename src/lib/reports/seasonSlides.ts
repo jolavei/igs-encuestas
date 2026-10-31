@@ -12,6 +12,7 @@ type Proc = {
   faseLabel: string | null;
   meta: number | null;
   kpi: Agg | null;
+  service?: { kpi: { n: number; prom: number; totProm: number } | null } | null;
 };
 type Score = { label: string; avg: number | null; n: number };
 type Stats = {
@@ -71,6 +72,8 @@ export type TiemposSummaryRow = {
   n: number;
   meta: number | null;
   margin: number | null; // meta − prom (min); positivo = dentro del estándar
+  atencion?: number | null; // desde oct-2026 (si no, no existe)
+  total?: number | null;
 };
 
 export function tiemposSummaryRows(r: Report): TiemposSummaryRow[] {
@@ -84,6 +87,22 @@ export function tiemposSummaryRows(r: Report): TiemposSummaryRow[] {
       n: p.kpi!.n,
       meta: p.meta,
       margin: p.meta != null ? p.meta - p.kpi!.prom : null,
+      ...(p.service?.kpi ? { atencion: p.service.kpi.prom, total: p.service.kpi.totProm } : {}),
+    }));
+}
+
+export type SplitRow = { label: string; fila: number; atencion: number; total: number; n: number };
+
+/** Fila vs atención por proceso (solo procesos con tiempo de atención en el periodo). */
+export function serviceSplitRows(r: Report): SplitRow[] {
+  return r.processes
+    .filter((p) => p.kpi && p.service?.kpi)
+    .map((p) => ({
+      label: procLabel(p),
+      fila: p.kpi!.prom,
+      atencion: p.service!.kpi!.prom,
+      total: p.service!.kpi!.totProm,
+      n: p.service!.kpi!.n,
     }));
 }
 
@@ -113,10 +132,13 @@ export function execSummaryCards(r: Report): SummaryCard[] {
   if (withMeta.length) {
     const ok = withMeta.filter((x) => (x.margin ?? 0) >= 0);
     const out = withMeta.filter((x) => (x.margin ?? 0) < 0).map((x) => `${x.label} (+${fmtMMSS(-(x.margin ?? 0))})`);
+    const split = serviceSplitRows(r).sort((a, b) => b.atencion - a.atencion)[0];
     cards.push({
       label: "Tiempos dentro del Estándar IATA",
       value: `${ok.length} de ${withMeta.length}`,
-      sub: out.length ? `Sobre el estándar: ${out.join(", ")}` : "Todos los procesos medidos cumplen",
+      sub:
+        (out.length ? `Sobre el estándar (fila): ${out.join(", ")}` : "Todos los procesos medidos cumplen (fila)") +
+        (split ? ` · Mayor atención: ${split.label} (${fmtMMSS(split.atencion)})` : ""),
       valueColor: ok.length === withMeta.length ? AIGS.up : AIGS.down,
     });
   }

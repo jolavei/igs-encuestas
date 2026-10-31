@@ -76,7 +76,11 @@ export default async function EditarInforme({
         readiness={readiness}
         outlineData={{
           kind,
-          processes: (report?.processes ?? []).map((p) => ({ proceso: p.proceso, faseLabel: p.faseLabel })),
+          processes: (report?.processes ?? []).map((p) => ({
+            proceso: p.proceso,
+            faseLabel: p.faseLabel,
+            service: p.service?.kpi ? { kpi: true } : null,
+          })),
           aga: (report?.aga ?? []).map((a) => ({
             audience: a.audience,
             voice: { appraisal: a.voice.appraisal, quotes: a.voice.quotes.map(() => null) },

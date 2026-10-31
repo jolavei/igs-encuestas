@@ -32,6 +32,7 @@ import {
   asqBestWorst,
   asqMatrix,
   ordinal,
+  serviceSplitRows,
   agaTopRows,
   coverScope,
   execSummaryCards,
@@ -80,6 +81,13 @@ export type DeckData = {
       monthN: number;
       series: { label: string; prom: number | null }[];
     }[];
+    // Desde oct-2026: tiempo de atención (t3 − t2). Antes no existe (ni se muestra).
+    service?: {
+      kpi: { n: number; prom: number; med: number; p90: number; totProm: number; totMed: number; totP90: number } | null;
+      period: { n: number; prom: number } | null;
+      series: (number | null)[];
+      byAirline: Record<string, number | null>;
+    } | null;
   }[];
   bqError: string | null;
   aga: AgaDeck[];
@@ -225,6 +233,8 @@ function SlideFor({ spec, data, photos }: { spec: SlideSpec; data: DeckData; pho
       return <ExecSummarySlide data={data} body={spec.body} />;
     case "tiempos-summary":
       return <TiemposSummarySlide data={data} />;
+    case "tiempos-split":
+      return <TiemposSplitSlide data={data} />;
     case "tiempos-history":
       return <TiemposHistorySlide data={data} />;
     case "tiempos-hours":
@@ -474,13 +484,14 @@ function LegendItem({ color, label, dashed }: { color: string; label: string; da
   );
 }
 
-function ChartLegend({ meta }: { meta: number | null }) {
+function ChartLegend({ meta, service }: { meta: number | null; service?: boolean }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 12, color: hx(AIGS.muted) }}>
-      <LegendItem color={SERIES.prom} label="Promedio" />
+      <LegendItem color={SERIES.prom} label={service ? "Fila · promedio" : "Promedio"} />
       <LegendItem color={SERIES.med} label="Mediana" dashed />
       <LegendItem color={SERIES.p90} label="p90" />
       {meta != null && <LegendItem color={SERIES.meta} label="Estándar IATA" dashed />}
+      {service && <LegendItem color={SERIES.at} label="Atención · promedio" />}
     </div>
   );
 }
@@ -492,7 +503,9 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
   const hasMini = p.byAirline.length > 0;
   const cols = Math.min(p.byAirline.length, 6);
   const seasonMargin = p.meta != null ? p.meta - p.kpiSeason.prom : null;
-  const yMax = niceMax(Math.max(0, ...p.series.flatMap((s) => [s.prom ?? 0, s.med ?? 0, s.p90 ?? 0]), p.meta ?? 0));
+  const yMax = niceMax(
+    Math.max(0, ...p.series.flatMap((s) => [s.prom ?? 0, s.med ?? 0, s.p90 ?? 0]), ...(p.service?.series ?? []).map((v) => v ?? 0), p.meta ?? 0)
+  );
   // Sin mediciones este mes: la diapositiva se muestra igual (hubo mediciones antes en la
   // temporada). Los KPIs del mes van en "—" y se apoya el lector en el acumulado del periodo.
   const kpi = p.kpi;
@@ -503,20 +516,24 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
   // temporada (la evolución va en el gráfico y en el evolutivo por temporada).
   const seasonal = (data.kind ?? "MENSUAL") !== "MENSUAL";
   const sub = (v: string) => (seasonal ? undefined : `Periodo ${v}`);
+  // Desde oct-2026 los KPIs grandes son de la FILA (a la que aplica el Estándar IATA) y la
+  // atención va en una franja propia, sin meta.
+  const sv = p.service?.kpi ? p.service : null;
+  const fila = (l: string) => (sv ? `Fila · ${l.toLowerCase()}` : l);
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
       <SlideHead title={title} subtitle={subtitle} />
       {/* KPIs: número del mes en grande + promedio del periodo abajo (pequeño) */}
       <div style={{ position: "absolute", top: 150, left: 72, right: 72 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
-          <Kpi label="Promedio" value={kpi ? fmtMMSS(kpi.prom) : "—"} sub={sub(fmtMMSS(p.kpiSeason.prom))} />
-          <Kpi label="P90" value={kpi ? fmtMMSS(kpi.p90) : "—"} sub={sub(fmtMMSS(p.kpiSeason.p90))} />
-          <Kpi label="Mediana" value={kpi ? fmtMMSS(kpi.med) : "—"} sub={sub(fmtMMSS(p.kpiSeason.med))} />
+          <Kpi label={fila("Promedio")} value={kpi ? fmtMMSS(kpi.prom) : "—"} sub={sub(fmtMMSS(p.kpiSeason.prom))} />
+          <Kpi label={fila("P90")} value={kpi ? fmtMMSS(kpi.p90) : "—"} sub={sub(fmtMMSS(p.kpiSeason.p90))} />
+          <Kpi label={fila("Mediana")} value={kpi ? fmtMMSS(kpi.med) : "—"} sub={sub(fmtMMSS(p.kpiSeason.med))} />
           {p.meta == null ? (
             <Kpi label="Estándar IATA" value="—" sub="sin estándar" />
           ) : (
             <Kpi
-              label="Margen vs Est. IATA"
+              label={sv ? "Margen fila vs Est. IATA" : "Margen vs Est. IATA"}
               value={fmtMMSS(p.margin)}
               sub={sub(fmtMMSS(seasonMargin))}
               valueColor={p.margin == null ? AIGS.muted : marginOk ? AIGS.up : AIGS.down}
@@ -526,19 +543,53 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
         </div>
       </div>
 
+      {/* Atención (desde oct-2026): franja compacta bajo los KPIs de fila */}
+      {sv && (
+        <div
+          style={{
+            position: "absolute",
+            top: 280,
+            left: 72,
+            right: 72,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "4px 18px",
+            alignItems: "baseline",
+            fontSize: 13,
+            color: hx(AIGS.body),
+            borderLeft: `4px solid ${hx(SERIES.at)}`,
+            paddingLeft: 10,
+          }}
+        >
+          <b style={{ color: hx(AIGS.ink) }}>Atención (sin meta)</b>
+          <span>
+            promedio <b style={{ fontFamily: FONT.mono, color: hx(AIGS.ink) }}>{fmtMMSS(sv.kpi!.prom)}</b>
+          </span>
+          <span>P90 <span style={{ fontFamily: FONT.mono }}>{fmtMMSS(sv.kpi!.p90)}</span></span>
+          <span>mediana <span style={{ fontFamily: FONT.mono }}>{fmtMMSS(sv.kpi!.med)}</span></span>
+          <span>
+            · Total fila + atención <b style={{ fontFamily: FONT.mono, color: hx(AIGS.ink) }}>{fmtMMSS(sv.kpi!.totProm)}</b>
+          </span>
+          <span style={{ color: hx(AIGS.muted) }}>
+            n={fmtInt(sv.kpi!.n)}
+            {!seasonal && sv.period ? ` · Periodo atención ${fmtMMSS(sv.period.prom)}` : ""}
+          </span>
+        </div>
+      )}
+
       {/* Evolutivo principal (más chico si hay desglose por aerolínea) */}
       <div
         style={
           hasMini
-            ? { position: "absolute", top: 292, left: 72, right: 72 }
+            ? { position: "absolute", top: sv ? 308 : 292, left: 72, right: 72 }
             : { position: "absolute", top: 410, left: 72, right: 72, bottom: 56 }
         }
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink) }}>Evolutivo</div>
-          <ChartLegend meta={p.meta} />
+          <ChartLegend meta={p.meta} service={!!sv} />
         </div>
-        <ProcesoChart p={p} height={hasMini ? 146 : 210} yMax={yMax} />
+        <ProcesoChart p={p} height={hasMini ? (sv ? 132 : 146) : 210} yMax={yMax} />
       </div>
 
       {/* Mini-gráficos por aerolínea (Check in / Retiro), misma escala Y que el principal */}
@@ -550,7 +601,7 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
           </div>
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 12 }}>
             {p.byAirline.slice(0, 6).map((a) => (
-              <MiniAirlineChart key={a.airline} a={a} yMax={yMax} />
+              <MiniAirlineChart key={a.airline} a={a} yMax={yMax} at={sv ? sv.byAirline[a.airline] ?? null : undefined} />
             ))}
           </div>
         </div>
@@ -560,7 +611,15 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
   );
 }
 
-function MiniAirlineChart({ a, yMax }: { a: DeckData["processes"][number]["byAirline"][number]; yMax: number }) {
+function MiniAirlineChart({
+  a,
+  yMax,
+  at,
+}: {
+  a: DeckData["processes"][number]["byAirline"][number];
+  yMax: number;
+  at?: number | null; // atención promedio (desde oct-2026); undefined = no se muestra
+}) {
   const chartData = a.series.map((s) => ({ label: s.label, prom: s.prom }));
   const ok = a.meta != null && a.monthProm != null ? a.monthProm <= a.meta : null;
   const valColor = ok == null ? AIGS.blue : ok ? AIGS.up : AIGS.down;
@@ -586,6 +645,9 @@ function MiniAirlineChart({ a, yMax }: { a: DeckData["processes"][number]["byAir
             {fmtMMSS(a.monthProm)}
           </span>
           <span style={{ fontSize: 9, color: hx(AIGS.muted) }}>n={a.monthN}</span>
+          {at !== undefined && (
+            <span style={{ fontSize: 9, color: hx(SERIES.at), fontWeight: 700 }}>at. {fmtMMSS(at)}</span>
+          )}
         </span>
       </div>
       <div style={{ height: 94, marginTop: 3 }}>
@@ -619,7 +681,8 @@ function MiniAirlineChart({ a, yMax }: { a: DeckData["processes"][number]["byAir
 }
 
 function ProcesoChart({ p, height = 200, yMax }: { p: DeckData["processes"][number]; height?: number; yMax: number }) {
-  const chartData = p.series.map((s) => ({
+  const chartData = p.series.map((s, i) => ({
+    at: p.service?.kpi ? (p.service.series[i] ?? null) : null,
     label: s.label,
     prom: s.prom,
     med: s.med,
@@ -653,6 +716,9 @@ function ProcesoChart({ p, height = 200, yMax }: { p: DeckData["processes"][numb
         <Line type="monotone" dataKey="med" stroke={hx(SERIES.med)} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} connectNulls />
         <Line type="monotone" dataKey="prom" stroke={hx(SERIES.prom)} strokeWidth={2} dot={{ r: 2, fill: hx(SERIES.prom) }} isAnimationActive={false} connectNulls />
         {p.meta != null && <ReferenceLine y={p.meta} stroke={hx(SERIES.meta)} strokeDasharray="4 4" strokeWidth={1.5} />}
+        {p.service?.kpi && (
+          <Line type="monotone" dataKey="at" name="Atención" stroke={hx(SERIES.at)} strokeWidth={2} dot={{ r: 2, fill: hx(SERIES.at) }} isAnimationActive={false} connectNulls />
+        )}
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -1097,6 +1163,8 @@ function ExecSummarySlide({ data, body }: { data: DeckData; body: string }) {
 // Tabla de todos los procesos de la temporada frente al Estándar IATA y a la temporada de comparación.
 function TiemposSummarySlide({ data }: { data: DeckData }) {
   const rows = tiemposSummaryRows(data);
+  const sv = rows.some((r) => r.atencion != null);
+  const w = sv ? "9%" : "11%";
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
       <SlideHead title="Tiempos vs Estándar IATA" subtitle={`${airportFull(data)} · ${data.monthLabel}`} />
@@ -1104,13 +1172,15 @@ function TiemposSummarySlide({ data }: { data: DeckData }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15, tableLayout: "fixed" }}>
           <thead>
             <tr style={{ background: hx(AIGS.surfaceSoft), color: hx(AIGS.muted) }}>
-              <Th align="left" w="34%">Proceso</Th>
-              <Th align="right" w="11%">Promedio</Th>
-              <Th align="right" w="11%">Mediana</Th>
-              <Th align="right" w="11%">P90</Th>
-              <Th align="right" w="11%">Mediciones</Th>
-              <Th align="right" w="11%">Est. IATA</Th>
-              <Th align="right" w="11%">Margen</Th>
+              <Th align="left" w={sv ? "28%" : "34%"}>Proceso</Th>
+              <Th align="right" w={w}>{sv ? "Fila prom." : "Promedio"}</Th>
+              <Th align="right" w={w}>Mediana</Th>
+              <Th align="right" w={w}>P90</Th>
+              <Th align="right" w={w}>Mediciones</Th>
+              <Th align="right" w={w}>Est. IATA</Th>
+              <Th align="right" w={w}>Margen</Th>
+              {sv && <Th align="right" w={w}>Atención</Th>}
+              {sv && <Th align="right" w={w}>Total</Th>}
             </tr>
           </thead>
           <tbody>
@@ -1130,15 +1200,64 @@ function TiemposSummarySlide({ data }: { data: DeckData }) {
                 >
                   {r.margin == null ? "—" : `${r.margin >= 0 ? "" : "−"}${fmtMMSS(Math.abs(r.margin))}`}
                 </Td>
+                {sv && <Td align="right" mono color={SERIES.at}>{r.atencion != null ? fmtMMSS(r.atencion) : "—"}</Td>}
+                {sv && <Td align="right" mono>{r.total != null ? fmtMMSS(r.total) : "—"}</Td>}
               </tr>
             ))}
           </tbody>
         </table>
         <div style={{ fontSize: 12, color: hx(AIGS.muted), marginTop: 14, lineHeight: 1.5 }}>
-          Margen = Estándar IATA − promedio (verde: dentro del estándar). La evolución por temporada va en el
-          evolutivo de tiempos.
+          Margen = Estándar IATA − promedio de fila (verde: dentro del estándar). La evolución por temporada va en el
+          evolutivo de tiempos.{sv ? " Atención = salida de la fila a fin de la atención (sin meta); total = fila + atención." : ""}
           {data.seasonal && data.season.to < "2026-10-01" ? " Hasta septiembre de 2026 se mide solo el tiempo de fila." : ""}
         </div>
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Fila vs atención por proceso (desde oct-2026): barras apiladas fila + atención = total.
+function TiemposSplitSlide({ data }: { data: DeckData }) {
+  const rows = serviceSplitRows(data);
+  const max = Math.max(1, ...rows.map((r) => r.total));
+  const rowH = Math.min(78, 430 / Math.max(rows.length, 1));
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Tiempos · fila vs atención" subtitle={`${airportFull(data)} · ${data.monthLabel} · promedio por pasajero`} />
+      <div style={{ position: "absolute", top: 140, left: 72, right: 72, display: "flex", gap: 18, fontSize: 12, color: hx(AIGS.muted) }}>
+        <LegendDot color={SERIES.prom} label="Fila (desde el ingreso hasta llegar al counter o control)" />
+        <LegendDot color={SERIES.at} label="Atención (en el counter o control)" />
+      </div>
+      <div style={{ position: "absolute", top: 180, left: 72, right: 72, bottom: 92 }}>
+        {rows.map((r) => (
+          <div
+            key={r.label}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "260px minmax(0, 1fr) 300px",
+              alignItems: "center",
+              gap: 16,
+              height: rowH,
+              borderTop: `1px solid ${hx(AIGS.hairline)}`,
+            }}
+          >
+            <span style={{ fontSize: 15, color: hx(AIGS.ink) }}>{r.label}</span>
+            <span style={{ display: "flex", height: 22 }}>
+              <span style={{ width: `${(r.fila / max) * 100}%`, background: hx(SERIES.prom) }} />
+              <span style={{ width: `${(r.atencion / max) * 100}%`, background: hx(SERIES.at) }} />
+            </span>
+            <span style={{ fontSize: 14, color: hx(AIGS.body), textAlign: "right", fontFamily: FONT.mono }}>
+              {fmtMMSS(r.fila)} + <span style={{ color: hx(SERIES.at) }}>{fmtMMSS(r.atencion)}</span> ={" "}
+              <b style={{ color: hx(AIGS.ink) }}>{fmtMMSS(r.total)}</b>
+              <span style={{ fontFamily: FONT.face, fontSize: 11, color: hx(AIGS.muted) }}> · n={fmtInt(r.n)}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", left: 72, right: 72, bottom: 56, fontSize: 12, color: hx(AIGS.muted) }}>
+        El Estándar IATA aplica solo a la fila; la atención se informa sin meta. Fila = ingreso a la fila → salida de la
+        fila; atención = salida de la fila → fin de la atención. Retiro de equipajes no aplica.
       </div>
       <BottomLogo />
     </div>
@@ -1233,6 +1352,9 @@ function TiemposHoursSlide({ data }: { data: DeckData }) {
                         <>
                           {fmtMMSS(c.prom)}
                           <span style={{ fontSize: 11, fontWeight: 400, color: hx(AIGS.muted), marginLeft: 6 }}>n={fmtInt(c.n)}</span>
+                          {c.at != null && (
+                            <div style={{ fontSize: 12, fontWeight: 400, color: hx(SERIES.at) }}>atención {fmtMMSS(c.at)}</div>
+                          )}
                         </>
                       ) : (
                         <span style={{ color: hx(AIGS.muted), fontWeight: 400 }}>—</span>
@@ -1245,7 +1367,8 @@ function TiemposHoursSlide({ data }: { data: DeckData }) {
           </tbody>
         </table>
         <div style={{ fontSize: 12, color: hx(AIGS.muted), marginTop: 14 }}>
-          Franja = hora de inicio de la medición (hora de Chile). Verde: dentro del Estándar IATA; rojo: sobre el estándar.
+          Franja = hora de inicio de la medición (hora de Chile). Número grande: fila (verde dentro del Estándar IATA;
+          rojo sobre el estándar).{t.rows.some((r) => r.cells.some((c) => c.at != null)) ? " Debajo: atención promedio (sin meta)." : ""}
         </div>
       </div>
       <BottomLogo />

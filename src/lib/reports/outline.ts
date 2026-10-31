@@ -18,6 +18,8 @@ export type OutlineInput = {
   photosCount: number;
   processes: { label: string }[]; // una diapositiva por proceso/fase de tiempos
   aga: { audience: "Pasajeros" | "Acompañantes"; hasVoice: boolean }[]; // planes AGA vigentes
+  // Desde oct-2026: algún proceso trae tiempo de atención (diapositiva "fila vs atención").
+  service?: boolean;
   // Semestral/anual: si hay histórico por temporada y franjas horarias de tiempos, y
   // si hay resultados ACI ASQ de la temporada.
   season?: { history: boolean; hours: boolean; asq: boolean };
@@ -35,6 +37,7 @@ export type SlideSpec =
   | { type: "text"; role: "note" | "analisis" | "recomendaciones" | "comentarios"; title: string; body: string }
   | { type: "exec-summary"; body: string }
   | { type: "tiempos-summary" }
+  | { type: "tiempos-split" }
   | { type: "tiempos-history" }
   | { type: "tiempos-hours" }
   | { type: "aga-evolution"; index: number }
@@ -78,6 +81,7 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
         if (input.processes.length === 0) out.push({ type: "tiempos-empty" });
         else {
           if (seasonal) out.push({ type: "tiempos-summary" });
+          if (input.service) out.push({ type: "tiempos-split" });
           input.processes.forEach((_, index) => out.push({ type: "proceso", index }));
           if (seasonal && input.season?.history) out.push({ type: "tiempos-history" });
           if (seasonal && input.season?.hours) out.push({ type: "tiempos-hours" });
@@ -188,6 +192,8 @@ export function slideLabel(s: SlideSpec, input: OutlineInput): string {
       return "Resumen ejecutivo";
     case "tiempos-summary":
       return "Tiempos vs Estándar IATA";
+    case "tiempos-split":
+      return "Tiempos · fila vs atención";
     case "tiempos-history":
       return "Tiempos · evolutivo por temporada";
     case "tiempos-hours":
@@ -215,7 +221,7 @@ export function slideLabel(s: SlideSpec, input: OutlineInput): string {
 export function outlineInputFrom(
   data: {
     kind?: ReportKind;
-    processes: { proceso: string; faseLabel: string | null }[];
+    processes: { proceso: string; faseLabel: string | null; service?: { kpi: unknown } | null }[];
     aga: { audience: string; voice: { appraisal: string | null; quotes: unknown[] } }[];
     seasonal?: { tiemposHistory: { seasons: unknown[] }; tiemposHours: { rows: unknown[] }; asq: unknown };
   },
@@ -224,6 +230,7 @@ export function outlineInputFrom(
   return {
     ...edition,
     kind: data.kind ?? "MENSUAL",
+    service: data.processes.some((p) => !!p.service?.kpi),
     season: data.seasonal
       ? {
           history: data.seasonal.tiemposHistory.seasons.length > 1,

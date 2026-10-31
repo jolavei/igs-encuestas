@@ -1,0 +1,97 @@
+-- definitions/mediciones_de_tiempos.sqlx — tabla ANCHA del cuestionario "Mediciones de tiempos"
+-- (una fila por medición). Generada con el generador de la web (Cuestionarios → Dataform) desde la
+-- versión 7, con la columna del tercer hito de check-in renombrada a checkin_t3 (en el cuestionario
+-- su clave es check_in_t3) para seguir el patrón checkin_*.
+--
+-- Reemplaza el archivo del mismo nombre en el repo Dataform (definitions/). Agrega los terceros
+-- hitos (*_t3) de check-in, AVSEC, pasaportes y aduana/SAG, que permiten separar el tiempo en fila
+-- (t2 − t1) del tiempo de atención (t3 − t2) desde octubre de 2026.
+
+config {
+  type: "table",
+  schema: "encuestas",
+  name: "mediciones_de_tiempos",
+  description: "Respuestas (formato ancho) del cuestionario \"Mediciones de tiempos\". Hitos por proceso: t1 ingreso a la fila, t2 salida de la fila, t3 fin de la atención (retiro: llegada del primer pasajero, primera y última maleta).",
+  columns: {
+    response_id: "ID único de la respuesta",
+    company_name: "Empresa (permite comparar el mismo cuestionario entre empresas)",
+    location_name: "Sede / ubicación",
+    source: "Origen del dato (FIELD = encuestador, QR_PUBLIC = QR)",
+    responded_at: "Fecha y hora de la respuesta",
+    version_number: "Versión del cuestionario con que se capturó",
+    process: "Proceso aeroportuario que se está midiendo",
+    checkin_airline: "Aerolínea de check in",
+    checkin_t1: "Check-in: ingreso a la fila",
+    checkin_t2: "Check-in: salida de la fila (inicio de la atención)",
+    checkin_t3: "Check-in: salida del counter o quiosco (fin de la atención)",
+    checkin_comments: "Comentarios de medición de check in",
+    avsec_t1: "AVSEC: ingreso a la fila",
+    avsec_t2: "AVSEC: salida de la fila (inicio de la atención)",
+    avsec_t3: "AVSEC: salida del control (fin de la atención)",
+    avsec_comments: "Comentarios de medición de AVSEC",
+    baggage_claim_airline: "Aerolínea de retiro de equipaje",
+    baggage_claim_t1: "Hora de llegada de primer pasajero",
+    baggage_claim_t2: "Hora de salida de primera maleta",
+    baggage_claim_t3: "Hora de salida de última maleta",
+    baggage_claim_comments: "Comentarios de medición de retiro de equipajes",
+    passport_outbound_t1: "Pasaporte emigración: ingreso a la fila",
+    passport_outbound_t2: "Pasaporte emigración: salida de la fila (inicio de la atención)",
+    passport_outbound_t3: "Pasaporte emigración: salida del counter (fin de la atención)",
+    passport_outbound_comments: "Comentarios de medición de pasaporte emigración",
+    passport_inbound_t1: "Pasaporte inmigración: ingreso a la fila",
+    passport_inbound_t2: "Pasaporte inmigración: salida de la fila (inicio de la atención)",
+    passport_inbound_t3: "Pasaporte inmigración: salida del counter (fin de la atención)",
+    passport_inbound_comments: "Comentarios de medición de pasaporte inmigración",
+    border_protection_t1: "Aduana / SAG: ingreso a la fila",
+    border_protection_t2: "Aduana / SAG: salida de la fila (inicio de la atención)",
+    border_protection_t3: "Aduana / SAG: salida del control (fin de la atención)",
+    border_protection_comments: "Comentarios de medición de aduanas o SAG"
+  },
+  tags: ["encuestas"]
+}
+
+-- NOTA: los nombres de tabla/columna fuente (ResponseSet, Answer, valueNumber, ...)
+-- asumen el camelCase de Prisma preservado por Datastream. Ajusta si tu sync los renombra.
+
+SELECT
+  rs.id            AS response_id,
+  co.name          AS company_name,
+  loc.name         AS location_name,
+  rs.source        AS source,
+  rs.createdAt     AS responded_at,
+  v.versionNumber  AS version_number,
+  CAST(MAX(IF(q.equivalenceKey = 'process', a.valueText, NULL)) AS STRING) AS process,
+  CAST(MAX(IF(q.equivalenceKey = 'checkin_airline', a.valueText, NULL)) AS STRING) AS checkin_airline,
+  CAST(MAX(IF(q.equivalenceKey = 'checkin_t1', a.valueDate, NULL)) AS TIMESTAMP) AS checkin_t1,
+  CAST(MAX(IF(q.equivalenceKey = 'checkin_t2', a.valueDate, NULL)) AS TIMESTAMP) AS checkin_t2,
+  CAST(MAX(IF(q.equivalenceKey = 'check_in_t3', a.valueDate, NULL)) AS TIMESTAMP) AS checkin_t3,
+  CAST(MAX(IF(q.equivalenceKey = 'checkin_comments', a.valueText, NULL)) AS STRING) AS checkin_comments,
+  CAST(MAX(IF(q.equivalenceKey = 'avsec_t1', a.valueDate, NULL)) AS TIMESTAMP) AS avsec_t1,
+  CAST(MAX(IF(q.equivalenceKey = 'avsec_t2', a.valueDate, NULL)) AS TIMESTAMP) AS avsec_t2,
+  CAST(MAX(IF(q.equivalenceKey = 'avsec_t3', a.valueDate, NULL)) AS TIMESTAMP) AS avsec_t3,
+  CAST(MAX(IF(q.equivalenceKey = 'avsec_comments', a.valueText, NULL)) AS STRING) AS avsec_comments,
+  CAST(MAX(IF(q.equivalenceKey = 'baggage_claim_airline', a.valueText, NULL)) AS STRING) AS baggage_claim_airline,
+  CAST(MAX(IF(q.equivalenceKey = 'baggage_claim_t1', a.valueDate, NULL)) AS TIMESTAMP) AS baggage_claim_t1,
+  CAST(MAX(IF(q.equivalenceKey = 'baggage_claim_t2', a.valueDate, NULL)) AS TIMESTAMP) AS baggage_claim_t2,
+  CAST(MAX(IF(q.equivalenceKey = 'baggage_claim_t3', a.valueDate, NULL)) AS TIMESTAMP) AS baggage_claim_t3,
+  CAST(MAX(IF(q.equivalenceKey = 'baggage_claim_comments', a.valueText, NULL)) AS STRING) AS baggage_claim_comments,
+  CAST(MAX(IF(q.equivalenceKey = 'passport_outbound_t1', a.valueDate, NULL)) AS TIMESTAMP) AS passport_outbound_t1,
+  CAST(MAX(IF(q.equivalenceKey = 'passport_outbound_t2', a.valueDate, NULL)) AS TIMESTAMP) AS passport_outbound_t2,
+  CAST(MAX(IF(q.equivalenceKey = 'passport_outbound_t3', a.valueDate, NULL)) AS TIMESTAMP) AS passport_outbound_t3,
+  CAST(MAX(IF(q.equivalenceKey = 'passport_outbound_comments', a.valueText, NULL)) AS STRING) AS passport_outbound_comments,
+  CAST(MAX(IF(q.equivalenceKey = 'passport_inbound_t1', a.valueDate, NULL)) AS TIMESTAMP) AS passport_inbound_t1,
+  CAST(MAX(IF(q.equivalenceKey = 'passport_inbound_t2', a.valueDate, NULL)) AS TIMESTAMP) AS passport_inbound_t2,
+  CAST(MAX(IF(q.equivalenceKey = 'passport_inbound_t3', a.valueDate, NULL)) AS TIMESTAMP) AS passport_inbound_t3,
+  CAST(MAX(IF(q.equivalenceKey = 'passport_inbound_comments', a.valueText, NULL)) AS STRING) AS passport_inbound_comments,
+  CAST(MAX(IF(q.equivalenceKey = 'border_protection_t1', a.valueDate, NULL)) AS TIMESTAMP) AS border_protection_t1,
+  CAST(MAX(IF(q.equivalenceKey = 'border_protection_t2', a.valueDate, NULL)) AS TIMESTAMP) AS border_protection_t2,
+  CAST(MAX(IF(q.equivalenceKey = 'border_protection_t3', a.valueDate, NULL)) AS TIMESTAMP) AS border_protection_t3,
+  CAST(MAX(IF(q.equivalenceKey = 'border_protection_comments', a.valueText, NULL)) AS STRING) AS border_protection_comments
+FROM ${ref("ResponseSet")} rs
+JOIN ${ref("QuestionnaireVersion")} v ON v.id = rs.versionId
+LEFT JOIN ${ref("Location")} loc ON loc.id = rs.locationId
+LEFT JOIN ${ref("Company")} co  ON co.id = loc.companyId
+LEFT JOIN ${ref("Answer")} a    ON a.responseSetId = rs.id
+LEFT JOIN ${ref("Question")} q   ON q.id = a.questionId
+WHERE v.questionnaireId = 'cmrl5ucct0000k5eqt1kbx35o'
+GROUP BY 1, 2, 3, 4, 5, 6

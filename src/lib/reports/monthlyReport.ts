@@ -25,6 +25,7 @@ import { isValidMonth, currentMonth, monthLabel } from "@/lib/reports/period";
 import type { ModuleKey } from "@/lib/reports/modules";
 import type { ReportKind } from "@/lib/reports/period";
 import type { SeasonExtras } from "@/lib/reports/seasonReport";
+import { attachService, periodHasService, type ReportService } from "@/lib/reports/serviceTimes";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -189,6 +190,8 @@ export type ReportProcess = {
   margin: number | null; // meta - prom del mes (min); null si el proceso no tiene estándar o el mes no tuvo mediciones
   series: { ym: string; label: string; prom: number | null; med: number | null; p90: number | null }[];
   byAirline: ReportAirlineBreakdown[]; // vacío si el proceso no distingue aerolínea
+  // Tiempo de atención (t3 − t2): solo en informes desde oct-2026 y procesos con fila + atención.
+  service?: ReportService | null;
 };
 
 export type MonthlyReport = {
@@ -384,6 +387,10 @@ export async function getMonthlyReport(
         })
       );
       processes = results.filter((r): r is ReportProcess => r !== null);
+      // Atención: solo desde octubre de 2026 (antes no se agrega el indicador).
+      if (periodHasService(`${month}-01`)) {
+        await attachService(processes, { airport: ap.name, desde: season.from, hasta: season.to, month });
+      }
     } catch (e) {
       if (e instanceof BigQueryCredentialsError) bqError = e.message;
       else bqError = e instanceof Error ? e.message : "Error consultando BigQuery.";

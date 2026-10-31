@@ -59,6 +59,11 @@ describe("outline del informe mensual", () => {
     ]);
   });
 
+  it("desde oct-2026, fila vs atención antes de los procesos", () => {
+    const s = buildOutline(base({ aga: [], service: true }));
+    expect(types(s).slice(3, 6)).toEqual(["section:Mediciones de tiempos", "tiempos-split", "proceso"]);
+  });
+
   it("apagar un módulo renumera los siguientes", () => {
     const modules = enabledKeys(applyToggles(defaultTemplate("MENSUAL"), { "asq-avance": false }));
     const s = buildOutline(base({ modules }));

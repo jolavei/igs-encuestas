@@ -25,6 +25,9 @@ import {
   queryTiemposByAirline,
   queryTiemposByHourBand,
   queryTiemposBySeason,
+  hasService,
+  hasServiceColumns,
+  queryServiceByHourBand,
   type SeasonAggRow,
 } from "@/lib/reports/tiemposQuery";
 import {
@@ -44,6 +47,7 @@ import { loadAsqProgress, type MonthlyReport, type ReportAirlineBreakdown, type 
 import { seasonFromCode, seasonOrder, type PeriodContext, type Season } from "@/lib/reports/period";
 import type { ModuleKey } from "@/lib/reports/modules";
 import { getAsqResults, type AsqResults } from "@/lib/asq/results";
+import { attachService, periodHasService } from "@/lib/reports/serviceTimes";
 
 export type SeasonExtras = {
   focusLabel: string; // "Summer 2026"
@@ -53,7 +57,8 @@ export type SeasonExtras = {
   };
   tiemposHours: {
     bands: string[];
-    rows: { label: string; meta: number | null; cells: { n: number; prom: number | null }[] }[];
+    // `at` = atención promedio de la franja (solo informes desde oct-2026; si no, no existe).
+    rows: { label: string; meta: number | null; cells: { n: number; prom: number | null; at?: number | null }[] }[];
   };
   // Resultados ACI ASQ de la temporada de detalle (null: base no cargada o sin encuestas).
   asq: AsqResults | null;
@@ -172,6 +177,8 @@ async function loadTiempos(
   }
   const months = monthsBetween(ctx.window.from, ctx.window.to);
   const focusMonths = new Set(monthsBetween(ctx.season.from, ctx.season.to));
+  // Atención (t3 − t2): solo si la temporada de detalle empieza desde el 1-oct-2026.
+  const withService = periodHasService(ctx.season.from) && (await hasServiceColumns().catch(() => false));
 
   try {
     const results = await Promise.all(
@@ -200,7 +207,13 @@ async function loadTiempos(
             : Promise.resolve([]),
           queryTiemposByHourBand({ proceso: job.proceso, fase, airport, desde: ctx.season.from, hasta: ctx.season.to }),
         ]);
-        return { job, bySeason, main, airlineRows, hours };
+        const serviceHours =
+          withService && hasService(job.proceso)
+            ? await queryServiceByHourBand({ proceso: job.proceso, airport, desde: ctx.season.from, hasta: ctx.season.to }).catch(
+                () => null
+              )
+            : null;
+        return { job, bySeason, main, airlineRows, hours, serviceHours };
       })
     );
 
@@ -214,7 +227,7 @@ async function loadTiempos(
     seasonal.tiemposHistory.seasons = histSeasons.map((s) => ({ code: s.code, label: s.label }));
 
     const processes: ReportProcess[] = [];
-    for (const { job, bySeason, main, airlineRows, hours } of results) {
+    for (const { job, bySeason, main, airlineRows, hours, serviceHours } of results) {
       const agg = new Map<string, SeasonAggRow>(bySeason.map((s) => [s.code, s]));
       const focus = agg.get(ctx.season.code);
       if (!focus || focus.n === 0) continue; // sin mediciones en la temporada de detalle
@@ -277,10 +290,13 @@ async function loadTiempos(
         meta,
         cells: HOUR_BANDS.map((_, b) => {
           const h = hours.find((x) => x.band === b);
-          return { n: h?.n ?? 0, prom: h ? h.prom : null };
+          const cell: { n: number; prom: number | null; at?: number | null } = { n: h?.n ?? 0, prom: h ? h.prom : null };
+          if (serviceHours) cell.at = serviceHours.find((x) => x.band === b)?.prom ?? null;
+          return cell;
         }),
       });
     }
+    if (withService) await attachService(processes, { airport, desde: ctx.season.from, hasta: ctx.season.to, month: null });
     return { processes, bqError: null };
   } catch (e) {
     const msg =

@@ -24,6 +24,7 @@ import {
   asqBestWorst,
   asqMatrix,
   ordinal,
+  serviceSplitRows,
   agaTopRows,
   coverScope,
   execSummaryCards,
@@ -365,7 +366,8 @@ function miniAirlineChart(
   y: number,
   w: number,
   h: number,
-  yMax: number
+  yMax: number,
+  at?: number | null // atención promedio (desde oct-2026); undefined = no se muestra
 ) {
   slide.addShape(pres.ShapeType.roundRect, {
     x,
@@ -396,6 +398,7 @@ function miniAirlineChart(
     [
       { text: fmtMMSS(a.monthProm), options: { fontFace: FONT.mono, fontSize: 13, bold: true, color: valColor } },
       { text: ` n=${a.monthN}`, options: { fontFace: FONT.face, fontSize: 8, color: AIGS.muted } },
+      ...(at !== undefined ? [{ text: ` at. ${fmtMMSS(at)}`, options: { fontFace: FONT.face, fontSize: 8, bold: true, color: SERIES.at } }] : []),
     ],
     { x: x + w * 0.5, y: y + 0.1, w: w * 0.5 - 0.12, h: 0.3, align: "right", valign: "middle", margin: 0 }
   );
@@ -448,11 +451,14 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   const seasonMargin = p.meta != null ? p.meta - p.kpiSeason.prom : null;
   // Mensual: abajo el acumulado de la temporada ("Periodo"); semestral/anual: solo la temporada.
   const sub = (v: string) => (isSeasonal(r) ? undefined : `Periodo ${v}`);
+  // Desde oct-2026: KPIs grandes = FILA (Estándar IATA) y la atención en una franja, sin meta.
+  const sv = p.service?.kpi ? p.service : null;
+  const fila = (l: string) => (sv ? `Fila · ${l.toLowerCase()}` : l);
   const marginCard =
     p.meta == null
       ? { label: "Estándar IATA", value: "—", sub: "sin estándar" }
       : {
-          label: "Margen vs Est. IATA",
+          label: sv ? "Margen fila vs Est. IATA" : "Margen vs Est. IATA",
           value: fmtMMSS(p.margin),
           sub: sub(fmtMMSS(seasonMargin)),
           valueColor: p.margin == null ? AIGS.muted : marginOk ? AIGS.up : AIGS.down,
@@ -463,9 +469,9 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     s,
     pres,
     [
-      { label: "Promedio", value: kpi ? fmtMMSS(kpi.prom) : "—", sub: sub(fmtMMSS(p.kpiSeason.prom)) },
-      { label: "P90", value: kpi ? fmtMMSS(kpi.p90) : "—", sub: sub(fmtMMSS(p.kpiSeason.p90)) },
-      { label: "Mediana", value: kpi ? fmtMMSS(kpi.med) : "—", sub: sub(fmtMMSS(p.kpiSeason.med)) },
+      { label: fila("Promedio"), value: kpi ? fmtMMSS(kpi.prom) : "—", sub: sub(fmtMMSS(p.kpiSeason.prom)) },
+      { label: fila("P90"), value: kpi ? fmtMMSS(kpi.p90) : "—", sub: sub(fmtMMSS(p.kpiSeason.p90)) },
+      { label: fila("Mediana"), value: kpi ? fmtMMSS(kpi.med) : "—", sub: sub(fmtMMSS(p.kpiSeason.med)) },
       marginCard,
       { label: "N° de mediciones", value: fmtInt(kpi ? kpi.n : 0), sub: sub(fmtInt(p.kpiSeason.n)) },
     ],
@@ -473,12 +479,33 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   );
 
   const hasMini = p.byAirline.length > 0;
-  const yMax = niceMax(Math.max(0, ...p.series.flatMap((x) => [x.prom ?? 0, x.med ?? 0, x.p90 ?? 0]), p.meta ?? 0));
+  const yMax = niceMax(
+    Math.max(0, ...p.series.flatMap((x) => [x.prom ?? 0, x.med ?? 0, x.p90 ?? 0]), ...(sv?.series ?? []).map((v) => v ?? 0), p.meta ?? 0)
+  );
+
+  if (sv) {
+    const k = sv.kpi!;
+    s.addShape(pres.ShapeType.rect, { x: MX, y: 4.27, w: 0.06, h: 0.32, fill: { color: SERIES.at }, line: { type: "none" } });
+    s.addText(
+      [
+        { text: "Atención (sin meta)   ", options: { bold: true, color: AIGS.ink } },
+        { text: "promedio ", options: { color: AIGS.body } },
+        { text: fmtMMSS(k.prom), options: { bold: true, color: AIGS.ink, fontFace: FONT.mono } },
+        { text: `   P90 ${fmtMMSS(k.p90)}   mediana ${fmtMMSS(k.med)}   · Total fila + atención `, options: { color: AIGS.body } },
+        { text: fmtMMSS(k.totProm), options: { bold: true, color: AIGS.ink, fontFace: FONT.mono } },
+        {
+          text: `   n=${fmtInt(k.n)}${!isSeasonal(r) && sv.period ? ` · Periodo atención ${fmtMMSS(sv.period.prom)}` : ""}`,
+          options: { color: AIGS.muted },
+        },
+      ],
+      { x: MX + 0.15, y: 4.25, w: CONTENT_W - 0.15, h: 0.36, fontFace: FONT.face, fontSize: 12, valign: "middle", margin: 0 }
+    );
+  }
 
   // Evolutivo principal (minutos; misma escala Y que los mini). Legenda abajo.
   const labels = p.series.map((x) => x.label);
   const data: { name: string; labels: string[]; values: (number | null)[] }[] = [
-    { name: "Promedio", labels, values: p.series.map((x) => (x.prom == null ? null : round1(x.prom))) },
+    { name: sv ? "Fila · promedio" : "Promedio", labels, values: p.series.map((x) => (x.prom == null ? null : round1(x.prom))) },
     { name: "Mediana", labels, values: p.series.map((x) => (x.med == null ? null : round1(x.med))) },
     { name: "p90", labels, values: p.series.map((x) => (x.p90 == null ? null : round1(x.p90))) },
   ];
@@ -487,10 +514,14 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     data.push({ name: "Estándar IATA", labels, values: labels.map(() => p.meta as number) });
     chartColors.push(SERIES.meta);
   }
+  if (sv) {
+    data.push({ name: "Atención · promedio", labels, values: sv.series.map((v) => (v == null ? null : round1(v))) });
+    chartColors.push(SERIES.at);
+  }
 
   s.addText("Evolutivo", {
     x: MX,
-    y: hasMini ? 4.5 : 4.7,
+    y: hasMini ? (sv ? 4.62 : 4.5) : 4.7,
     w: CONTENT_W,
     h: 0.4,
     fontFace: FONT.face,
@@ -501,9 +532,9 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   });
   s.addChart(pres.ChartType.line, data, {
     x: MX,
-    y: hasMini ? 4.95 : 5.2,
+    y: hasMini ? (sv ? 5.02 : 4.95) : 5.2,
     w: CONTENT_W,
-    h: hasMini ? 2.45 : 5.0,
+    h: hasMini ? (sv ? 2.4 : 2.45) : 5.0,
     chartColors,
     lineSize: 2.25,
     lineSmooth: false,
@@ -542,7 +573,9 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     const cards = p.byAirline.slice(0, 6);
     const gap = 0.28;
     const w = (CONTENT_W - gap * (cards.length - 1)) / cards.length;
-    cards.forEach((a, i) => miniAirlineChart(s, pres, a, MX + i * (w + gap), 7.95, w, 2.35, yMax));
+    cards.forEach((a, i) =>
+      miniAirlineChart(s, pres, a, MX + i * (w + gap), 7.95, w, 2.35, yMax, sv ? sv.byAirline[a.airline] ?? null : undefined)
+    );
   }
 
   addBottomLogo(s);
@@ -981,6 +1014,9 @@ export async function buildDeck(r: MonthlyReport, edition: DeckEdition): Promise
       case "tiempos-summary":
         tiemposSummarySlide(pres, r);
         break;
+      case "tiempos-split":
+        tiemposSplitSlide(pres, r);
+        break;
       case "tiempos-history":
         tiemposHistorySlide(pres, r);
         break;
@@ -1062,7 +1098,17 @@ function tiemposSummarySlide(pres: Pptx, r: MonthlyReport) {
   s.background = { color: AIGS.white };
   slideTitle(s, "Tiempos vs Estándar IATA", `${airportFull(r)} · ${r.monthLabel}`);
   const rows = tiemposSummaryRows(r);
-  const head = ["Proceso", "Promedio", "Mediana", "P90", "Mediciones", "Est. IATA", "Margen"].map((t, i) =>
+  const sv = rows.some((x) => x.atencion != null);
+  const head = [
+    "Proceso",
+    sv ? "Fila prom." : "Promedio",
+    "Mediana",
+    "P90",
+    "Mediciones",
+    "Est. IATA",
+    "Margen",
+    ...(sv ? ["Atención", "Total"] : []),
+  ].map((t, i) =>
     headCell(t, i === 0 ? "left" : "right")
   );
   const mono = (text: string, color: string = AIGS.body, bold = false): Cell => ({
@@ -1081,14 +1127,21 @@ function tiemposSummarySlide(pres: Pptx, r: MonthlyReport) {
       x.margin == null ? AIGS.muted : x.margin >= 0 ? AIGS.up : AIGS.down,
       true
     ),
+    ...(sv
+      ? [mono(x.atencion != null ? fmtMMSS(x.atencion) : "—", SERIES.at), mono(x.total != null ? fmtMMSS(x.total) : "—")]
+      : []),
   ]);
-  const colW = [0.34, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11].map((f) => CONTENT_W * f);
+  const colW = (sv ? [0.28, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09] : [0.34, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11]).map(
+    (f) => CONTENT_W * f
+  );
   s.addTable([head, ...body], {
     x: MX, y: 2.2, w: CONTENT_W, colW, rowH: 0.62, fontFace: FONT.face, fontSize: 14, color: AIGS.body, valign: "middle",
     border: { type: "solid", color: AIGS.hairline, pt: 0.5 }, autoPage: false,
   });
   s.addText(
-    `Margen = Estándar IATA − promedio (verde: dentro del estándar). La evolución por temporada va en el evolutivo de tiempos.${
+    `Margen = Estándar IATA − promedio de fila (verde: dentro del estándar). La evolución por temporada va en el evolutivo de tiempos.${
+      sv ? " Atención = salida de la fila a fin de la atención (sin meta); total = fila + atención." : ""
+    }${
       r.season.to < "2026-10-01" ? " Hasta septiembre de 2026 se mide solo el tiempo de fila." : ""
     }`,
     { x: MX, y: 2.2 + 0.62 * (body.length + 1) + 0.25, w: CONTENT_W, h: 0.7, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0, valign: "top" }
@@ -1137,6 +1190,7 @@ function tiemposHoursSlide(pres: Pptx, r: MonthlyReport) {
         text: [
           { text: fmtMMSS(c.prom), options: { bold: true, fontFace: FONT.mono, color: over == null ? AIGS.ink : over ? AIGS.down : AIGS.up } },
           { text: `  n=${fmtInt(c.n)}`, options: { fontSize: 10, color: AIGS.muted } },
+          ...(c.at != null ? [{ text: `\natención ${fmtMMSS(c.at)}`, options: { fontSize: 10, color: SERIES.at } }] : []),
         ],
         options: { align: "right" },
       };
@@ -1147,7 +1201,8 @@ function tiemposHoursSlide(pres: Pptx, r: MonthlyReport) {
     x: MX, y: 2.2, w: CONTENT_W, colW, rowH: 0.7, fontFace: FONT.face, fontSize: 14, color: AIGS.body, valign: "middle",
     border: { type: "solid", color: AIGS.hairline, pt: 0.5 }, autoPage: false,
   });
-  s.addText("Franja = hora de inicio de la medición (hora de Chile). Verde: dentro del Estándar IATA; rojo: sobre el estándar.", {
+  const anyAt = t.rows.some((x) => x.cells.some((c) => c.at != null));
+  s.addText(`Franja = hora de inicio de la medición (hora de Chile). Número grande: fila (verde dentro del Estándar IATA; rojo sobre el estándar).${anyAt ? " Debajo: atención promedio (sin meta)." : ""}`, {
     x: MX, y: 2.2 + 0.7 * (body.length + 1) + 0.25, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0,
   });
   addBottomLogo(s);
@@ -1501,5 +1556,54 @@ function asqProfileSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
     });
   });
   asqNote(s);
+  addBottomLogo(s);
+}
+
+/** Fila vs atención por proceso (desde oct-2026): barras apiladas fila + atención = total. */
+function tiemposSplitSlide(pres: Pptx, r: MonthlyReport) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Tiempos · fila vs atención", `${airportFull(r)} · ${r.monthLabel} · promedio por pasajero`);
+  const rows = serviceSplitRows(r);
+  const max = Math.max(1, ...rows.map((x) => x.total));
+  s.addText(
+    [
+      { text: "■ ", options: { color: SERIES.prom } },
+      { text: "Fila (desde el ingreso hasta llegar al counter o control)     ", options: { color: AIGS.muted } },
+      { text: "■ ", options: { color: SERIES.at } },
+      { text: "Atención (en el counter o control)", options: { color: AIGS.muted } },
+    ],
+    { x: MX, y: 2.0, w: CONTENT_W, h: 0.35, fontFace: FONT.face, fontSize: 11, margin: 0 }
+  );
+  const top = 2.6;
+  const rowH = Math.min(1.1, 6.6 / Math.max(rows.length, 1));
+  const labelW = 4.2;
+  const valW = 5.0;
+  const barX = MX + labelW + 0.2;
+  const barW = CONTENT_W - labelW - valW - 0.4;
+  rows.forEach((x, i) => {
+    const y = top + i * rowH;
+    s.addShape(pres.ShapeType.line, { x: MX, y, w: CONTENT_W, h: 0, line: { color: AIGS.hairline, width: 0.5 } });
+    s.addText(x.label, { x: MX, y, w: labelW, h: rowH, fontFace: FONT.face, fontSize: 14, color: AIGS.ink, valign: "middle", margin: 0 });
+    const by = y + rowH / 2 - 0.17;
+    const wf = (barW * x.fila) / max;
+    const wa = (barW * x.atencion) / max;
+    if (wf > 0) s.addShape(pres.ShapeType.rect, { x: barX, y: by, w: wf, h: 0.34, fill: { color: SERIES.prom }, line: { type: "none" } });
+    if (wa > 0) s.addShape(pres.ShapeType.rect, { x: barX + wf, y: by, w: wa, h: 0.34, fill: { color: SERIES.at }, line: { type: "none" } });
+    s.addText(
+      [
+        { text: `${fmtMMSS(x.fila)} + `, options: { color: AIGS.body } },
+        { text: fmtMMSS(x.atencion), options: { color: SERIES.at } },
+        { text: " = ", options: { color: AIGS.body } },
+        { text: fmtMMSS(x.total), options: { color: AIGS.ink, bold: true } },
+        { text: `  n=${fmtInt(x.n)}`, options: { color: AIGS.muted, fontFace: FONT.face, fontSize: 10 } },
+      ],
+      { x: MX + CONTENT_W - valW, y, w: valW, h: rowH, fontFace: FONT.mono, fontSize: 13, align: "right", valign: "middle", margin: 0 }
+    );
+  });
+  s.addText(
+    "El Estándar IATA aplica solo a la fila; la atención se informa sin meta. Fila = ingreso a la fila → salida de la fila; atención = salida de la fila → fin de la atención. Retiro de equipajes no aplica.",
+    { x: MX, y: H - 1.25, w: CONTENT_W, h: 0.5, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0, valign: "top" }
+  );
   addBottomLogo(s);
 }
