@@ -1,9 +1,13 @@
 import { requireUser } from "@/lib/rbac";
 import { getMonthlyReport, isValidMonth, currentMonth } from "@/lib/reports/monthlyReport";
 import { listReportPhotos } from "@/lib/reports/photos";
+import { loadEdition } from "@/lib/reports/editions";
+import { enabledKeys } from "@/lib/reports/modules";
 import ReportDeck from "@/components/reports/ReportDeck";
 
-// Vista imprimible del informe mensual (sin el shell del panel), solo ADMIN.
+// Vista imprimible del informe mensual (sin el shell del panel), solo ADMIN. Módulos,
+// análisis y comentarios salen de la edición guardada; `?comentarios=` (enlaces
+// antiguos) reemplaza el comentario guardado solo en esta vista.
 export const dynamic = "force-dynamic";
 
 export default async function InformePage({
@@ -17,9 +21,15 @@ export default async function InformePage({
 
   const code = decodeURIComponent(params.airport).trim().toUpperCase();
   const mes = searchParams.mes && isValidMonth(searchParams.mes) ? searchParams.mes : currentMonth();
-  const comentarios = (searchParams.comentarios ?? "").slice(0, 3000);
+  const edition = await loadEdition(code, "MENSUAL", mes);
+  const modules = enabledKeys(edition.entries);
+  const override = searchParams.comentarios?.slice(0, 3000);
+  const comentarios = override ?? edition.comentarios;
 
-  const [report, photoRows] = await Promise.all([getMonthlyReport(code, mes), listReportPhotos(code, mes)]);
+  const [report, photoRows] = await Promise.all([
+    getMonthlyReport(code, mes, { modules }),
+    modules.includes("fotos-comentarios") ? listReportPhotos(code, mes) : Promise.resolve([]),
+  ]);
   const photos = photoRows.map((p) => ({ id: p.id, caption: p.caption, url: `/api/reports/photos/${p.id}/raw` }));
 
   if (!report) {
@@ -36,5 +46,19 @@ export default async function InformePage({
     );
   }
 
-  return <ReportDeck data={report} comentarios={comentarios} photos={photos} />;
+  const pptxHref =
+    `/api/reports/pptx?airport=${encodeURIComponent(code)}&mes=${mes}` +
+    (override !== undefined ? `&comentarios=${encodeURIComponent(override)}` : "");
+
+  return (
+    <ReportDeck
+      data={report}
+      modules={modules}
+      notes={edition.notes}
+      comentarios={comentarios}
+      photos={photos}
+      pptxHref={pptxHref}
+      backHref={`/admin/informes/mensual/${encodeURIComponent(code)}/${mes}`}
+    />
+  );
 }

@@ -199,3 +199,34 @@ export async function queryTiemposByAirline(p: {
   const rows = await bqQuery<Record<string, unknown>>(sql, params);
   return rows.map((r) => ({ airline: String(r.airline), ym: String(r.ym), n: num(r.n), prom: num(r.prom) }));
 }
+
+export type TiemposCount = { airport: string; window: number; month: number };
+
+/**
+ * Cantidad de mediciones por aeropuerto en una ventana (todas las procesos/fases,
+ * con el corte de fuente del informe), y cuántas caen en `month` ("YYYY-MM").
+ * La usa la página de Informes para mostrar si el módulo de tiempos tiene datos.
+ */
+export async function countTiemposByAirport(p: {
+  airports: string[];
+  desde: string;
+  hasta: string;
+  month: string;
+}): Promise<TiemposCount[]> {
+  const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
+  const sql = `
+    SELECT location_name AS airport, COUNT(*) AS w,
+      COUNTIF(FORMAT_TIMESTAMP('%Y-%m', responded_at, 'America/Santiago') = @month) AS m
+    FROM ${table}
+    WHERE location_name IN UNNEST(@airports)
+      AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)${reportSourceClause}
+    GROUP BY airport`;
+  const rows = await bqQuery<Record<string, unknown>>(sql, {
+    airports: p.airports,
+    desde: p.desde,
+    hasta: p.hasta,
+    month: p.month,
+    sourceCutoff: REPORT_SOURCE_CUTOFF,
+  });
+  return rows.map((r) => ({ airport: String(r.airport), window: num(r.w), month: num(r.m) }));
+}

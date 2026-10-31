@@ -2,7 +2,10 @@
 // Recorre TODOS los aeropuertos del desplegable x TODAS las temporadas (Regional),
 // lee el Sample Plan (Airline-Destination: Original Target + Collected) y guarda en
 // la BD. "Solo el más reciente": upsert por (aeropuerto, temporada) — reejecutar
-// reemplaza las filas de esa combinación. Usa Microsoft Edge vía Playwright.
+// reemplaza las filas de esa combinación. Además guarda una FOTO DIARIA del avance
+// (AsqComplianceSnapshot, una por aeropuerto + temporada + día de Chile; reejecutar el
+// mismo día la reemplaza) para que el informe mensual de un mes cerrado use el avance
+// al último día de ese mes. Usa Microsoft Edge vía Playwright.
 //
 // DOM real (calibrado 2026-07): la página /compliance tiene <select> nativos
 //   #airportDropDown (name SelectedAirport; value = código, texto "PMC -- ...")
@@ -340,7 +343,37 @@ async function saveRun(pool, run) {
       [randomUUID(), id, r.airlineDestination, airlineCode, destinationCode, r.target, r.collected]
     );
   }
+  await saveSnapshot(pool, run);
   return id;
+}
+
+// Día de hoy en Chile, "YYYY-MM-DD".
+function chileToday() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santiago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+async function saveSnapshot(pool, run) {
+  const rows = run.rows.map((r) => ({
+    airlineDestination: r.airlineDestination,
+    target: r.target,
+    collected: r.collected,
+  }));
+  const target = rows.reduce((a, b) => a + b.target, 0);
+  const collected = rows.reduce((a, b) => a + b.collected, 0);
+  await pool.query(
+    `INSERT INTO "AsqComplianceSnapshot"
+       (id, airport, season, "seasonLabel", year, "snapshotDate", target, collected, rows, "createdAt")
+     VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9::jsonb, now())
+     ON CONFLICT (airport, "seasonLabel", "snapshotDate")
+     DO UPDATE SET target = EXCLUDED.target, collected = EXCLUDED.collected, rows = EXCLUDED.rows,
+                   "createdAt" = now()`,
+    [randomUUID(), run.airport, run.season, run.seasonLabel, run.year, chileToday(), target, collected, JSON.stringify(rows)]
+  );
 }
 
 // --- Main ------------------------------------------------------------------

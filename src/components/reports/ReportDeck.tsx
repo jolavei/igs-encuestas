@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   ComposedChart,
   Area,
@@ -22,6 +22,8 @@ import {
   AGA_GUIDE_EXAMPLE_ATTRIBUTE,
   AGA_GUIDE_EXAMPLE_SERVICE,
 } from "@/lib/reports/agaGuide";
+import { buildOutline, outlineInputFrom, type SlideSpec } from "@/lib/reports/outline";
+import type { ModuleKey, ModuleNotes } from "@/lib/reports/modules";
 
 // Datos serializables que arma la página (server). Estructuralmente compatible
 // con MonthlyReport de src/lib/reports/monthlyReport.ts.
@@ -33,6 +35,8 @@ export type DeckData = {
   asq:
     | {
         seasonLabel: string;
+        asOf: string; // "YYYY-MM-DD" del avance mostrado
+        afterMonthEnd: boolean;
         rows: { airlineDestination: string; target: number; collected: number }[];
         target: number;
         collected: number;
@@ -89,26 +93,25 @@ const SLIDE_H = 720;
 
 export type DeckPhoto = { id: string; caption: string | null; url: string };
 
-// Reparte las fotos en grupos de máx. 4 (una diapositiva "Fotografías" por grupo).
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
 export default function ReportDeck({
   data,
+  modules,
+  notes,
   comentarios,
   photos,
+  pptxHref,
+  backHref,
 }: {
   data: DeckData;
-  comentarios?: string;
-  photos?: DeckPhoto[];
+  modules: ModuleKey[]; // encendidos, en el orden de la plantilla
+  notes: ModuleNotes;
+  comentarios: string;
+  photos: DeckPhoto[];
+  pptxHref: string;
+  backHref: string;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-  const comments = (comentarios ?? "").trim();
-  const photoGroups = chunk(photos ?? [], 4);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -120,9 +123,7 @@ export default function ReportDeck({
     return () => ro.disconnect();
   }, []);
 
-  const pptxHref =
-    `/api/reports/pptx?airport=${encodeURIComponent(data.airport.code)}&mes=${data.month}` +
-    (comments ? `&comentarios=${encodeURIComponent(comments)}` : "");
+  const slides = buildOutline(outlineInputFrom(data, { modules, notes, comentarios, photosCount: photos.length }));
 
   return (
     <div className="min-h-screen bg-slate-100" style={{ fontFamily: FONT.face }}>
@@ -131,8 +132,8 @@ export default function ReportDeck({
       {/* Barra de acciones (no se imprime) */}
       <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
         <div className="min-w-0">
-          <a href="/admin/informes" className="text-sm text-slate-500 hover:text-slate-800">
-            ← Informes
+          <a href={backHref} className="text-sm text-slate-500 hover:text-slate-800">
+            ← Editar informe
           </a>
           <p className="truncate text-sm font-medium text-slate-800">
             {data.airport.name} · {data.monthLabel}
@@ -156,80 +157,50 @@ export default function ReportDeck({
       </div>
 
       <div ref={wrapRef} className="deck-wrap mx-auto max-w-[1280px] px-3 py-6">
-        {/* Portada */}
-        <Frame scale={scale}>
-          <Cover data={data} />
-        </Frame>
-
-        {/* Módulo 01 */}
-        <Frame scale={scale}>
-          <Section module="Módulo 01" title="Encuestas ASQ" />
-        </Frame>
-        <Frame scale={scale}>
-          <AsqSlide data={data} />
-        </Frame>
-
-        {/* Módulo 02 */}
-        <Frame scale={scale}>
-          <Section module="Módulo 02" title="Mediciones de tiempos" />
-        </Frame>
-        {data.processes.length === 0 ? (
-          <Frame scale={scale}>
-            <EmptyTiempos data={data} />
-          </Frame>
-        ) : (
-          data.processes.map((p) => (
-            <Frame key={`${p.proceso}-${p.fase ?? ""}`} scale={scale}>
-              <ProcesoSlide data={data} p={p} />
-            </Frame>
-          ))
-        )}
-
-        {/* Módulo 03: Encuestas AGA (solo si el aeropuerto tiene plan AGA vigente) */}
-        {data.aga.length > 0 && (
-          <>
-            <Frame scale={scale}>
-              <Section module="Módulo 03" title="Encuestas AGA · Experiencia" />
-            </Frame>
-            <Frame scale={scale}>
-              <AgaGuideSlide data={data} />
-            </Frame>
-            {data.aga.map((s) => (
-              <Fragment key={`aga-${s.audience}-${s.planTitle}`}>
-                <Frame scale={scale}>
-                  <AgaSlide data={data} s={s} />
-                </Frame>
-                {(s.voice.appraisal || s.voice.quotes.length > 0) && (
-                  <Frame scale={scale}>
-                    <VoiceSlide data={data} s={s} />
-                  </Frame>
-                )}
-              </Fragment>
-            ))}
-          </>
-        )}
-
-        {/* Comentarios y sugerencias (opcional, justo antes del cierre) */}
-        {comments && (
-          <Frame scale={scale}>
-            <Comments data={data} comentarios={comments} />
-          </Frame>
-        )}
-
-        {/* Fotografías (opcional, justo después de comentarios): máx. 4 por diapositiva */}
-        {photoGroups.map((group, i) => (
-          <Frame key={`photos-${i}`} scale={scale}>
-            <PhotosSlide data={data} photos={group} index={i} total={photoGroups.length} />
+        {slides.map((spec, i) => (
+          <Frame key={i} scale={scale}>
+            <SlideFor spec={spec} data={data} photos={photos} />
           </Frame>
         ))}
-
-        {/* Cierre */}
-        <Frame scale={scale}>
-          <Closing />
-        </Frame>
       </div>
     </div>
   );
+}
+
+/* ---------- Diapositiva según el outline (mismo orden que el PPTX) ---------- */
+
+function SlideFor({ spec, data, photos }: { spec: SlideSpec; data: DeckData; photos: DeckPhoto[] }) {
+  switch (spec.type) {
+    case "cover":
+      return <Cover data={data} />;
+    case "section":
+      return <Section module={spec.module} title={spec.title} />;
+    case "asq":
+      return <AsqSlide data={data} />;
+    case "tiempos-empty":
+      return <EmptyTiempos data={data} />;
+    case "proceso":
+      return <ProcesoSlide data={data} p={data.processes[spec.index]} />;
+    case "aga-guide":
+      return <AgaGuideSlide data={data} />;
+    case "aga":
+      return <AgaSlide data={data} s={data.aga[spec.index]} />;
+    case "voice":
+      return <VoiceSlide data={data} s={data.aga[spec.index]} />;
+    case "text":
+      return <TextSlide data={data} title={spec.title} body={spec.body} />;
+    case "photos":
+      return (
+        <PhotosSlide
+          data={data}
+          photos={photos.slice(spec.start, spec.start + spec.count)}
+          index={spec.index}
+          total={spec.total}
+        />
+      );
+    case "closing":
+      return <Closing />;
+  }
 }
 
 /* ---------- Marco de diapositiva (escala en pantalla, 1 página al imprimir) ---------- */
@@ -328,6 +299,12 @@ function SlideHead({ title, subtitle }: { title: string; subtitle?: string }) {
   );
 }
 
+// "avance al 30-09-2026" (+ aviso si la foto es posterior al cierre del mes).
+function asqAsOfText(a: NonNullable<DeckData["asq"]>): string {
+  const d = a.asOf.split("-").reverse().join("-");
+  return a.afterMonthEnd ? `avance al ${d} (posterior al cierre del mes)` : `avance al ${d}`;
+}
+
 function AsqSlide({ data }: { data: DeckData }) {
   const a = data.asq;
   // Densidad adaptativa: reparte el alto disponible (~372px bajo los KPIs) entre las
@@ -341,7 +318,7 @@ function AsqSlide({ data }: { data: DeckData }) {
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
       <SlideHead
         title="Encuestas ACI ASQ"
-        subtitle={a ? `${full} · ${a.seasonLabel.replace("-", " ")}` : full}
+        subtitle={a ? `${full} · ${a.seasonLabel.replace("-", " ")} · ${asqAsOfText(a)}` : full}
       />
       {!a ? (
         <Centered>Aún no hay datos de ASQ de la temporada {data.season.label} para este aeropuerto.</Centered>
@@ -1006,10 +983,11 @@ function ScoreRow({ r, rowH, fs }: { r: ScoreRowData; rowH: number; fs: number }
   );
 }
 
-function Comments({ data, comentarios }: { data: DeckData; comentarios: string }) {
+// Diapositiva de texto: comentarios y sugerencias, análisis por módulo o recomendaciones.
+function TextSlide({ data, title, body }: { data: DeckData; title: string; body: string }) {
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title="Comentarios y sugerencias" subtitle={`${airportFull(data)} · ${data.monthLabel}`} />
+      <SlideHead title={title} subtitle={`${airportFull(data)} · ${data.monthLabel}`} />
       <div
         style={{
           position: "absolute",
@@ -1029,7 +1007,7 @@ function Comments({ data, comentarios }: { data: DeckData; comentarios: string }
           overflow: "hidden",
         }}
       >
-        {comentarios}
+        {body}
       </div>
       <BottomLogo />
     </div>

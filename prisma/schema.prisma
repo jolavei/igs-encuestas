@@ -423,6 +423,41 @@ model ReportPhoto {
   @@index([airport, mes])
 }
 
+// Plantilla de informe: qué módulos lleva un aeropuerto en un tipo de informe y en qué
+// orden. Si no hay fila, se usa la plantilla por defecto del código
+// (src/lib/reports/modules/registry.ts). kind: MENSUAL | SEMESTRAL | ANUAL.
+model ReportTemplate {
+  id        String   @id @default(cuid())
+  airport   String // código ASQ (PMC, IQQ, CJC, ...)
+  kind      String
+  modules   Json // [{ key, enabled }] en orden de aparición
+  updatedAt DateTime @updatedAt
+
+  @@unique([airport, kind])
+}
+
+// Edición de un informe: lo que el consultor escribe y decide para un aeropuerto, un
+// tipo y un periodo concretos (comentarios, análisis por módulo, módulos encendidos o
+// apagados, estado). Las fotos siguen en ReportPhoto con la misma clave (mes = periodKey).
+model ReportEdition {
+  id          String    @id @default(cuid())
+  airport     String
+  kind        String // MENSUAL | SEMESTRAL | ANUAL
+  periodKey   String // "2026-10" | "SU26" | "2025"
+  focusSeason String? // anual: temporada de detalle ("SU25" | "WI25")
+  status      String    @default("BORRADOR") // BORRADOR | EMITIDO
+  modules     Json? // { [moduleKey]: boolean } — sobrescribe la plantilla en esta edición
+  notes       Json? // { [moduleKey]: string } — análisis por módulo
+  comentarios String?
+  updatedById String?
+  emittedAt   DateTime?
+  emittedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([airport, kind, periodKey])
+}
+
 // ----------------------------------------------------------------------------
 // Compliance ASQ: datos extraídos del portal ACI-ASQ (Survey Management Tool)
 // por el scraper (scripts/scrape-asq.mjs). Un "run" = una combinación
@@ -471,6 +506,26 @@ model AsqComplianceRow {
   collected          Int // encuestas realizadas
 
   @@index([runId])
+}
+
+// Foto diaria del avance ASQ (una por aeropuerto + temporada + día, hora de Chile).
+// AsqComplianceRun solo guarda la corrida más reciente; esta tabla conserva cómo iba
+// el levantamiento cada día, para que el informe mensual de un mes ya cerrado muestre
+// el avance al último día de ESE mes y no el de hoy. La escribe el scraper.
+model AsqComplianceSnapshot {
+  id           String   @id @default(cuid())
+  airport      String // código ASQ (PMC, IQQ, CJC, ...)
+  season       String // "SUMMER" | "WINTER"
+  seasonLabel  String // "Summer-2026" | "Winter-2025-26"
+  year         Int // año de inicio de la temporada
+  snapshotDate DateTime @db.Date // día de la foto (America/Santiago)
+  target       Int
+  collected    Int
+  rows         Json // [{ airlineDestination, target, collected }]
+  createdAt    DateTime @default(now())
+
+  @@unique([airport, seasonLabel, snapshotDate])
+  @@index([airport, season, year, snapshotDate])
 }
 
 // Historial/auditoría de cada ingesta de microdata ASQ Departures (Excel/Sheet)

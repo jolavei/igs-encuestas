@@ -21,6 +21,8 @@ import { queryTiempos, queryTiemposByAirline, type AirlineSerieRow } from "@/lib
 import { planDisplayTitle } from "@/lib/planTitle";
 import { shortAirline } from "@/lib/reports/design";
 import { getAgaSurveys, type AgaSurvey } from "@/lib/reports/agaSurvey";
+import { isValidMonth, currentMonth, monthLabel } from "@/lib/reports/period";
+import type { ModuleKey } from "@/lib/reports/modules";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -34,33 +36,10 @@ export function asqSeasonOf(y: number, m: number): { season: "SUMMER" | "WINTER"
   return { season: "WINTER", year: m >= 10 ? y : y - 1 };
 }
 
-/** true si el string tiene forma "YYYY-MM". */
-export function isValidMonth(month: string): boolean {
-  return /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
-}
+// Helpers de mes: viven en period.ts; se re-exportan para los importadores existentes.
+export { isValidMonth, currentMonth, monthLabel };
 
-/** Mes actual en hora de Chile, como "YYYY-MM". */
-export function currentMonth(): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Santiago",
-    year: "numeric",
-    month: "2-digit",
-  }).format(new Date());
-  return parts.slice(0, 7); // "YYYY-MM"
-}
-
-/** "YYYY-MM" -> "agosto 2026". */
-export function monthLabel(month: string): string {
-  const [y, m] = month.split("-").map(Number);
-  const s = new Intl.DateTimeFormat("es-CL", {
-    timeZone: "America/Santiago",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(Date.UTC(y, m - 1, 15)));
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function monthBounds(month: string) {
+export function monthBounds(month: string) {
   const [y, m] = month.split("-").map(Number);
   const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
   const end = new Date(Date.UTC(y, m, 0, 23, 59, 59)); // último día del mes
@@ -79,6 +58,7 @@ const airportByCode = (code: string) => AIRPORTS.find((a) => a.code === code) ??
 
 export type ReportAirportListItem = {
   code: string;
+  companyId: string;
   name: string; // nombre del aeropuerto (canónico) o de la empresa
   short: string | null;
   companyName: string;
@@ -92,7 +72,11 @@ export type ReportAirportListItem = {
  */
 export async function listReportAirports(month: string): Promise<ReportAirportListItem[]> {
   const { start, end } = monthBounds(month);
+  return listReportAirportsBetween(start, end);
+}
 
+/** Igual que listReportAirports, para una ventana cualquiera (semestre, año ASQ). */
+export async function listReportAirportsBetween(start: Date, end: Date): Promise<ReportAirportListItem[]> {
   const [activePlans, mappings] = await Promise.all([
     prisma.workPlan.findMany({
       where: { status: "ACTIVE", windowStart: { lte: end }, windowEnd: { gte: start } },
@@ -112,6 +96,7 @@ export async function listReportAirports(month: string): Promise<ReportAirportLi
     const ap = airportByCode(m.airport);
     items.push({
       code: m.airport,
+      companyId: m.companyId,
       name: ap?.name ?? m.company?.name ?? m.airport,
       short: ap?.short ?? null,
       companyName: m.company?.name ?? "—",
@@ -121,6 +106,27 @@ export async function listReportAirports(month: string): Promise<ReportAirportLi
   }
   items.sort((a, b) => a.code.localeCompare(b.code));
   return items;
+}
+
+/** Identidad de un aeropuerto para el editor (aunque no tenga plan vigente en el mes). */
+export async function getReportAirportItem(code: string, month: string): Promise<ReportAirportListItem | null> {
+  const listed = (await listReportAirports(month)).find((a) => a.code === code);
+  if (listed) return listed;
+  const m = await prisma.asqAirportMapping.findUnique({
+    where: { airport: code },
+    include: { company: true, location: true },
+  });
+  if (!m?.companyId || !m.company) return null;
+  const ap = airportByCode(code);
+  return {
+    code,
+    companyId: m.companyId,
+    name: ap?.name ?? m.company.name,
+    short: ap?.short ?? null,
+    companyName: m.company.name,
+    sedeLabel: `${m.company.name}${m.location ? ` · ${m.location.name}` : ""}`,
+    plans: 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +174,10 @@ export type MonthlyReport = {
   asq: {
     seasonLabel: string;
     scrapedAt: Date | null;
+    // Fecha del avance mostrado (día de Chile, "YYYY-MM-DD") y si es posterior al cierre
+    // del mes (mes cerrado sin foto diaria de ese mes: se muestra la más reciente).
+    asOf: string;
+    afterMonthEnd: boolean;
     rows: AsqRouteRow[];
     target: number;
     collected: number;
@@ -178,8 +188,22 @@ export type MonthlyReport = {
   aga: AgaSurvey[]; // Encuestas AGA (Módulo 03); vacío si el aeropuerto no tiene plan AGA vigente
 };
 
+export type MonthlyReportOptions = {
+  // Módulos encendidos en la edición. Si se entrega, se omiten las consultas de los
+  // módulos apagados (p. ej. sin "tiempos" no se consulta BigQuery).
+  modules?: ModuleKey[];
+};
+
+const chileDay = (d: Date) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+
 /** Devuelve null si el aeropuerto no está mapeado (no hay identidad de aeropuerto). */
-export async function getMonthlyReport(code: string, month: string): Promise<MonthlyReport | null> {
+export async function getMonthlyReport(
+  code: string,
+  month: string,
+  opts: MonthlyReportOptions = {}
+): Promise<MonthlyReport | null> {
+  const wants = (k: ModuleKey) => !opts.modules || opts.modules.includes(k);
   const mapping = await prisma.asqAirportMapping.findUnique({
     where: { airport: code },
     include: { company: true, location: true },
@@ -209,32 +233,12 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
   }));
 
   // Encuestas AGA (Postgres): de los planes vigentes cuyo cuestionario es AGA.
-  const aga = await getAgaSurveys(plansRaw, month);
+  const aga = wants("aga-pasajeros") || wants("aga-acompanantes") ? await getAgaSurveys(plansRaw, month) : [];
 
-  // ASQ: la temporada que corresponde al mes del informe (no la más reciente).
-  const run = await prisma.asqComplianceRun.findFirst({
-    where: { airport: code, ...asqSeasonOf(y, m) },
-    orderBy: { scrapedAt: "desc" },
-    include: { rows: { orderBy: { airlineDestination: "asc" } } },
-  });
-  let asq: MonthlyReport["asq"] = null;
-  if (run) {
-    const rows = run.rows.map((r) => ({
-      airlineDestination: r.airlineDestination,
-      target: r.target,
-      collected: r.collected,
-    }));
-    const target = rows.reduce((a, b) => a + b.target, 0);
-    const collected = rows.reduce((a, b) => a + b.collected, 0);
-    asq = {
-      seasonLabel: run.seasonLabel,
-      scrapedAt: run.scrapedAt,
-      rows,
-      target,
-      collected,
-      pct: target > 0 ? Math.min(100, Math.round((collected / target) * 100)) : 0,
-    };
-  }
+  // ASQ: la temporada que corresponde al mes del informe (no la más reciente). Mes en
+  // curso = corrida vigente; mes cerrado = foto diaria del último día del mes (o la
+  // última anterior). Si no hay foto de ese mes, se usa la vigente y se avisa.
+  const asq = wants("asq-avance") ? await loadAsqProgress(code, month, end) : null;
 
   // Tiempos: sólo si el aeropuerto tiene equivalente en AIRPORTS (dato en BigQuery).
   // Se consultan todos los procesos/fases en paralelo; el informe usa la serie mensual
@@ -253,7 +257,7 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
 
   let processes: ReportProcess[] = [];
   let bqError: string | null = null;
-  if (ap) {
+  if (ap && wants("tiempos")) {
     try {
       const results = await Promise.all(
         jobs.map(async ({ proceso, fase, faseLabel }) => {
@@ -369,6 +373,58 @@ export async function getMonthlyReport(code: string, month: string): Promise<Mon
     aga,
   };
 }
+
+export async function loadAsqProgress(code: string, month: string, monthEnd: Date): Promise<MonthlyReport["asq"]> {
+  const [y, m] = month.split("-").map(Number);
+  const season = asqSeasonOf(y, m);
+  const closed = month < currentMonth();
+  const monthEndDay = chileDay(monthEnd);
+
+  const pack = (
+    base: { seasonLabel: string; scrapedAt: Date | null; asOf: string },
+    rows: AsqRouteRow[]
+  ): NonNullable<MonthlyReport["asq"]> => {
+    const target = rows.reduce((a, b) => a + b.target, 0);
+    const collected = rows.reduce((a, b) => a + b.collected, 0);
+    return {
+      ...base,
+      afterMonthEnd: base.asOf > monthEndDay,
+      rows,
+      target,
+      collected,
+      pct: target > 0 ? Math.min(100, Math.round((collected / target) * 100)) : 0,
+    };
+  };
+
+  if (closed) {
+    const snap = await prisma.asqComplianceSnapshot.findFirst({
+      where: { airport: code, ...season, snapshotDate: { lte: new Date(`${monthEndDay}T00:00:00Z`) } },
+      orderBy: { snapshotDate: "desc" },
+    });
+    if (snap) {
+      const rows = (Array.isArray(snap.rows) ? snap.rows : [])
+        .map((r) => r as Partial<AsqRouteRow>)
+        .filter((r): r is AsqRouteRow => typeof r.airlineDestination === "string")
+        .map((r) => ({ airlineDestination: r.airlineDestination, target: Number(r.target) || 0, collected: Number(r.collected) || 0 }))
+        .sort((a, b) => a.airlineDestination.localeCompare(b.airlineDestination));
+      return pack({ seasonLabel: snap.seasonLabel, scrapedAt: null, asOf: snap.snapshotDate.toISOString().slice(0, 10) }, rows);
+    }
+  }
+
+  const run = await prisma.asqComplianceRun.findFirst({
+    where: { airport: code, ...season },
+    orderBy: { scrapedAt: "desc" },
+    include: { rows: { orderBy: { airlineDestination: "asc" } } },
+  });
+  if (!run) return null;
+  return pack(
+    { seasonLabel: run.seasonLabel, scrapedAt: run.scrapedAt, asOf: chileDay(run.scrapedAt) },
+    run.rows.map((r) => ({ airlineDestination: r.airlineDestination, target: r.target, collected: r.collected }))
+  );
+}
+
+/** "2026-09-30" -> "30-09-2026". */
+export const fmtDay = (iso: string) => iso.split("-").reverse().join("-");
 
 /** Lista de meses "YYYY-MM" de una temporada (from..to inclusive). */
 function monthsOfSeason(s: Periodo): string[] {

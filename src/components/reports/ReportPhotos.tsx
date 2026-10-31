@@ -5,13 +5,20 @@ import { pauseAutoReload } from "@/lib/freshnessGuardPause";
 
 // Panel de fotografías del informe: adjuntar desde el computador, describir cada una
 // y reordenarlas. Se suben directo a GCS (URL firmada) y quedan guardadas para este
-// aeropuerto y mes (a diferencia del comentario, que es texto libre no persistido).
-// Se agregan en una diapositiva "Fotografías" (máx. 4 por diapositiva) justo después
-// de "Comentarios y sugerencias", tanto en el informe HTML como en el PPTX.
+// aeropuerto y mes. Se agregan en una diapositiva "Fotografías" (máx. 4 por
+// diapositiva) justo después de "Comentarios y sugerencias", en el HTML y en el PPTX.
 
 type Photo = { id: string; caption: string | null; order: number; url: string };
 
-export default function ReportPhotos({ airport, mes }: { airport: string; mes: string }) {
+export default function ReportPhotos({
+  airport,
+  mes,
+  onCountChange,
+}: {
+  airport: string;
+  mes: string;
+  onCountChange?: (n: number) => void; // vista previa de diapositivas del editor
+}) {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +69,10 @@ export default function ReportPhotos({ airport, mes }: { airport: string; mes: s
   }, [airport, mes]);
 
   useEffect(() => endPickerPause, []);
+
+  useEffect(() => {
+    onCountChange?.(photos.length);
+  }, [photos.length, onCountChange]);
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -140,12 +151,10 @@ export default function ReportPhotos({ airport, mes }: { airport: string; mes: s
   }
 
   return (
-    <div className="mt-4 border-t border-slate-200 pt-3">
+    <div className="mt-3">
       <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Fotografías</label>
       <p className="mt-1 text-xs text-slate-500">
-        Opcional. Se agregan en una diapositiva “Fotografías” (máx. 4 por diapositiva, con su descripción abajo)
-        justo después de “Comentarios y sugerencias” — en el informe y en el PPTX. Quedan guardadas para este
-        aeropuerto y mes.
+        Máx. 4 por diapositiva, con su descripción abajo. Se guardan al subirlas.
       </p>
 
       <input

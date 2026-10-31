@@ -15,6 +15,8 @@ import {
   AGA_GUIDE_EXAMPLE_ATTRIBUTE,
   AGA_GUIDE_EXAMPLE_SERVICE,
 } from "@/lib/reports/agaGuide";
+import { buildOutline, outlineInputFrom } from "@/lib/reports/outline";
+import type { ModuleKey, ModuleNotes } from "@/lib/reports/modules";
 
 // Lienzo del template: 20" × 11.25" (16:9).
 const W = 20;
@@ -244,6 +246,12 @@ function sectionSlide(pres: Pptx, moduleLabel: string, title: string) {
   addBottomLogo(s);
 }
 
+// "avance al 30-09-2026" (+ aviso si la foto es posterior al cierre del mes).
+function asqAsOfText(a: NonNullable<MonthlyReport["asq"]>): string {
+  const d = a.asOf.split("-").reverse().join("-");
+  return a.afterMonthEnd ? `avance al ${d} (posterior al cierre del mes)` : `avance al ${d}`;
+}
+
 function asqSlide(pres: Pptx, r: MonthlyReport) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
@@ -251,7 +259,7 @@ function asqSlide(pres: Pptx, r: MonthlyReport) {
   slideTitle(
     s,
     "Encuestas ACI ASQ",
-    a ? `${airportFull(r)} · ${a.seasonLabel.replace("-", " ")}` : airportFull(r)
+    a ? `${airportFull(r)} · ${a.seasonLabel.replace("-", " ")} · ${asqAsOfText(a)}` : airportFull(r)
   );
 
   if (!a) {
@@ -784,10 +792,11 @@ function voiceSlide(pres: Pptx, r: MonthlyReport, a: AgaSurvey) {
 }
 
 /** Diapositiva opcional "Comentarios y sugerencias" (antes del cierre). */
-function commentsSlide(pres: Pptx, r: MonthlyReport, comentarios: string) {
+// Diapositiva de texto: comentarios y sugerencias, análisis por módulo o recomendaciones.
+function textSlide(pres: Pptx, r: MonthlyReport, title: string, comentarios: string) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
-  slideTitle(s, "Comentarios y sugerencias", `${airportFull(r)} · ${r.monthLabel}`);
+  slideTitle(s, title, `${airportFull(r)} · ${r.monthLabel}`);
 
   const boxY = 2.2;
   const boxH = H - boxY - 0.9; // deja aire para el logo inferior
@@ -819,25 +828,18 @@ function commentsSlide(pres: Pptx, r: MonthlyReport, comentarios: string) {
 
 export type DeckPhotoData = { caption: string | null; dataUri: string };
 
-/** Diapositivas "Fotografías" (opcionales, justo después de comentarios): grilla 2×2, máx. 4 por diapositiva. */
-function photosSlides(pres: Pptx, r: MonthlyReport, photos: DeckPhotoData[]) {
-  const chunks: DeckPhotoData[][] = [];
-  for (let i = 0; i < photos.length; i += 4) chunks.push(photos.slice(i, i + 4));
-
+/** Diapositiva "Fotografías": grilla 2×2 (máx. 4 fotos), descripción bajo cada una. */
+function photosSlide(pres: Pptx, r: MonthlyReport, group: DeckPhotoData[], gi: number, total: number) {
   const gap = 0.3;
   const top = 2.2;
   const bottom = H - 0.9;
   const cellW = (CONTENT_W - gap) / 2;
   const cellH = (bottom - top - gap) / 2;
 
-  chunks.forEach((group, gi) => {
+  {
     const s = pres.addSlide();
     s.background = { color: AIGS.white };
-    slideTitle(
-      s,
-      "Fotografías",
-      `${airportFull(r)} · ${r.monthLabel}${chunks.length > 1 ? ` · ${gi + 1}/${chunks.length}` : ""}`
-    );
+    slideTitle(s, "Fotografías", `${airportFull(r)} · ${r.monthLabel}${total > 1 ? ` · ${gi + 1}/${total}` : ""}`);
 
     group.forEach((p, i) => {
       const col = i % 2;
@@ -865,7 +867,7 @@ function photosSlides(pres: Pptx, r: MonthlyReport, photos: DeckPhotoData[]) {
     });
 
     addBottomLogo(s);
-  });
+  }
 }
 
 function closingSlide(pres: Pptx) {
@@ -895,14 +897,18 @@ function closingSlide(pres: Pptx) {
   });
 }
 
+export type DeckEdition = {
+  modules: ModuleKey[]; // encendidos, en el orden de la plantilla
+  notes: ModuleNotes;
+  comentarios: string;
+  photos: DeckPhotoData[];
+};
+
 /**
- * Construye el deck completo y devuelve los bytes del .pptx.
- * `comentarios`: si trae texto, agrega la diapositiva "Comentarios y sugerencias"
- * justo antes del cierre; si viene vacío, se omite.
- * `photos`: si trae elementos, agrega diapositiva(s) "Fotografías" (máx. 4 por
- * diapositiva) justo después de comentarios; si viene vacío, se omite.
+ * Construye el deck completo y devuelve los bytes del .pptx. La secuencia de
+ * diapositivas sale de buildOutline (la misma que el informe HTML).
  */
-export async function buildDeck(r: MonthlyReport, comentarios?: string, photos?: DeckPhotoData[]): Promise<Uint8Array> {
+export async function buildDeck(r: MonthlyReport, edition: DeckEdition): Promise<Uint8Array> {
   const PptxGenJS = (await import("pptxgenjs")).default;
   const pres = new PptxGenJS();
   pres.defineLayout({ name: "AIGS", width: W, height: H });
@@ -910,44 +916,66 @@ export async function buildDeck(r: MonthlyReport, comentarios?: string, photos?:
   pres.author = "Aeródromos IGS";
   pres.title = `Informe mensual ${r.airport.name} · ${r.monthLabel}`;
 
-  coverSlide(pres, r);
+  const slides = buildOutline(
+    outlineInputFrom(r, {
+      modules: edition.modules,
+      notes: edition.notes,
+      comentarios: edition.comentarios,
+      photosCount: edition.photos.length,
+    })
+  );
 
-  sectionSlide(pres, "Módulo 01", "Encuestas ASQ");
-  asqSlide(pres, r);
-
-  sectionSlide(pres, "Módulo 02", "Mediciones de tiempos");
-  if (r.processes.length === 0) {
-    const s = pres.addSlide();
-    s.background = { color: AIGS.white };
-    slideTitle(s, "Mediciones de tiempos", airportFull(r));
-    s.addText(
-      r.bqError
-        ? "No se pudieron leer las mediciones de tiempos (credenciales de BigQuery)."
-        : "Sin mediciones de tiempos registradas en esta temporada.",
-      { x: MX, y: 5, w: CONTENT_W, h: 1, fontFace: FONT.face, fontSize: 18, color: AIGS.muted, align: "center", margin: 0 }
-    );
-    addBottomLogo(s);
-  } else {
-    for (const p of r.processes) procesoSlide(pres, r, p);
-  }
-
-  // Módulo 03: Encuestas AGA (solo si el aeropuerto tiene plan AGA vigente).
-  if (r.aga.length > 0) {
-    sectionSlide(pres, "Módulo 03", "Encuestas AGA · Experiencia");
-    agaGuideSlide(pres, r);
-    for (const a of r.aga) {
-      agaSlide(pres, r, a);
-      if (a.voice.appraisal || a.voice.quotes.length > 0) voiceSlide(pres, r, a);
+  for (const spec of slides) {
+    switch (spec.type) {
+      case "cover":
+        coverSlide(pres, r);
+        break;
+      case "section":
+        sectionSlide(pres, spec.module, spec.title);
+        break;
+      case "asq":
+        asqSlide(pres, r);
+        break;
+      case "tiempos-empty":
+        emptyTiemposSlide(pres, r);
+        break;
+      case "proceso":
+        procesoSlide(pres, r, r.processes[spec.index]);
+        break;
+      case "aga-guide":
+        agaGuideSlide(pres, r);
+        break;
+      case "aga":
+        agaSlide(pres, r, r.aga[spec.index]);
+        break;
+      case "voice":
+        voiceSlide(pres, r, r.aga[spec.index]);
+        break;
+      case "text":
+        textSlide(pres, r, spec.title, spec.body);
+        break;
+      case "photos":
+        photosSlide(pres, r, edition.photos.slice(spec.start, spec.start + spec.count), spec.index, spec.total);
+        break;
+      case "closing":
+        closingSlide(pres);
+        break;
     }
   }
 
-  const comments = (comentarios ?? "").trim();
-  if (comments) commentsSlide(pres, r, comments);
-
-  if (photos && photos.length > 0) photosSlides(pres, r, photos);
-
-  closingSlide(pres);
-
   const out = (await pres.write({ outputType: "nodebuffer" })) as Uint8Array;
   return out;
+}
+
+function emptyTiemposSlide(pres: Pptx, r: MonthlyReport) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Mediciones de tiempos", airportFull(r));
+  s.addText(
+    r.bqError
+      ? "No se pudieron leer las mediciones de tiempos (credenciales de BigQuery)."
+      : "Sin mediciones de tiempos registradas en esta temporada.",
+    { x: MX, y: 5, w: CONTENT_W, h: 1, fontFace: FONT.face, fontSize: 18, color: AIGS.muted, align: "center", margin: 0 }
+  );
+  addBottomLogo(s);
 }

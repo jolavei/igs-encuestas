@@ -1,7 +1,7 @@
 name: Encuestas ASQ — scrape ACI (diario)
 
 # Consulta el portal ACI-ASQ (Sample Plan por Airline-Destination) y actualiza la
-# base de producción (Neon). Idempotente: upsert por (aeropuerto, temporada).
+# base de producción (Neon). Idempotente: upsert por (aeropuerto, temporada) + foto diaria del avance.
 on:
   schedule:
     # 08:00 America/Santiago. GitHub usa UTC y NO ajusta horario de verano:
