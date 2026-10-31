@@ -62,7 +62,7 @@ export const MODULES: ModuleDef[] = [
     label: "ACI ASQ · Resultados",
     source: "Base semestral ACI (Ingesta ASQ → BigQuery)",
     supports: ["SEMESTRAL", "ANUAL"],
-    ready: [],
+    ready: ["SEMESTRAL", "ANUAL"],
     defaultOn: { SEMESTRAL: true, ANUAL: true },
     notes: true,
   },

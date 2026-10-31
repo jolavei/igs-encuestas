@@ -85,6 +85,7 @@ export default async function EditarInforme({
             ? {
                 tiemposHistory: { seasons: report.seasonal.tiemposHistory.seasons },
                 tiemposHours: { rows: report.seasonal.tiemposHours.rows.map(() => null) },
+                asq: report.seasonal.asq ? true : null,
               }
             : undefined,
         }}

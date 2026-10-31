@@ -56,6 +56,13 @@ export function fmtScore(v: number | null | undefined): string {
 }
 
 /** NPS con signo ("+42", "−8", "0"). */
+const nfDec2 = new Intl.NumberFormat("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Nota con 2 decimales ("4,03"): ACI ASQ, donde las diferencias entre aeropuertos son de centésimas. */
+export function fmtScore2(v: number | null | undefined): string {
+  return v == null ? "—" : nfDec2.format(v);
+}
+
 export function fmtNps(v: number | null | undefined): string {
   if (v == null) return "—";
   return v > 0 ? `+${v}` : v < 0 ? `−${Math.abs(v)}` : "0";

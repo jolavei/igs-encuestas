@@ -93,12 +93,19 @@ describe("outline semestral", () => {
         kind: "SEMESTRAL",
         modules: enabledKeys(defaultTemplate("SEMESTRAL")),
         notes: { recomendaciones: "Priorizar climatización" },
-        season: { history: true, hours: true },
+        season: { history: true, hours: true, asq: true },
       })
     );
     expect(types(s)).toEqual([
       "cover",
       "exec-summary",
+      "section:Encuestas ACI ASQ · Resultados",
+      "asq-overall",
+      "asq-ranking",
+      "asq-categories",
+      "asq-matrix",
+      "asq-attributes",
+      "asq-profile",
       "section:Mediciones de tiempos",
       "tiempos-summary",
       "proceso",
@@ -116,6 +123,12 @@ describe("outline semestral", () => {
       "closing",
     ]);
     expect(s.find((x) => x.type === "section")).toMatchObject({ module: "Módulo 01" });
+  });
+  it("sin base ACI ASQ de la temporada: aviso en lugar de los resultados", () => {
+    const s = buildOutline(
+      base({ kind: "SEMESTRAL", modules: ["asq-resultados"], season: { history: false, hours: false, asq: false } })
+    );
+    expect(types(s)).toEqual(["cover", "section:Encuestas ACI ASQ · Resultados", "asq-empty", "closing"]);
   });
 });
 

@@ -8,7 +8,8 @@
 // evolución de las Encuestas AGA.
 //
 // Fuentes con corte al 1-oct-2026: tiempos (Sheets antes, web después) y AGA (histórico
-// importado de Sheets antes, web después). ACI ASQ (resultados) llega en la fase 3.
+// importado de Sheets antes, web después). ACI ASQ: microdata de la temporada de detalle
+// (Ingesta ASQ → BigQuery) con benchmark contra los aeropuertos chilenos y toda la base.
 //
 // Server-only.
 
@@ -42,6 +43,7 @@ import { shortAirline } from "@/lib/reports/design";
 import { loadAsqProgress, type MonthlyReport, type ReportAirlineBreakdown, type ReportProcess } from "@/lib/reports/monthlyReport";
 import { seasonFromCode, seasonOrder, type PeriodContext, type Season } from "@/lib/reports/period";
 import type { ModuleKey } from "@/lib/reports/modules";
+import { getAsqResults, type AsqResults } from "@/lib/asq/results";
 
 export type SeasonExtras = {
   focusLabel: string; // "Summer 2026"
@@ -53,6 +55,9 @@ export type SeasonExtras = {
     bands: string[];
     rows: { label: string; meta: number | null; cells: { n: number; prom: number | null }[] }[];
   };
+  // Resultados ACI ASQ de la temporada de detalle (null: base no cargada o sin encuestas).
+  asq: AsqResults | null;
+  asqError: string | null;
   // Mismo orden que `aga` del informe.
   agaHistory: {
     seasons: { code: string; label: string; n: number; ratingAvg: number | null; nps: number | null }[];
@@ -104,10 +109,12 @@ export async function getSeasonReport(
     focusLabel: ctx.season.label,
     tiemposHistory: { seasons: [], series: [] },
     tiemposHours: { bands: [...HOUR_BANDS], rows: [] },
+    asq: null,
+    asqError: null,
     agaHistory: [],
   };
 
-  const [tiempos, aga, asq] = await Promise.all([
+  const [tiempos, aga, asq, asqResults] = await Promise.all([
     ap && wants("tiempos") ? loadTiempos(ap.name, ctx, seasonal) : Promise.resolve({ processes: [], bqError: null }),
     wants("aga-pasajeros") || wants("aga-acompanantes")
       ? loadAga(mapping.companyId, ctx, seasonal)
@@ -116,7 +123,15 @@ export async function getSeasonReport(
     wants("asq-avance")
       ? loadAsqProgress(code, ctx.season.to.slice(0, 7), new Date(`${ctx.season.to}T23:59:59Z`))
       : Promise.resolve(null),
+    wants("asq-resultados")
+      ? getAsqResults(code, ctx.season.code).catch((e: unknown) => {
+          seasonal.asqError =
+            e instanceof BigQueryCredentialsError ? e.message : e instanceof Error ? e.message : "Error consultando BigQuery.";
+          return null;
+        })
+      : Promise.resolve(null),
   ]);
+  seasonal.asq = asqResults;
 
   return {
     kind: ctx.kind,

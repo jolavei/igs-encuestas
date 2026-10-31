@@ -18,8 +18,9 @@ export type OutlineInput = {
   photosCount: number;
   processes: { label: string }[]; // una diapositiva por proceso/fase de tiempos
   aga: { audience: "Pasajeros" | "Acompañantes"; hasVoice: boolean }[]; // planes AGA vigentes
-  // Semestral/anual: si hay histórico por temporada y franjas horarias de tiempos.
-  season?: { history: boolean; hours: boolean };
+  // Semestral/anual: si hay histórico por temporada y franjas horarias de tiempos, y
+  // si hay resultados ACI ASQ de la temporada.
+  season?: { history: boolean; hours: boolean; asq: boolean };
 };
 
 export type SlideSpec =
@@ -37,10 +38,19 @@ export type SlideSpec =
   | { type: "tiempos-history" }
   | { type: "tiempos-hours" }
   | { type: "aga-evolution"; index: number }
+  | { type: "asq-overall" }
+  | { type: "asq-ranking" }
+  | { type: "asq-categories" }
+  | { type: "asq-matrix" }
+  | { type: "asq-attributes" }
+  | { type: "asq-profile" }
+  | { type: "asq-empty" }
   | { type: "photos"; start: number; count: number; index: number; total: number }
   | { type: "closing" };
 
 export const PHOTOS_PER_SLIDE = 4;
+
+const ASQ_SLIDES = ["asq-overall", "asq-ranking", "asq-categories", "asq-matrix", "asq-attributes", "asq-profile"] as const;
 
 export function buildOutline(input: OutlineInput): SlideSpec[] {
   const out: SlideSpec[] = [{ type: "cover" }];
@@ -135,7 +145,12 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
       }
 
       case "asq-resultados":
-        // Semestral/anual: se construye en la fase 3.
+        if (!seasonal) break;
+        addSection("Encuestas ACI ASQ · Resultados");
+        if (input.season?.asq) {
+          for (const type of ASQ_SLIDES) out.push({ type });
+        } else out.push({ type: "asq-empty" });
+        addNote(key);
         break;
     }
   }
@@ -179,6 +194,20 @@ export function slideLabel(s: SlideSpec, input: OutlineInput): string {
       return "Tiempos · por franja horaria";
     case "aga-evolution":
       return `Encuesta AGA · ${input.aga[s.index]?.audience ?? ""} · evolución`;
+    case "asq-overall":
+      return "ACI ASQ · satisfacción general y evolutivo";
+    case "asq-ranking":
+      return "ACI ASQ · ranking en Chile y en la base";
+    case "asq-categories":
+      return "ACI ASQ · categorías e índices";
+    case "asq-matrix":
+      return "ACI ASQ · matriz importancia–desempeño";
+    case "asq-attributes":
+      return "ACI ASQ · mejores y peores atributos";
+    case "asq-profile":
+      return "ACI ASQ · perfil del pasajero";
+    case "asq-empty":
+      return "ACI ASQ · base de la temporada sin cargar";
   }
 }
 
@@ -188,7 +217,7 @@ export function outlineInputFrom(
     kind?: ReportKind;
     processes: { proceso: string; faseLabel: string | null }[];
     aga: { audience: string; voice: { appraisal: string | null; quotes: unknown[] } }[];
-    seasonal?: { tiemposHistory: { seasons: unknown[] }; tiemposHours: { rows: unknown[] } };
+    seasonal?: { tiemposHistory: { seasons: unknown[] }; tiemposHours: { rows: unknown[] }; asq: unknown };
   },
   edition: { modules: ModuleKey[]; notes: ModuleNotes; comentarios: string; photosCount: number }
 ): OutlineInput {
@@ -199,6 +228,7 @@ export function outlineInputFrom(
       ? {
           history: data.seasonal.tiemposHistory.seasons.length > 1,
           hours: data.seasonal.tiemposHours.rows.length > 0,
+          asq: !!data.seasonal.asq,
         }
       : undefined,
     processes: data.processes.map((p) => ({ label: `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}` })),

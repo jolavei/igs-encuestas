@@ -2,7 +2,7 @@
 // nativos (portada/cierre sobrios con logo + badge, sin foto de fondo).
 // Server-only (runtime nodejs). Import dinámico para no forzar el bundle.
 
-import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, fmtScore, fmtNps, scoreColor, npsColor } from "@/lib/reports/design";
+import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor } from "@/lib/reports/design";
 import { LOGO_DATA_URI, LOGO_TEXT_DATA_URI } from "@/lib/reports/assets";
 import type { MonthlyReport, ReportProcess, ReportAirlineBreakdown } from "@/lib/reports/monthlyReport";
 import type { AgaScore, AgaSurvey } from "@/lib/reports/agaSurvey";
@@ -18,8 +18,12 @@ import {
   AGA_GUIDE_PERIOD_NOTE_SEASON,
 } from "@/lib/reports/agaGuide";
 import {
+  ASQ_NOTE,
   HISTORY_COLORS,
   KIND_BADGE,
+  asqBestWorst,
+  asqMatrix,
+  ordinal,
   agaTopRows,
   coverScope,
   execSummaryCards,
@@ -986,6 +990,20 @@ export async function buildDeck(r: MonthlyReport, edition: DeckEdition): Promise
       case "aga-evolution":
         agaEvolutionSlide(pres, r, spec.index);
         break;
+      case "asq-empty":
+        asqEmptySlide(pres, r);
+        break;
+      default: {
+        // Resultados ACI ASQ (el outline solo los pide si hay datos).
+        const a = r.seasonal?.asq;
+        if (!a) asqEmptySlide(pres, r);
+        else if (spec.type === "asq-overall") asqOverallSlide(pres, r, a);
+        else if (spec.type === "asq-ranking") asqRankingSlide(pres, r, a);
+        else if (spec.type === "asq-categories") asqCategoriesSlide(pres, r, a);
+        else if (spec.type === "asq-matrix") asqMatrixSlide(pres, r, a);
+        else if (spec.type === "asq-attributes") asqAttributesSlide(pres, r, a);
+        else if (spec.type === "asq-profile") asqProfileSlide(pres, r, a);
+      }
     }
   }
 
@@ -1213,5 +1231,275 @@ function agaEvolutionSlide(pres: Pptx, r: MonthlyReport, index: number) {
     "Hasta septiembre de 2026, formulario antiguo (Google Forms); desde octubre de 2026, formulario web. Nota promedio = todas las calificaciones de atributos y servicios.",
     { x: MX, y: H - 1.2, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 10.5, color: AIGS.muted, margin: 0 }
   );
+  addBottomLogo(s);
+}
+
+// ---------------------------------------------------------------------------
+// ACI ASQ · resultados (semestral / anual)
+// ---------------------------------------------------------------------------
+
+type AsqData = NonNullable<NonNullable<MonthlyReport["seasonal"]>["asq"]>;
+
+function asqNote(s: Slide) {
+  s.addText(ASQ_NOTE, {
+    x: W - MX - 12, y: H - 0.62, w: 12, h: 0.3, fontFace: FONT.face, fontSize: 10, color: AIGS.muted, align: "right", margin: 0,
+  });
+}
+
+/** Barra horizontal (fondo + relleno proporcional). */
+function hbar(s: Slide, pres: Pptx, x: number, y: number, w: number, h: number, frac: number, color: string) {
+  s.addShape(pres.ShapeType.rect, { x, y, w, h, fill: { color: AIGS.surfaceSoft }, line: { type: "none" } });
+  if (frac > 0) s.addShape(pres.ShapeType.rect, { x, y, w: Math.max(0.02, w * Math.min(1, frac)), h, fill: { color }, line: { type: "none" } });
+}
+
+function asqEmptySlide(pres: Pptx, r: MonthlyReport) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Encuestas ACI ASQ · Resultados", `${airportFull(r)} · ${r.seasonal?.focusLabel ?? ""}`);
+  s.addText(
+    r.seasonal?.asqError
+      ? "No se pudo leer la base ACI ASQ (BigQuery)."
+      : `La base ACI ASQ de ${r.seasonal?.focusLabel ?? "la temporada"} aún no tiene encuestas de este aeropuerto. Se carga en Ingesta ASQ cuando ACI la publica.`,
+    { x: MX, y: 5, w: CONTENT_W, h: 1, fontFace: FONT.face, fontSize: 18, color: AIGS.muted, align: "center", margin: 0 }
+  );
+  addBottomLogo(s);
+}
+
+function asqOverallSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  const o = a.overall;
+  slideTitle(s, "Satisfacción general ACI ASQ", `${airportFull(r)} · ${a.season.label}`);
+  kpiRow(
+    s,
+    pres,
+    [
+      { label: "Satisfacción general", value: `${fmtScore2(o.airport)} / 5`, valueColor: scoreColor(o.airport), sub: `${fmtInt(a.n)} encuestas` },
+      { label: "Muy buena o excelente", value: o.top2 != null ? `${o.top2}%` : "—", sub: "% de notas 4 y 5" },
+      { label: "Posición en Chile", value: `${ordinal(o.rankChile)} de ${o.totalChile}`, sub: `Promedio Chile ${fmtScore2(o.chile)}` },
+      { label: "Posición en la base", value: `${ordinal(o.rankAll)} de ${o.totalAll}`, sub: `Promedio base ${fmtScore2(o.all)}` },
+    ],
+    2.1,
+    2.3
+  );
+  const labels = a.history.map((h) => h.code);
+  const vals = a.history.flatMap((h) => [h.airport, h.chile, h.all]).filter((v): v is number => v != null);
+  const yMin = Math.max(1, Math.floor((Math.min(...vals, 5) - 0.2) * 2) / 2);
+  s.addText("Evolutivo por temporada", { x: MX, y: 4.65, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 14, bold: true, color: AIGS.ink, margin: 0 });
+  s.addChart(
+    pres.ChartType.line,
+    [
+      { name: r.airport.short ?? r.airport.code, labels, values: a.history.map((h) => h.airport) },
+      { name: "Promedio Chile", labels, values: a.history.map((h) => h.chile) },
+      { name: "Promedio base", labels, values: a.history.map((h) => h.all) },
+    ],
+    {
+      x: MX, y: 5.05, w: CONTENT_W, h: 5.4,
+      chartColors: [AIGS.blue, "3D7593", "A9B2BF"], lineSize: 2.25, lineDataSymbol: "circle", lineDataSymbolSize: 5,
+      showLegend: true, legendPos: "t", legendFontFace: FONT.face, legendFontSize: 11, legendColor: AIGS.body,
+      catAxisLabelFontFace: FONT.face, catAxisLabelFontSize: 10, catAxisLabelColor: AIGS.muted,
+      valAxisLabelFontFace: FONT.face, valAxisLabelFontSize: 10, valAxisLabelColor: AIGS.muted, valAxisLabelFormatCode: "0.0",
+      valAxisMinVal: yMin, valAxisMaxVal: 5, valGridLine: { color: "EEF2F6", size: 0.5 }, catGridLine: { style: "none" },
+    }
+  );
+  asqNote(s);
+  addBottomLogo(s);
+}
+
+function asqRankingSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Ranking de satisfacción general", `${airportFull(r)} · ${a.season.label} · nota 1–5`);
+  const colGap = 0.8;
+  const colW = (CONTENT_W - colGap) / 2;
+  const top = 2.3;
+  const rowH = Math.min(0.42, 7.6 / Math.max(a.rankingAll.length, a.rankingChile.length, 1));
+  const fs = Math.max(9, Math.min(12, Math.floor(rowH * 28)));
+  const col = (x: number, title: string, rows: AsqData["rankingAll"]) => {
+    s.addText(title, { x, y: top - 0.5, w: colW, h: 0.4, fontFace: FONT.face, fontSize: 14, bold: true, color: AIGS.ink, margin: 0 });
+    rows.forEach((row, i) => {
+      const y = top + i * rowH;
+      const t = { y, h: rowH, fontFace: FONT.face, fontSize: fs, valign: "middle" as const, margin: 0, bold: row.own, color: row.own ? AIGS.ink : AIGS.body };
+      s.addText(String(i + 1), { ...t, x, w: 0.35, align: "right", color: AIGS.muted, fontFace: FONT.mono });
+      s.addText(`${row.code} · ${row.name.replace(/ (International )?Airport$/i, "")}${!row.chile && row.country ? ` (${row.country})` : ""}`, {
+        ...t, x: x + 0.45, w: colW * 0.5, fit: "shrink",
+      });
+      hbar(s, pres, x + 0.55 + colW * 0.5, y + rowH * 0.28, colW * 0.36, rowH * 0.44, row.avg / 5, row.own ? AIGS.blue : row.chile ? "8DB0BB" : AIGS.surfaceStrong);
+      s.addText(fmtScore2(row.avg), { ...t, x: x + colW - 0.6, w: 0.6, align: "right", fontFace: FONT.mono });
+    });
+  };
+  col(MX, `Aeropuertos chilenos (${a.rankingChile.length})`, a.rankingChile);
+  col(MX + colW + colGap, `Todos los aeropuertos de la base (${a.rankingAll.length})`, a.rankingAll);
+  asqNote(s);
+  addBottomLogo(s);
+}
+
+function asqCategoriesSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Categorías e índices ACI ASQ", `${airportFull(r)} · ${a.season.label} · nota 1–5`);
+  const head = ["Categoría / índice", "Tipo", r.airport.short ?? r.airport.code, "Prom. Chile", "Prom. base", "Posición en Chile"].map((t, i) =>
+    headCell(t, i < 2 ? "left" : "right")
+  );
+  const mono = (text: string, color: string = AIGS.body, bold = false): Cell => ({ text, options: { align: "right", fontFace: FONT.mono, color, bold } });
+  const body = a.categories.map((c) => {
+    const d = c.airport != null && c.chile != null ? c.airport - c.chile : null;
+    const color = d == null || Math.abs(d) < 0.05 ? AIGS.ink : d > 0 ? AIGS.up : AIGS.down;
+    return [
+      { text: c.label, options: { align: "left", color: AIGS.ink } },
+      { text: c.kind, options: { align: "left", color: AIGS.muted } },
+      mono(fmtScore2(c.airport), color, true),
+      mono(fmtScore2(c.chile)),
+      mono(fmtScore2(c.all)),
+      mono(`${ordinal(c.rankChile)} de ${c.totalChile}`),
+    ];
+  });
+  const rowH = Math.min(0.6, 7.2 / (body.length + 1));
+  s.addTable([head, ...body], {
+    x: MX, y: 2.2, w: CONTENT_W, colW: [0.34, 0.12, 0.13, 0.13, 0.13, 0.15].map((f) => CONTENT_W * f), rowH,
+    fontFace: FONT.face, fontSize: 13, color: AIGS.body, valign: "middle", border: { type: "solid", color: AIGS.hairline, pt: 0.5 }, autoPage: false,
+  });
+  s.addText("Verde / rojo: sobre / bajo el promedio de los aeropuertos chilenos (diferencia de 0,05 o más).", {
+    x: MX, y: 2.2 + rowH * (body.length + 1) + 0.2, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0,
+  });
+  asqNote(s);
+  addBottomLogo(s);
+}
+
+const QUADRANT_COLOR: Record<string, string> = {
+  "Fortaleza clave": AIGS.up,
+  "Mejorar con prioridad": AIGS.down,
+  Mantener: "3D7593",
+  "Menor prioridad": "A9B2BF",
+};
+
+function asqMatrixSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Matriz importancia–desempeño", `${airportFull(r)} · ${a.season.label} · importancia declarada por los pasajeros vs nota del atributo`);
+  const { pts, midImp, midScore, quadrant, priority, strengths, number } = asqMatrix(a.attributes);
+  const box = { x: MX + 0.6, y: 2.2, w: 11.4, h: 7.2 };
+  const maxImp = Math.max(10, ...pts.map((p) => p.importance)) * 1.1;
+  const sMin = Math.min(...pts.map((p) => p.airport)) - 0.15;
+  const sMax = Math.max(...pts.map((p) => p.airport)) + 0.15;
+  const px = (v: number) => box.x + (v / maxImp) * box.w;
+  const py = (v: number) => box.y + (1 - (v - sMin) / (sMax - sMin)) * box.h;
+  const line = (x: number, y: number, w: number, h: number, dash = false) =>
+    s.addShape(pres.ShapeType.line, { x, y, w, h, line: { color: dash ? AIGS.muted : AIGS.hairline, width: 1, dashType: dash ? "dash" : "solid" } });
+  line(box.x, box.y + box.h, box.w, 0);
+  line(box.x, box.y, 0, box.h);
+  line(px(midImp), box.y, 0, box.h, true);
+  line(box.x, py(midScore), box.w, 0, true);
+  const corner = (text: string, x: number, y: number, align: "left" | "right", color: string) =>
+    s.addText(text, { x: align === "left" ? x : x - 3, y, w: 3, h: 0.3, fontFace: FONT.face, fontSize: 11, bold: true, color, align, margin: 0 });
+  corner("Fortaleza clave", box.x + box.w, box.y, "right", AIGS.up);
+  corner("Mejorar con prioridad", box.x + box.w, box.y + box.h - 0.35, "right", AIGS.down);
+  corner("Mantener", box.x + 0.1, box.y, "left", "3D7593");
+  corner("Menor prioridad", box.x + 0.1, box.y + box.h - 0.35, "left", AIGS.muted);
+  for (const v of [0, 10, 20, 30, 40, 50, 60].filter((v) => v <= maxImp))
+    s.addText(`${v}%`, { x: px(v) - 0.4, y: box.y + box.h + 0.05, w: 0.8, h: 0.3, fontFace: FONT.face, fontSize: 10, color: AIGS.muted, align: "center", margin: 0 });
+  for (const v of [sMin, (sMin + sMax) / 2, sMax])
+    s.addText(fmtScore2(v), { x: box.x - 0.65, y: py(v) - 0.15, w: 0.55, h: 0.3, fontFace: FONT.face, fontSize: 10, color: AIGS.muted, align: "right", margin: 0 });
+  s.addText("Importancia (% que lo elige entre sus 3 más importantes)", {
+    x: box.x, y: box.y + box.h + 0.35, w: box.w, h: 0.3, fontFace: FONT.face, fontSize: 10, color: AIGS.muted, align: "center", margin: 0,
+  });
+  for (const p of pts) {
+    const cx = px(p.importance);
+    const cy = py(p.airport);
+    s.addShape(pres.ShapeType.ellipse, { x: cx - 0.08, y: cy - 0.08, w: 0.16, h: 0.16, fill: { color: QUADRANT_COLOR[quadrant(p)] }, line: { type: "none" } });
+    if (number.has(p))
+      s.addText(String(number.get(p)), {
+        x: cx + 0.1, y: cy - 0.15, w: 0.4, h: 0.3, fontFace: FONT.face, fontSize: 11, bold: true, color: AIGS.ink, margin: 0,
+      });
+  }
+  const listX = box.x + box.w + 0.6;
+  const listW = W - MX - listX;
+  let y = box.y;
+  for (const b of [
+    { title: "Mejorar con prioridad", color: AIGS.down, rows: priority },
+    { title: "Fortalezas clave", color: AIGS.up, rows: strengths },
+  ]) {
+    s.addText(b.title, { x: listX, y, w: listW, h: 0.35, fontFace: FONT.face, fontSize: 13, bold: true, color: b.color, margin: 0 });
+    y += 0.4;
+    const rows = b.rows;
+    if (!rows.length) {
+      s.addText("Ninguno.", { x: listX, y, w: listW, h: 0.3, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0 });
+      y += 0.4;
+    }
+    for (const p of rows) {
+      s.addText(
+        [
+          { text: `${number.get(p)}. `, options: { color: AIGS.ink, bold: true } },
+          { text: p.label, options: { color: AIGS.body } },
+          { text: `   ${fmtScore2(p.airport)} · ${p.importance}%`, options: { color: AIGS.ink, fontFace: FONT.mono } },
+        ],
+        { x: listX, y, w: listW, h: 0.42, fontFace: FONT.face, fontSize: 10.5, margin: 0, valign: "middle", fit: "shrink" }
+      );
+      y += 0.46;
+    }
+    y += 0.3;
+  }
+  s.addText("Líneas: mediana de importancia y nota promedio de los atributos del aeropuerto. Atributos con al menos 10 respuestas.", {
+    x: MX, y: H - 1.0, w: CONTENT_W, h: 0.3, fontFace: FONT.face, fontSize: 10, color: AIGS.muted, margin: 0,
+  });
+  addBottomLogo(s);
+}
+
+function asqAttributesSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Mejores y peores atributos ACI ASQ", `${airportFull(r)} · ${a.season.label}`);
+  const { best, worst } = asqBestWorst(a.attributes);
+  const colGap = 0.8;
+  const colW = (CONTENT_W - colGap) / 2;
+  const rowH = 0.85;
+  [
+    { title: "5 mejor evaluados", rows: best },
+    { title: "5 peor evaluados", rows: worst },
+  ].forEach((b, ci) => {
+    const x = MX + ci * (colW + colGap);
+    s.addText(
+      [
+        { text: b.title, options: { bold: true, color: AIGS.ink, fontSize: 14 } },
+        { text: "  · nota 1–5 · vs promedio Chile", options: { color: AIGS.muted, fontSize: 11 } },
+      ],
+      { x, y: 2.2, w: colW, h: 0.4, fontFace: FONT.face, margin: 0 }
+    );
+    b.rows.forEach((row, i) => {
+      const y = 2.75 + i * rowH;
+      s.addShape(pres.ShapeType.line, { x, y, w: colW, h: 0, line: { color: AIGS.hairline, width: 0.5 } });
+      const t = { y, h: rowH, fontFace: FONT.face, valign: "middle" as const, margin: 0 };
+      s.addText(row.label, { ...t, x, w: colW * 0.44, fontSize: 12, color: AIGS.body, fit: "shrink" });
+      hbar(s, pres, x + colW * 0.46, y + rowH / 2 - 0.07, colW * 0.2, 0.14, (row.airport ?? 0) / 5, scoreColor(row.airport));
+      s.addText(fmtScore2(row.airport), { ...t, x: x + colW * 0.67, w: 0.6, fontSize: 13, bold: true, fontFace: FONT.mono, color: AIGS.ink, align: "right" });
+      const dc = row.diff == null || Math.abs(row.diff) < 0.05 ? AIGS.muted : row.diff > 0 ? AIGS.up : AIGS.down;
+      s.addText(`Chile ${fmtScore2(row.chile)} (${row.diff == null ? "—" : `${row.diff >= 0 ? "+" : "−"}${fmtScore2(Math.abs(row.diff))}`})`, {
+        ...t, x: x + colW * 0.67 + 0.7, w: colW * 0.33 - 0.7, fontSize: 11, color: dc, align: "right",
+      });
+    });
+  });
+  asqNote(s);
+  addBottomLogo(s);
+}
+
+function asqProfileSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, "Perfil del pasajero ACI ASQ", `${airportFull(r)} · ${a.season.label} · ${fmtInt(a.n)} encuestas`);
+  const cols = 3;
+  const gapX = 0.8;
+  const cellW = (CONTENT_W - gapX * (cols - 1)) / cols;
+  a.profile.forEach((p, i) => {
+    const x = MX + (i % cols) * (cellW + gapX);
+    const y0 = 2.2 + Math.floor(i / cols) * 4.1;
+    s.addText(p.title, { x, y: y0, w: cellW, h: 0.4, fontFace: FONT.face, fontSize: 13, bold: true, color: AIGS.ink, margin: 0 });
+    p.rows.forEach((row, j) => {
+      const y = y0 + 0.5 + j * 0.44;
+      s.addText(row.label, { x, y, w: 1.4, h: 0.38, fontFace: FONT.face, fontSize: 10.5, color: AIGS.body, valign: "middle", margin: 0 });
+      hbar(s, pres, x + 1.5, y + 0.12, cellW - 2.3, 0.15, row.pct / 100, AIGS.blue);
+      s.addText(`${row.pct}%`, { x: x + cellW - 0.7, y, w: 0.7, h: 0.38, fontFace: FONT.mono, fontSize: 10.5, color: AIGS.ink, align: "right", valign: "middle", margin: 0 });
+    });
+  });
+  asqNote(s);
   addBottomLogo(s);
 }

@@ -122,8 +122,8 @@ export default async function InformesIndex({
         {periodNote(ctx)}
         {kind !== "MENSUAL" && (
           <span className="block text-xs text-slate-500">
-            Ya incluye mediciones de tiempos, Encuestas AGA, resumen ejecutivo y recomendaciones. El detalle de
-            resultados ACI ASQ llega en la próxima fase.
+            Incluye resultados ACI ASQ (con ranking en Chile y en la base), mediciones de tiempos, Encuestas AGA,
+            resumen ejecutivo y recomendaciones.
           </span>
         )}
       </p>

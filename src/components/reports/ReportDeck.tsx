@@ -13,7 +13,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
-import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct, fmtScore, fmtNps, scoreColor, npsColor } from "@/lib/reports/design";
+import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor } from "@/lib/reports/design";
 import {
   AGA_GUIDE_KPIS,
   AGA_GUIDE_PERIOD_NOTE,
@@ -26,8 +26,12 @@ import {
   AGA_GUIDE_PERIOD_NOTE_SEASON,
 } from "@/lib/reports/agaGuide";
 import {
+  ASQ_NOTE,
   HISTORY_COLORS,
   KIND_BADGE,
+  asqBestWorst,
+  asqMatrix,
+  ordinal,
   agaTopRows,
   coverScope,
   execSummaryCards,
@@ -227,7 +231,27 @@ function SlideFor({ spec, data, photos }: { spec: SlideSpec; data: DeckData; pho
       return <TiemposHoursSlide data={data} />;
     case "aga-evolution":
       return <AgaEvolutionSlide data={data} s={data.aga[spec.index]} index={spec.index} />;
+    case "asq-empty":
+      return <AsqEmptySlide data={data} />;
   }
+  // Resultados ACI ASQ (el outline solo los pide si hay datos).
+  const a = data.seasonal?.asq;
+  if (!a) return <AsqEmptySlide data={data} />;
+  switch (spec.type) {
+    case "asq-overall":
+      return <AsqOverallSlide data={data} a={a} />;
+    case "asq-ranking":
+      return <AsqRankingSlide data={data} a={a} />;
+    case "asq-categories":
+      return <AsqCategoriesSlide data={data} a={a} />;
+    case "asq-matrix":
+      return <AsqMatrixSlide data={data} a={a} />;
+    case "asq-attributes":
+      return <AsqAttributesSlide data={data} a={a} />;
+    case "asq-profile":
+      return <AsqProfileSlide data={data} a={a} />;
+  }
+  return null;
 }
 
 /* ---------- Marco de diapositiva (escala en pantalla, 1 página al imprimir) ---------- */
@@ -1370,6 +1394,393 @@ function AgaEvolutionSlide({ data, s, index }: { data: DeckData; s: AgaDeck; ind
   );
 }
 
+
+/* ---------- ACI ASQ · resultados (semestral / anual) ---------- */
+
+type AsqData = NonNullable<NonNullable<DeckData["seasonal"]>["asq"]>;
+
+function AsqEmptySlide({ data }: { data: DeckData }) {
+  const err = data.seasonal?.asqError;
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Encuestas ACI ASQ · Resultados" subtitle={`${airportFull(data)} · ${data.seasonal?.focusLabel ?? ""}`} />
+      <Centered>
+        {err
+          ? "No se pudo leer la base ACI ASQ (BigQuery)."
+          : `La base ACI ASQ de ${data.seasonal?.focusLabel ?? "la temporada"} aún no tiene encuestas de este aeropuerto. Se carga en Ingesta ASQ cuando ACI la publica.`}
+      </Centered>
+      <BottomLogo />
+    </div>
+  );
+}
+
+function AsqNote() {
+  return (
+    <div style={{ position: "absolute", right: 72, bottom: 26, fontSize: 11, color: hx(AIGS.muted), maxWidth: 820, textAlign: "right" }}>
+      {ASQ_NOTE}
+    </div>
+  );
+}
+
+// Satisfacción general: KPIs de la temporada + evolutivo (aeropuerto, promedio Chile, promedio base).
+function AsqOverallSlide({ data, a }: { data: DeckData; a: AsqData }) {
+  const o = a.overall;
+  const vals = a.history.flatMap((h) => [h.airport, h.chile, h.all]).filter((v): v is number => v != null);
+  const yMin = Math.max(1, Math.floor((Math.min(...vals, 5) - 0.2) * 2) / 2);
+  const series = [
+    { key: "airport", label: data.airport.short ?? data.airport.code, color: AIGS.blue, width: 3 },
+    { key: "chile", label: "Promedio Chile", color: "3D7593", width: 2, dash: "6 4" },
+    { key: "all", label: "Promedio base", color: "A9B2BF", width: 2 },
+  ];
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Satisfacción general ACI ASQ" subtitle={`${airportFull(data)} · ${a.season.label}`} />
+      <div style={{ position: "absolute", top: 140, left: 72, right: 72 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+          <Kpi
+            label="Satisfacción general"
+            value={`${fmtScore2(o.airport)} / 5`}
+            valueColor={scoreColor(o.airport)}
+            sub={`${fmtInt(a.n)} encuestas`}
+          />
+          <Kpi label="Muy buena o excelente" value={o.top2 != null ? `${o.top2}%` : "—"} sub="% de notas 4 y 5" />
+          <Kpi
+            label="Posición en Chile"
+            value={`${ordinal(o.rankChile)} de ${o.totalChile}`}
+            sub={`Promedio Chile ${fmtScore2(o.chile)}`}
+          />
+          <Kpi label="Posición en la base" value={`${ordinal(o.rankAll)} de ${o.totalAll}`} sub={`Promedio base ${fmtScore2(o.all)}`} />
+        </div>
+      </div>
+      <div style={{ position: "absolute", top: 300, left: 72, right: 72, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink) }}>Evolutivo por temporada</div>
+        <div style={{ display: "flex", gap: 16 }}>
+          {series.map((s) => (
+            <LegendItem key={s.key} color={s.color} label={s.label} dashed={!!s.dash} />
+          ))}
+        </div>
+      </div>
+      <div style={{ position: "absolute", top: 330, left: 60, right: 72, bottom: 64 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={a.history.map((h) => ({ ...h, label: h.code }))} margin={{ top: 8, right: 16, bottom: 4, left: 8 }}>
+            <CartesianGrid stroke="#eef2f6" vertical={false} />
+            <XAxis dataKey="label" tick={{ fill: hx(AIGS.muted), fontSize: 12 }} tickLine={false} axisLine={{ stroke: hx(AIGS.hairline) }} />
+            <YAxis
+              domain={[yMin, 5]}
+              tickFormatter={(v) => fmtScore2(Number(v))}
+              tick={{ fill: hx(AIGS.muted), fontSize: 12 }}
+              tickLine={false}
+              axisLine={false}
+              width={40}
+            />
+            <Tooltip formatter={(v: number) => fmtScore2(v)} />
+            {series.map((s) => (
+              <Line
+                key={s.key}
+                type="monotone"
+                dataKey={s.key}
+                name={s.label}
+                stroke={hx(s.color)}
+                strokeWidth={s.width}
+                strokeDasharray={s.dash}
+                dot={s.key === "airport" ? { r: 3, fill: hx(s.color) } : false}
+                isAnimationActive={false}
+                connectNulls
+              />
+            ))}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <AsqNote />
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Barras horizontales de satisfacción general por aeropuerto (escala 1–5).
+function RankBars({ title, rows, rowH }: { title: string; rows: AsqData["rankingAll"]; rowH: number }) {
+  const fs = Math.max(10, Math.min(14, Math.floor(rowH * 0.5)));
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 8 }}>{title}</div>
+      {rows.map((r, i) => {
+        const color = r.own ? AIGS.blue : r.chile ? "8DB0BB" : AIGS.surfaceStrong;
+        return (
+          <div
+            key={r.code}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "24px minmax(0, 1fr) 40% 40px",
+              alignItems: "center",
+              gap: 8,
+              height: rowH,
+              fontSize: fs,
+              fontWeight: r.own ? 700 : 400,
+              color: hx(r.own ? AIGS.ink : AIGS.body),
+            }}
+          >
+            <span style={{ fontFamily: FONT.mono, color: hx(AIGS.muted), textAlign: "right" }}>{i + 1}</span>
+            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {r.code} · {r.name.replace(/ (International )?Airport$/i, "")}
+              {!r.chile && r.country ? ` (${r.country})` : ""}
+            </span>
+            <span style={{ height: Math.max(6, rowH * 0.42), background: hx(AIGS.surfaceSoft), borderRadius: 3, overflow: "hidden" }}>
+              <span style={{ display: "block", height: "100%", width: `${(r.avg / 5) * 100}%`, background: hx(color) }} />
+            </span>
+            <span style={{ fontFamily: FONT.mono, textAlign: "right" }}>{fmtScore2(r.avg)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AsqRankingSlide({ data, a }: { data: DeckData; a: AsqData }) {
+  const rowH = Math.min(30, 470 / Math.max(a.rankingAll.length, a.rankingChile.length, 1));
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Ranking de satisfacción general" subtitle={`${airportFull(data)} · ${a.season.label} · nota 1–5`} />
+      <div style={{ position: "absolute", top: 140, left: 72, right: 72, bottom: 64, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48 }}>
+        <RankBars title={`Aeropuertos chilenos (${a.rankingChile.length})`} rows={a.rankingChile} rowH={rowH} />
+        <RankBars title={`Todos los aeropuertos de la base (${a.rankingAll.length})`} rows={a.rankingAll} rowH={rowH} />
+      </div>
+      <div style={{ position: "absolute", left: 72, bottom: 52, display: "flex", gap: 14, fontSize: 11, color: hx(AIGS.muted) }}>
+        <LegendDot color={AIGS.blue} label={data.airport.short ?? data.airport.code} />
+        <LegendDot color="8DB0BB" label="Chile" />
+        <LegendDot color={AIGS.surfaceStrong} label="Otros países" />
+      </div>
+      <AsqNote />
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Categorías e índices: aeropuerto vs promedio Chile y base, y posición en Chile.
+function AsqCategoriesSlide({ data, a }: { data: DeckData; a: AsqData }) {
+  const rowH = Math.min(40, 440 / Math.max(a.categories.length + 1, 1));
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Categorías e índices ACI ASQ" subtitle={`${airportFull(data)} · ${a.season.label} · nota 1–5`} />
+      <div style={{ position: "absolute", top: 140, left: 72, right: 72, bottom: 64, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15, tableLayout: "fixed" }}>
+          <thead>
+            <tr style={{ background: hx(AIGS.surfaceSoft), color: hx(AIGS.muted) }}>
+              <Th align="left" w="34%">Categoría / índice</Th>
+              <Th align="left" w="12%">Tipo</Th>
+              <Th align="right" w="13%">{data.airport.short ?? data.airport.code}</Th>
+              <Th align="right" w="13%">Prom. Chile</Th>
+              <Th align="right" w="13%">Prom. base</Th>
+              <Th align="right" w="15%">Posición en Chile</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {a.categories.map((c) => {
+              const d = c.airport != null && c.chile != null ? c.airport - c.chile : null;
+              const color = d == null || Math.abs(d) < 0.05 ? AIGS.ink : d > 0 ? AIGS.up : AIGS.down;
+              return (
+                <tr key={c.key} style={{ borderTop: `1px solid ${hx(AIGS.hairline)}`, height: rowH }}>
+                  <Td align="left" color={AIGS.ink}>{c.label}</Td>
+                  <Td align="left" color={AIGS.muted}>{c.kind}</Td>
+                  <Td align="right" mono bold color={color}>{fmtScore2(c.airport)}</Td>
+                  <Td align="right" mono>{fmtScore2(c.chile)}</Td>
+                  <Td align="right" mono>{fmtScore2(c.all)}</Td>
+                  <Td align="right" mono>{`${ordinal(c.rankChile)} de ${c.totalChile}`}</Td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{ fontSize: 12, color: hx(AIGS.muted), marginTop: 12 }}>
+          Verde / rojo: sobre / bajo el promedio de los aeropuertos chilenos (diferencia de 0,05 o más).
+        </div>
+      </div>
+      <AsqNote />
+      <BottomLogo />
+    </div>
+  );
+}
+
+const QUADRANT_COLOR: Record<string, string> = {
+  "Fortaleza clave": AIGS.up,
+  "Mejorar con prioridad": AIGS.down,
+  Mantener: "3D7593",
+  "Menor prioridad": "A9B2BF",
+};
+
+// Matriz importancia (% que lo elige entre sus 3 más importantes) vs desempeño (nota 1–5).
+function AsqMatrixSlide({ data, a }: { data: DeckData; a: AsqData }) {
+  const { pts, midImp, midScore, quadrant, priority, strengths, number } = asqMatrix(a.attributes);
+  const W = 760;
+  const H = 470;
+  const pad = { l: 48, r: 16, t: 12, b: 36 };
+  const maxImp = Math.max(10, ...pts.map((p) => p.importance)) * 1.1;
+  const sMin = Math.min(...pts.map((p) => p.airport)) - 0.15;
+  const sMax = Math.max(...pts.map((p) => p.airport)) + 0.15;
+  const x = (v: number) => pad.l + (v / maxImp) * (W - pad.l - pad.r);
+  const y = (v: number) => pad.t + (1 - (v - sMin) / (sMax - sMin)) * (H - pad.t - pad.b);
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead
+        title="Matriz importancia–desempeño"
+        subtitle={`${airportFull(data)} · ${a.season.label} · importancia declarada por los pasajeros vs nota del atributo`}
+      />
+      <svg width={W} height={H} style={{ position: "absolute", top: 140, left: 60 }}>
+        <rect x={x(midImp)} y={pad.t} width={W - pad.r - x(midImp)} height={y(midScore) - pad.t} fill="#05B16910" />
+        <rect x={x(midImp)} y={y(midScore)} width={W - pad.r - x(midImp)} height={H - pad.b - y(midScore)} fill="#CF202F10" />
+        <line x1={pad.l} y1={H - pad.b} x2={W - pad.r} y2={H - pad.b} stroke={hx(AIGS.hairline)} />
+        <line x1={pad.l} y1={pad.t} x2={pad.l} y2={H - pad.b} stroke={hx(AIGS.hairline)} />
+        <line x1={x(midImp)} y1={pad.t} x2={x(midImp)} y2={H - pad.b} stroke={hx(AIGS.muted)} strokeDasharray="4 4" />
+        <line x1={pad.l} y1={y(midScore)} x2={W - pad.r} y2={y(midScore)} stroke={hx(AIGS.muted)} strokeDasharray="4 4" />
+        <text x={W - pad.r - 4} y={pad.t + 14} textAnchor="end" fontSize={12} fill={hx(AIGS.up)} fontWeight={700}>Fortaleza clave</text>
+        <text x={W - pad.r - 4} y={H - pad.b - 8} textAnchor="end" fontSize={12} fill={hx(AIGS.down)} fontWeight={700}>Mejorar con prioridad</text>
+        <text x={pad.l + 6} y={pad.t + 14} fontSize={12} fill={hx("3D7593")} fontWeight={700}>Mantener</text>
+        <text x={pad.l + 6} y={H - pad.b - 8} fontSize={12} fill={hx(AIGS.muted)} fontWeight={700}>Menor prioridad</text>
+        {[0, 10, 20, 30, 40, 50, 60].filter((v) => v <= maxImp).map((v) => (
+          <text key={v} x={x(v)} y={H - pad.b + 16} textAnchor="middle" fontSize={11} fill={hx(AIGS.muted)}>{v}%</text>
+        ))}
+        <text x={(W + pad.l) / 2} y={H - 4} textAnchor="middle" fontSize={11} fill={hx(AIGS.muted)}>Importancia (% que lo elige entre sus 3 más importantes)</text>
+        {[sMin, (sMin + sMax) / 2, sMax].map((v) => (
+          <text key={v} x={pad.l - 6} y={y(v) + 4} textAnchor="end" fontSize={11} fill={hx(AIGS.muted)}>{fmtScore2(v)}</text>
+        ))}
+        {pts.map((p) => (
+          <g key={p.key}>
+            <circle cx={x(p.importance)} cy={y(p.airport)} r={6} fill={hx(QUADRANT_COLOR[quadrant(p)])} opacity={0.9} />
+            {number.has(p) && (
+              <text x={x(p.importance) + 9} y={y(p.airport) + 4} fontSize={12} fontWeight={700} fill={hx(AIGS.ink)}>
+                {number.get(p)}
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
+      <div style={{ position: "absolute", top: 140, right: 72, width: 330, bottom: 64, overflow: "hidden" }}>
+        {[
+          { title: "Mejorar con prioridad", color: AIGS.down, rows: priority },
+          { title: "Fortalezas clave", color: AIGS.up, rows: strengths },
+        ].map((b) => (
+          <div key={b.title} style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: hx(b.color), marginBottom: 6 }}>{b.title}</div>
+            {b.rows.length === 0 ? (
+              <div style={{ fontSize: 12, color: hx(AIGS.muted) }}>Ninguno.</div>
+            ) : (
+              b.rows.map((p) => (
+                <div
+                  key={p.key}
+                  style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, padding: "4px 0", borderTop: `1px solid ${hx(AIGS.hairline)}` }}
+                >
+                  <span style={{ color: hx(AIGS.body), minWidth: 0 }}>
+                    <b style={{ color: hx(AIGS.ink) }}>{number.get(p)}.</b> {p.label}
+                  </span>
+                  <span style={{ fontFamily: FONT.mono, whiteSpace: "nowrap", color: hx(AIGS.ink) }}>
+                    {fmtScore2(p.airport)} · {p.importance}%
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", left: 72, right: 72, bottom: 52, fontSize: 11, color: hx(AIGS.muted) }}>
+        Líneas: mediana de importancia y nota promedio de los atributos del aeropuerto. Atributos con al menos 10 respuestas.
+      </div>
+      <BottomLogo />
+    </div>
+  );
+}
+
+// 5 mejores y 5 peores atributos, con la diferencia vs el promedio de los aeropuertos chilenos.
+function AsqAttributesSlide({ data, a }: { data: DeckData; a: AsqData }) {
+  const { best, worst } = asqBestWorst(a.attributes);
+  const block = (title: string, rows: typeof best) => (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 8 }}>
+        {title} <span style={{ fontSize: 12, fontWeight: 400, color: hx(AIGS.muted) }}>· nota 1–5 · vs promedio Chile</span>
+      </div>
+      {rows.map((r) => (
+        <div
+          key={r.key}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 22% 40px 110px",
+            alignItems: "center",
+            gap: 10,
+            height: 52,
+            fontSize: 14,
+            borderTop: `1px solid ${hx(AIGS.hairline)}`,
+          }}
+        >
+          <span style={{ color: hx(AIGS.body) }}>{r.label}</span>
+          <span style={{ height: 9, borderRadius: 4, background: hx(AIGS.surfaceStrong), overflow: "hidden" }}>
+            <span style={{ display: "block", height: "100%", width: `${(r.airport! / 5) * 100}%`, background: hx(scoreColor(r.airport)) }} />
+          </span>
+          <span style={{ fontFamily: FONT.mono, fontWeight: 700, textAlign: "right", color: hx(AIGS.ink) }}>{fmtScore2(r.airport)}</span>
+          <span
+            style={{
+              fontSize: 12,
+              textAlign: "right",
+              color: hx(r.diff == null || Math.abs(r.diff) < 0.05 ? AIGS.muted : r.diff > 0 ? AIGS.up : AIGS.down),
+            }}
+          >
+            Chile {fmtScore2(r.chile)} ({r.diff == null ? "—" : `${r.diff >= 0 ? "+" : "−"}${fmtScore2(Math.abs(r.diff))}`})
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Mejores y peores atributos ACI ASQ" subtitle={`${airportFull(data)} · ${a.season.label}`} />
+      <div style={{ position: "absolute", top: 150, left: 72, right: 72, bottom: 64, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48 }}>
+        {block("5 mejor evaluados", best)}
+        {block("5 peor evaluados", worst)}
+      </div>
+      <AsqNote />
+      <BottomLogo />
+    </div>
+  );
+}
+
+// Perfil del pasajero: distribución (%) de cada característica, ponderada.
+function AsqProfileSlide({ data, a }: { data: DeckData; a: AsqData }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
+      <SlideHead title="Perfil del pasajero ACI ASQ" subtitle={`${airportFull(data)} · ${a.season.label} · ${fmtInt(a.n)} encuestas`} />
+      <div
+        style={{
+          position: "absolute",
+          top: 140,
+          left: 72,
+          right: 72,
+          bottom: 64,
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateRows: "1fr 1fr",
+          gap: "20px 40px",
+        }}
+      >
+        {a.profile.map((p) => (
+          <div key={p.title} style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 6 }}>{p.title}</div>
+            {p.rows.map((r) => (
+              <div
+                key={r.label}
+                style={{ display: "grid", gridTemplateColumns: "84px minmax(0, 1fr) 40px", alignItems: "center", gap: 8, height: 26, fontSize: 12.5 }}
+              >
+                <span style={{ color: hx(AIGS.body), whiteSpace: "nowrap" }}>{r.label}</span>
+                <span style={{ height: 10, background: hx(AIGS.surfaceSoft), borderRadius: 3, overflow: "hidden" }}>
+                  <span style={{ display: "block", height: "100%", width: `${r.pct}%`, background: hx(AIGS.blue) }} />
+                </span>
+                <span style={{ fontFamily: FONT.mono, textAlign: "right", color: hx(AIGS.ink) }}>{r.pct}%</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <AsqNote />
+      <BottomLogo />
+    </div>
+  );
+}
 
 // Diapositiva de texto: comentarios y sugerencias, análisis por módulo o recomendaciones.
 function TextSlide({ data, title, body }: { data: DeckData; title: string; body: string }) {

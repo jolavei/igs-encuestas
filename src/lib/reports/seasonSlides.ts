@@ -3,7 +3,7 @@
 //
 // Puro: recibe el informe ya armado (MonthlyReport con kind/seasonal).
 
-import { AIGS, fmtInt, fmtMMSS, fmtScore, scoreColor } from "@/lib/reports/design";
+import { AIGS, fmtInt, fmtMMSS, fmtScore, fmtScore2, scoreColor } from "@/lib/reports/design";
 import type { ReportKind } from "@/lib/reports/period";
 
 type Agg = { n: number; prom: number; med: number; p90: number };
@@ -24,6 +24,19 @@ type Stats = {
 type Survey = { audience: string; month: Stats };
 type Report = {
   kind?: ReportKind;
+  seasonal?: {
+    asq: {
+      overall: {
+        airport: number | null;
+        top2: number | null;
+        rankChile: number | null;
+        totalChile: number;
+        rankAll: number | null;
+        totalAll: number;
+      };
+      n: number;
+    } | null;
+  };
   processes: Proc[];
   aga: Survey[];
   asq: { pct: number; collected: number; target: number } | null;
@@ -79,6 +92,22 @@ export type SummaryCard = { label: string; value: string; sub: string; valueColo
 /** Tarjetas del resumen ejecutivo (cifras clave de cada módulo con datos). */
 export function execSummaryCards(r: Report): SummaryCard[] {
   const cards: SummaryCard[] = [];
+  const asq = r.seasonal?.asq;
+  if (asq) {
+    const o = asq.overall;
+    cards.push({
+      label: "Satisfacción general ACI ASQ",
+      value: `${fmtScore2(o.airport)} / 5`,
+      sub: [
+        o.rankChile ? `${o.rankChile}° de ${o.totalChile} en Chile` : null,
+        o.rankAll ? `${o.rankAll}° de ${o.totalAll} en la base` : null,
+        `${fmtInt(asq.n)} encuestas`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      valueColor: scoreColor(o.airport),
+    });
+  }
   const rows = tiemposSummaryRows(r);
   const withMeta = rows.filter((x) => x.meta != null);
   if (withMeta.length) {
@@ -119,6 +148,50 @@ export function agaTopRows(s: Survey, which: "attributes" | "services", limit = 
   const half = Math.floor(limit / 2);
   return [...rows.slice(0, half), ...rows.slice(-half)];
 }
+
+/** "4°" / "—". */
+export const ordinal = (n: number | null) => (n == null ? "—" : `${n}°`);
+
+/** Mejores y peores atributos ACI ASQ del aeropuerto, con su diferencia vs el promedio chileno. */
+export function asqBestWorst<T extends { airport: number | null; chile: number | null }>(attrs: T[], k = 5) {
+  const rows = attrs
+    .filter((a) => a.airport != null)
+    .map((a) => ({ ...a, diff: a.chile != null ? Math.round((a.airport! - a.chile) * 100) / 100 : null }))
+    .sort((a, b) => b.airport! - a.airport!);
+  return { best: rows.slice(0, k), worst: rows.slice(-k).reverse() };
+}
+
+/**
+ * Matriz importancia–desempeño: cuadrante de cada atributo según si su importancia
+ * declarada (% que lo eligió entre sus 3 más importantes) supera la mediana y si su nota
+ * supera el promedio de notas del aeropuerto.
+ */
+export function asqMatrix<T extends { label: string; airport: number | null; importance: number | null }>(attrs: T[]) {
+  const pts = attrs.filter((a) => a.airport != null && a.importance != null) as (T & { airport: number; importance: number })[];
+  const imps = pts.map((p) => p.importance).sort((a, b) => a - b);
+  const mid = Math.floor(imps.length / 2);
+  const midImp = imps.length === 0 ? 0 : imps.length % 2 ? imps[mid] : (imps[mid - 1] + imps[mid]) / 2;
+  const midScore = pts.length ? pts.reduce((a, p) => a + p.airport, 0) / pts.length : 0;
+  const quadrant = (p: { importance: number; airport: number }) =>
+    p.importance > midImp
+      ? p.airport >= midScore
+        ? "Fortaleza clave"
+        : "Mejorar con prioridad"
+      : p.airport >= midScore
+        ? "Mantener"
+        : "Menor prioridad";
+  // Puntos destacados (6 de mayor importancia en "Mejorar con prioridad" y en "Fortaleza
+  // clave"), numerados para identificarlos en el gráfico sin etiquetas que se solapen.
+  const pick = (q: string) => pts.filter((p) => quadrant(p) === q).sort((p, r) => r.importance - p.importance).slice(0, 6);
+  const priority = pick("Mejorar con prioridad");
+  const strengths = pick("Fortaleza clave");
+  const number = new Map<T & { airport: number; importance: number }, number>();
+  [...priority, ...strengths].forEach((p, i) => number.set(p, i + 1));
+  return { pts, midImp, midScore, quadrant, priority, strengths, number };
+}
+
+export const ASQ_NOTE =
+  "Promedios simples (sin el factor de ponderación de ACI). Chile y base = promedio de los aeropuertos de la temporada.";
 
 /** Colores de las series del histórico por temporada (uno por proceso). */
 export const HISTORY_COLORS = [AIGS.blue, "3D7593", "D9B300", "8DB0BB", AIGS.down, AIGS.blueDisabled];
