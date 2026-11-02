@@ -14,7 +14,7 @@ import {
   ResponsiveContainer,
   Customized,
 } from "recharts";
-import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor, stackPointLabels, timeAxis } from "@/lib/reports/design";
+import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor, processAxes, stackPointLabels, timeAxis } from "@/lib/reports/design";
 import {
   AGA_GUIDE_KPIS,
   AGA_GUIDE_PERIOD_NOTE,
@@ -497,15 +497,7 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
   const hasMini = p.byAirline.length > 0;
   const cols = Math.min(p.byAirline.length, 6);
   const seasonMargin = p.meta != null ? p.meta - p.kpiSeason.prom : null;
-  // Escala común del evolutivo y los mini: incluye lo que dibuja cada uno.
-  const axis = timeAxis(
-    [
-      ...p.series.flatMap((s) => [s.prom, s.med, s.p90]),
-      ...(p.service?.series ?? []),
-      ...p.byAirline.slice(0, 6).flatMap((a) => a.series.map((s) => s.prom)),
-    ],
-    p.meta
-  );
+  const axes = processAxes(p, p.service?.kpi ? p.service.series : undefined);
   // Sin mediciones este mes: la diapositiva se muestra igual (hubo mediciones antes en la
   // temporada). Los KPIs del mes van en "—" y se apoya el lector en el acumulado del periodo.
   const kpi = p.kpi;
@@ -589,10 +581,10 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
           <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink) }}>Evolutivo</div>
           <ChartLegend meta={p.meta} service={!!sv} />
         </div>
-        <ProcesoChart p={p} height={hasMini ? (sv ? 132 : 146) : 210} axis={axis} />
+        <ProcesoChart p={p} height={hasMini ? (sv ? 132 : 146) : 210} axis={axes.main} />
       </div>
 
-      {/* Mini-gráficos por aerolínea (Check in / Retiro), misma escala Y que el principal */}
+      {/* Mini-gráficos por aerolínea (Check in / Retiro), con una escala Y común entre ellos */}
       {hasMini && (
         <div style={{ position: "absolute", top: 486, left: 72, right: 72, bottom: 70 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 6 }}>
@@ -601,7 +593,7 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
           </div>
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 12 }}>
             {p.byAirline.slice(0, 6).map((a) => (
-              <MiniAirlineChart key={a.airline} a={a} yMax={axis.max} at={sv ? sv.byAirline[a.airline] ?? null : undefined} />
+              <MiniAirlineChart key={a.airline} a={a} yMax={axes.mini.max} at={sv ? sv.byAirline[a.airline] ?? null : undefined} />
             ))}
           </div>
         </div>
@@ -697,7 +689,7 @@ function PointLabels({
   if (!xAxis || !yAxis) return null;
   const fs = 11;
   // Los puntos extremos caen en el borde: la etiqueta se corre para no pisar el eje Y ni cortarse.
-  const halfW = 18;
+  const halfW = 24;
   const clampX = (x: number) => Math.min(xAxis.x + xAxis.width - 2, Math.max(xAxis.x + halfW, x));
   const text = (key: string, x: number, y: number | null, v: number | null, color: string) =>
     y == null ? null : (
@@ -767,14 +759,15 @@ function ProcesoChart({ p, height = 200, axis }: { p: DeckData["processes"][numb
           fill="rgba(0,49,82,0.06)"
           isAnimationActive={false}
         />
-        <Line type="monotone" dataKey="p90" stroke={hx(SERIES.p90)} strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls />
-        <Line type="monotone" dataKey="med" stroke={hx(SERIES.med)} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} connectNulls />
+        {/* Etiquetas detrás de los puntos y mediana al final, como anillo: con valores casi iguales todos se ven */}
+        <Customized component={(chart: unknown) => <PointLabels chart={chart} rows={chartData} />} />
+        <Line type="monotone" dataKey="p90" stroke={hx(SERIES.p90)} strokeWidth={1.5} dot={{ r: 2, fill: hx(SERIES.p90) }} isAnimationActive={false} connectNulls />
         <Line type="monotone" dataKey="prom" stroke={hx(SERIES.prom)} strokeWidth={2} dot={{ r: 2, fill: hx(SERIES.prom) }} isAnimationActive={false} connectNulls />
         {p.meta != null && <ReferenceLine y={p.meta} stroke={hx(SERIES.meta)} strokeDasharray="4 4" strokeWidth={1.5} />}
         {p.service?.kpi && (
           <Line type="monotone" dataKey="at" name="Atención" stroke={hx(SERIES.at)} strokeWidth={2} dot={{ r: 2, fill: hx(SERIES.at) }} isAnimationActive={false} connectNulls />
         )}
-        <Customized component={(chart: unknown) => <PointLabels chart={chart} rows={chartData} />} />
+        <Line type="monotone" dataKey="med" stroke={hx(SERIES.med)} strokeWidth={2} strokeDasharray="6 4" dot={{ r: 4, fill: "none", strokeWidth: 1.5, strokeDasharray: "none" }} isAnimationActive={false} connectNulls />
       </ComposedChart>
     </ResponsiveContainer>
   );

@@ -1,5 +1,33 @@
 import { describe, it, expect } from "vitest";
-import { stackPointLabels, timeAxis } from "./design";
+import { processAxes, stackPointLabels, timeAxis } from "./design";
+
+describe("processAxes", () => {
+  const month = (prom: number | null, med: number | null, p90: number | null) => ({ prom, med, p90 });
+  const airline = (meta: number | null, prom: number) => ({ meta, series: [{ prom }] });
+
+  it("el evolutivo incluye el p90 y los mini no", () => {
+    // Calama, octubre 2026: fila 06:20, mediana 00:34, p90 31:11, atención 02:21.
+    const axes = processAxes({ meta: 20, series: [month(6.33, 0.57, 31.18)], byAirline: [airline(20, 10.98), airline(5, 0.02)] }, [2.35]);
+    expect(axes.main.max).toBe(40);
+    expect(axes.mini.max).toBe(20);
+  });
+
+  it("el evolutivo no baja del estándar y sube si la atención lo supera", () => {
+    expect(processAxes({ meta: 20, series: [month(2.2, 2, 4.2)], byAirline: [] }).main.max).toBe(20);
+    expect(processAxes({ meta: 10, series: [month(2, 2, 3)], byAirline: [] }, [11]).main.max).toBe(12);
+  });
+
+  it("los mini no bajan del mayor estándar de sus aerolíneas y suben si un promedio lo supera", () => {
+    const p = { meta: 20, series: [month(5, 4, 9)] };
+    expect(processAxes({ ...p, byAirline: [airline(5, 2), airline(20, 3)] }).mini.max).toBe(20);
+    expect(processAxes({ ...p, byAirline: [airline(5, 1), airline(5, 3)] }).mini.max).toBe(5);
+    expect(processAxes({ ...p, byAirline: [airline(20, 28)] }).mini.max).toBe(30);
+  });
+
+  it("sin estándar se ajusta a los datos", () => {
+    expect(processAxes({ meta: null, series: [month(6, 5.5, 28)], byAirline: [] }).main.max).toBe(30);
+  });
+});
 
 describe("stackPointLabels", () => {
   it("con puntos separados, cada etiqueta va sobre su punto", () => {

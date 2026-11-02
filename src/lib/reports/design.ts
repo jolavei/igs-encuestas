@@ -59,6 +59,29 @@ export function timeAxis(values: (number | null | undefined)[], standard?: numbe
 }
 
 /**
+ * Ejes de la diapositiva de un proceso. El evolutivo incluye todo lo que dibuja, p90 incluido.
+ * Los mini por aerolínea comparten una escala propia, sin el p90 (que no dibujan), para que
+ * una cola extrema no aplaste sus promedios.
+ */
+export function processAxes(
+  p: {
+    meta: number | null;
+    series: { prom: number | null; med: number | null; p90: number | null }[];
+    byAirline: { meta: number | null; series: { prom: number | null }[] }[];
+  },
+  service?: (number | null)[]
+) {
+  const airlines = p.byAirline.slice(0, 6);
+  return {
+    main: timeAxis([...p.series.flatMap((s) => [s.prom, s.med, s.p90]), ...(service ?? [])], p.meta),
+    mini: timeAxis(
+      airlines.flatMap((a) => a.series.map((s) => s.prom)),
+      Math.max(0, ...airlines.map((a) => a.meta ?? 0))
+    ),
+  };
+}
+
+/**
  * Base (y, hacia abajo) de las etiquetas de dos puntos del mismo mes, siempre sobre el punto
  * para no chocar con el eje X. Si están muy cerca, ambas van apiladas sobre el punto superior.
  */

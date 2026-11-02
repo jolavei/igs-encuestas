@@ -2,7 +2,7 @@
 // nativos (portada/cierre sobrios con logo + badge, sin foto de fondo).
 // Server-only (runtime nodejs). Import dinámico para no forzar el bundle.
 
-import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor, stackPointLabels, timeAxis } from "@/lib/reports/design";
+import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor, processAxes, stackPointLabels, timeAxis } from "@/lib/reports/design";
 import { LOGO_DATA_URI, LOGO_TEXT_DATA_URI } from "@/lib/reports/assets";
 import type { MonthlyReport, ReportProcess, ReportAirlineBreakdown } from "@/lib/reports/monthlyReport";
 import type { AgaScore, AgaSurvey } from "@/lib/reports/agaSurvey";
@@ -395,7 +395,7 @@ function miniAirlineChart(
     ],
     { x: x + w * 0.5, y: y + 0.1, w: w * 0.5 - 0.12, h: 0.3, align: "right", valign: "middle", margin: 0 }
   );
-  // Ejes visibles con la MISMA escala Y (minutos) que el gráfico principal; meses cortos en X.
+  // Ejes visibles con la escala Y (minutos) común de los mini; meses cortos en X.
   const labels = a.series.map((p) => p.label.split(" ")[0]);
   const series: { name: string; labels: string[]; values: (number | null)[] }[] = [
     { name: "Promedio", labels, values: a.series.map((p) => (p.prom == null ? null : round1(p.prom))) },
@@ -473,15 +473,8 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   );
 
   const hasMini = p.byAirline.length > 0;
-  // Escala común del evolutivo y los mini: incluye lo que dibuja cada uno.
-  const axis = timeAxis(
-    [
-      ...p.series.flatMap((x) => [x.prom, x.med, x.p90]),
-      ...(sv?.series ?? []),
-      ...p.byAirline.slice(0, 6).flatMap((a) => a.series.map((x) => x.prom)),
-    ],
-    p.meta
-  );
+  const axes = processAxes(p, sv?.series);
+  const axis = axes.main;
 
   if (sv) {
     const k = sv.kpi!;
@@ -502,7 +495,7 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     );
   }
 
-  // Evolutivo principal (minutos; misma escala Y que los mini). Legenda abajo.
+  // Evolutivo principal (minutos). Legenda abajo.
   const labels = p.series.map((x) => x.label);
   const data: { name: string; labels: string[]; values: (number | null)[] }[] = [
     { name: sv ? "Fila · promedio" : "Promedio", labels, values: p.series.map((x) => (x.prom == null ? null : round1(x.prom))) },
@@ -590,7 +583,7 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     pointLabel(i, atBase, at, SERIES.at);
   });
 
-  // Mini-gráficos por aerolínea (Check in / Retiro), misma escala Y que el principal.
+  // Mini-gráficos por aerolínea (Check in / Retiro), con una escala Y común entre ellos.
   if (hasMini) {
     s.addText("Promedio por aerolínea · línea: promedio, guiones: estándar IATA · ejes en minutos", {
       x: MX,
@@ -607,7 +600,7 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     const gap = 0.28;
     const w = (CONTENT_W - gap * (cards.length - 1)) / cards.length;
     cards.forEach((a, i) =>
-      miniAirlineChart(s, pres, a, MX + i * (w + gap), 7.95, w, 2.35, axis.max, sv ? sv.byAirline[a.airline] ?? null : undefined)
+      miniAirlineChart(s, pres, a, MX + i * (w + gap), 7.95, w, 2.35, axes.mini.max, sv ? sv.byAirline[a.airline] ?? null : undefined)
     );
   }
 
