@@ -50,7 +50,7 @@ describe("resumen ejecutivo", () => {
       "Tiempos dentro del Estándar IATA",
       "AGA Pasajeros · nota promedio",
     ]);
-    expect(cards[0]).toMatchObject({ value: "4,03 / 5", sub: "4° de 10 en Chile · 10° de 19 en la base · 370 encuestas" });
+    expect(cards[0]).toMatchObject({ value: "4,03 / 5", sub: "4° de 10 en Chile · 10° de 19 en el programa regional · 370 encuestas" });
     expect(cards[1]).toMatchObject({ value: "1 de 2", sub: "Sobre el estándar (fila): AVSEC (+02:00)" });
     expect(tiemposSummaryRows({ processes: [], aga: [], asq: null })).toEqual([]);
   });

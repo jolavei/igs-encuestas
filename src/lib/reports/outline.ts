@@ -17,12 +17,14 @@ export type OutlineInput = {
   comentarios: string;
   photosCount: number;
   processes: { label: string }[]; // una diapositiva por proceso/fase de tiempos
-  aga: { audience: "Pasajeros" | "Acompañantes"; hasVoice: boolean }[]; // planes AGA vigentes
+  // Planes AGA vigentes. `hasData` = false: sin encuestas en el periodo (semestral/anual).
+  aga: { audience: "Pasajeros" | "Acompañantes"; hasVoice: boolean; hasData?: boolean }[];
   // Desde oct-2026: algún proceso trae tiempo de atención (diapositiva "fila vs atención").
   service?: boolean;
-  // Semestral/anual: si hay histórico por temporada y franjas horarias de tiempos, y
-  // si hay resultados ACI ASQ de la temporada.
-  season?: { history: boolean; hours: boolean; asq: boolean };
+  // Semestral/anual: histórico por temporada de tiempos, mapas de hotspots (uno por proceso
+  // y modalidad) y resultados ACI ASQ (categorías con subatributos; histórico si hay más de
+  // una temporada; comparación pasajeros vs acompañantes si ambos públicos tienen encuestas).
+  season?: { history: boolean; hotspots: number; asq: boolean; asqGroups?: number; asqHistory?: boolean; agaCompare?: boolean };
 };
 
 export type SlideSpec =
@@ -39,21 +41,28 @@ export type SlideSpec =
   | { type: "tiempos-summary" }
   | { type: "tiempos-split" }
   | { type: "tiempos-history" }
-  | { type: "tiempos-hours" }
+  | { type: "tiempos-hotspot"; index: number }
   | { type: "aga-evolution"; index: number }
+  | { type: "aga-map"; index: number }
+  | { type: "aga-compare" }
+  | { type: "asq-guide" }
   | { type: "asq-overall" }
-  | { type: "asq-ranking" }
-  | { type: "asq-categories" }
-  | { type: "asq-matrix" }
-  | { type: "asq-attributes" }
   | { type: "asq-profile" }
+  | { type: "asq-categories" }
+  | { type: "asq-group"; index: number }
+  | { type: "asq-general" }
+  | { type: "asq-airlines" }
+  | { type: "asq-indices" }
+  | { type: "asq-benchmark" }
+  | { type: "asq-ranking" }
+  | { type: "asq-matrix" }
+  | { type: "asq-history" }
+  | { type: "asq-history-bench" }
   | { type: "asq-empty" }
   | { type: "photos"; start: number; count: number; index: number; total: number }
   | { type: "closing" };
 
 export const PHOTOS_PER_SLIDE = 4;
-
-const ASQ_SLIDES = ["asq-overall", "asq-ranking", "asq-categories", "asq-matrix", "asq-attributes", "asq-profile"] as const;
 
 export function buildOutline(input: OutlineInput): SlideSpec[] {
   const out: SlideSpec[] = [{ type: "cover" }];
@@ -82,9 +91,10 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
         else {
           if (seasonal) out.push({ type: "tiempos-summary" });
           if (input.service) out.push({ type: "tiempos-split" });
-          input.processes.forEach((_, index) => out.push({ type: "proceso", index }));
+          // Semestral/anual: mapa de hotspots con su tabla resumen por proceso; mensual: evolutivo.
+          if (seasonal) for (let index = 0; index < (input.season?.hotspots ?? 0); index++) out.push({ type: "tiempos-hotspot", index });
+          else input.processes.forEach((_, index) => out.push({ type: "proceso", index }));
           if (seasonal && input.season?.history) out.push({ type: "tiempos-history" });
-          if (seasonal && input.season?.hours) out.push({ type: "tiempos-hours" });
         }
         addNote(key);
         break;
@@ -106,11 +116,14 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
         for (const b of blocks) {
           for (const s of b.surveys) {
             out.push({ type: "aga", index: s.index });
+            if (seasonal && s.hasData !== false) out.push({ type: "aga-map", index: s.index });
             if (seasonal) out.push({ type: "aga-evolution", index: s.index });
             if (s.hasVoice) out.push({ type: "voice", index: s.index });
           }
           if (b.surveys.length > 0) addNote(b.key);
         }
+        if (seasonal && input.season?.agaCompare && blocks.every((b) => b.surveys.length > 0) && blocks.length > 1)
+          out.push({ type: "aga-compare" });
         break;
       }
 
@@ -152,7 +165,17 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
         if (!seasonal) break;
         addSection("Encuestas ACI ASQ · Resultados");
         if (input.season?.asq) {
-          for (const type of ASQ_SLIDES) out.push({ type });
+          out.push({ type: "asq-guide" }, { type: "asq-overall" }, { type: "asq-profile" }, { type: "asq-categories" });
+          for (let index = 0; index < (input.season.asqGroups ?? 0); index++) out.push({ type: "asq-group", index });
+          out.push(
+            { type: "asq-general" },
+            { type: "asq-airlines" },
+            { type: "asq-indices" },
+            { type: "asq-benchmark" },
+            { type: "asq-ranking" },
+            { type: "asq-matrix" }
+          );
+          if (input.season.asqHistory) out.push({ type: "asq-history" }, { type: "asq-history-bench" });
         } else out.push({ type: "asq-empty" });
         addNote(key);
         break;
@@ -196,22 +219,40 @@ export function slideLabel(s: SlideSpec, input: OutlineInput): string {
       return "Tiempos · fila vs atención";
     case "tiempos-history":
       return "Tiempos · evolutivo por temporada";
-    case "tiempos-hours":
-      return "Tiempos · por franja horaria";
+    case "tiempos-hotspot":
+      return `Tiempos · mapa de hotspots ${s.index + 1}`;
     case "aga-evolution":
-      return `Encuesta AGA · ${input.aga[s.index]?.audience ?? ""} · evolución`;
+      return `Encuesta AGA · ${input.aga[s.index]?.audience ?? ""} · resultados históricos`;
+    case "aga-map":
+      return `Encuesta AGA · ${input.aga[s.index]?.audience ?? ""} · nota vs alcance`;
+    case "aga-compare":
+      return "Encuesta AGA · pasajeros vs acompañantes";
+    case "asq-guide":
+      return "ACI ASQ · qué evalúa el programa";
     case "asq-overall":
-      return "ACI ASQ · satisfacción general y evolutivo";
-    case "asq-ranking":
-      return "ACI ASQ · ranking en Chile y en la base";
-    case "asq-categories":
-      return "ACI ASQ · categorías e índices";
-    case "asq-matrix":
-      return "ACI ASQ · matriz importancia–desempeño";
-    case "asq-attributes":
-      return "ACI ASQ · mejores y peores atributos";
+      return "ACI ASQ · puntos clave";
     case "asq-profile":
-      return "ACI ASQ · perfil del pasajero";
+      return "ACI ASQ · contexto y perfil del pasajero";
+    case "asq-categories":
+      return "ACI ASQ · promedios y comparación con la industria";
+    case "asq-group":
+      return `ACI ASQ · apertura por subatributos ${s.index + 1}`;
+    case "asq-general":
+      return "ACI ASQ · apertura general";
+    case "asq-airlines":
+      return "ACI ASQ · apertura por aerolínea";
+    case "asq-indices":
+      return "ACI ASQ · índices de calidad y estado emocional";
+    case "asq-benchmark":
+      return "ACI ASQ · comparación con la industria";
+    case "asq-ranking":
+      return "ACI ASQ · ranking en Chile y en el programa regional";
+    case "asq-matrix":
+      return "ACI ASQ · importancia vs puntaje";
+    case "asq-history":
+      return "ACI ASQ · resultados históricos";
+    case "asq-history-bench":
+      return "ACI ASQ · resultados históricos vs la industria";
     case "asq-empty":
       return "ACI ASQ · base de la temporada sin cargar";
   }
@@ -222,8 +263,12 @@ export function outlineInputFrom(
   data: {
     kind?: ReportKind;
     processes: { proceso: string; faseLabel: string | null; service?: { kpi: unknown } | null }[];
-    aga: { audience: string; voice: { appraisal: string | null; quotes: unknown[] } }[];
-    seasonal?: { tiemposHistory: { seasons: unknown[] }; tiemposHours: { rows: unknown[] }; asq: unknown };
+    aga: { audience: string; month?: { n: number }; voice: { appraisal: string | null; quotes: unknown[] } }[];
+    seasonal?: {
+      tiemposHistory: { seasons: unknown[] };
+      tiemposHot: unknown[];
+      asq: { groups: unknown[]; history: unknown[] } | null;
+    };
   },
   edition: { modules: ModuleKey[]; notes: ModuleNotes; comentarios: string; photosCount: number }
 ): OutlineInput {
@@ -234,14 +279,18 @@ export function outlineInputFrom(
     season: data.seasonal
       ? {
           history: data.seasonal.tiemposHistory.seasons.length > 1,
-          hours: data.seasonal.tiemposHours.rows.length > 0,
+          hotspots: data.seasonal.tiemposHot.length,
           asq: !!data.seasonal.asq,
+          asqGroups: data.seasonal.asq?.groups.length ?? 0,
+          asqHistory: (data.seasonal.asq?.history.length ?? 0) > 1,
+          agaCompare: data.aga.length > 1 && data.aga.every((a) => (a.month?.n ?? 0) > 0),
         }
       : undefined,
     processes: data.processes.map((p) => ({ label: `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}` })),
     aga: data.aga.map((a) => ({
       audience: a.audience === "Acompañantes" ? "Acompañantes" : "Pasajeros",
       hasVoice: !!a.voice.appraisal || a.voice.quotes.length > 0,
+      ...(a.month ? { hasData: a.month.n > 0 } : {}),
     })),
   };
 }

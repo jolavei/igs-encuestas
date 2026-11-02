@@ -83,13 +83,16 @@ export default async function EditarInforme({
           })),
           aga: (report?.aga ?? []).map((a) => ({
             audience: a.audience,
+            month: { n: a.month.n },
             voice: { appraisal: a.voice.appraisal, quotes: a.voice.quotes.map(() => null) },
           })),
           seasonal: report?.seasonal
             ? {
                 tiemposHistory: { seasons: report.seasonal.tiemposHistory.seasons },
-                tiemposHours: { rows: report.seasonal.tiemposHours.rows.map(() => null) },
-                asq: report.seasonal.asq ? true : null,
+                tiemposHot: report.seasonal.tiemposHot.map(() => null),
+                asq: report.seasonal.asq
+                  ? { groups: report.seasonal.asq.groups.map(() => null), history: report.seasonal.asq.history.map(() => null) }
+                  : null,
               }
             : undefined,
         }}

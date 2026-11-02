@@ -43,7 +43,7 @@ export type AgaStats = {
   items: AgaItem[];
 };
 
-export type AgaItem = { section: string; label: string; avg: number | null; n: number; sum: number };
+export type AgaItem = { section: string; label: string; avg: number | null; n: number; sum: number; dist: number[] };
 
 export type AgaSurvey = {
   audience: AgaAudience;
@@ -115,12 +115,13 @@ export function aggregateAga(responses: AgaAnswerRow[][]): AgaStats {
   // servicio -> { sum, count, responses con nota }
   const svc = new Map<string, { sum: number; count: number; resp: number }>();
   const gate = new Map<string, { yes: number; total: number }>();
-  const items = new Map<string, { section: string; label: string; sum: number; n: number }>();
+  const items = new Map<string, { section: string; label: string; sum: number; n: number; dist: number[] }>();
   const addItem = (section: string, label: string, v: number) => {
     const k = `${section}|${label}`;
-    const it = items.get(k) ?? { section, label, sum: 0, n: 0 };
+    const it = items.get(k) ?? { section, label, sum: 0, n: 0, dist: [0, 0, 0, 0, 0] }; // dist: cantidad de notas 1..5
     it.sum += v;
     it.n++;
+    if (it.dist[Math.round(v) - 1] != null) it.dist[Math.round(v) - 1]++;
     items.set(k, it);
   };
   let n = 0;

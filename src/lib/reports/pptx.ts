@@ -2,7 +2,7 @@
 // nativos (portada/cierre sobrios con logo + badge, sin foto de fondo).
 // Server-only (runtime nodejs). Import dinámico para no forzar el bundle.
 
-import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor, processAxes, stackPointLabels, timeAxis } from "@/lib/reports/design";
+import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor, processAxes, stackPointLabels } from "@/lib/reports/design";
 import { LOGO_DATA_URI, LOGO_TEXT_DATA_URI } from "@/lib/reports/assets";
 import type { MonthlyReport, ReportProcess, ReportAirlineBreakdown } from "@/lib/reports/monthlyReport";
 import type { AgaScore, AgaSurvey } from "@/lib/reports/agaSurvey";
@@ -19,17 +19,34 @@ import {
 } from "@/lib/reports/agaGuide";
 import {
   ASQ_NOTE,
-  HISTORY_COLORS,
   KIND_BADGE,
-  asqBestWorst,
   asqMatrix,
-  ordinal,
   serviceSplitRows,
-  agaTopRows,
   coverScope,
   execSummaryCards,
   tiemposSummaryRows,
 } from "@/lib/reports/seasonSlides";
+import {
+  agaCompareScene,
+  agaEvolutionScene,
+  agaMapScene,
+  agaSeasonScene,
+  asqAirlinesScene,
+  asqBenchmarkScene,
+  asqCategoriesScene,
+  asqGeneralScene,
+  asqGroupScene,
+  asqGuideScene,
+  asqHistoryBenchScene,
+  asqHistoryScene,
+  asqIndicesScene,
+  asqKeyPointsScene,
+  asqProfileScene,
+  tiemposHistoryScene,
+  tiemposHotspotScene,
+} from "@/lib/reports/seasonScenes";
+import { PT_PER_PX, PX_PER_IN, iconFor, type Scene } from "@/lib/reports/scene";
+import { ICON_DATA_URI } from "@/lib/reports/iconAssets";
 import { buildOutline, outlineInputFrom } from "@/lib/reports/outline";
 import type { ModuleKey, ModuleNotes } from "@/lib/reports/modules";
 
@@ -179,6 +196,83 @@ function slideTitle(s: Slide, title: string, subtitle?: string) {
       color: AIGS.muted,
       margin: 0,
     });
+}
+
+/** Dibuja una escena (semestral/anual) con formas y texto editables. */
+function addScene(pres: Pptx, scene: Scene) {
+  const s = pres.addSlide();
+  s.background = { color: AIGS.white };
+  slideTitle(s, scene.title, scene.subtitle);
+  const inch = (px: number) => px / PX_PER_IN;
+  for (const p of scene.prims) {
+    if (p.k === "img") {
+      s.addImage({ data: ICON_DATA_URI[p.icon], x: inch(p.x), y: inch(p.y), w: inch(p.w), h: inch(p.h) });
+    } else if (p.k === "line") {
+      const w = Math.abs(p.x2 - p.x1);
+      const h = Math.abs(p.y2 - p.y1);
+      // La línea va de esquina a esquina de su caja: sube si los extremos están invertidos.
+      const rising = (p.x2 - p.x1) * (p.y2 - p.y1) < 0;
+      s.addShape(pres.ShapeType.line, {
+        x: inch(Math.min(p.x1, p.x2)),
+        y: inch(Math.min(p.y1, p.y2)),
+        w: inch(w),
+        h: inch(h),
+        flipV: rising,
+        line: { color: p.color, width: (p.width ?? 1) * PT_PER_PX, ...(p.dash ? { dashType: "dash" } : {}) },
+      });
+    } else if (p.k === "dot") {
+      s.addShape(pres.ShapeType.ellipse, {
+        x: inch(p.cx - p.r),
+        y: inch(p.cy - p.r),
+        w: inch(p.r * 2),
+        h: inch(p.r * 2),
+        fill: { color: p.fill },
+        line: p.stroke ? { color: p.stroke, width: 1.5 } : { type: "none" },
+      });
+    } else {
+      const shape = {
+        x: inch(p.x),
+        y: inch(p.y),
+        w: inch(p.w),
+        h: inch(p.h),
+        ...(p.fill ? { fill: { color: p.fill } } : {}),
+        line: p.stroke ? { color: p.stroke, width: (p.strokeW ?? 1) * PT_PER_PX } : { type: "none" },
+        ...(p.radius ? { rectRadius: inch(p.radius) } : {}),
+      };
+      const kind = p.radius ? pres.ShapeType.roundRect : pres.ShapeType.rect;
+      if (p.text == null || p.text === "") {
+        if (p.fill || p.stroke) s.addShape(kind, shape);
+        continue;
+      }
+      const size = (p.size ?? 12) * PT_PER_PX;
+      const text =
+        typeof p.text === "string"
+          ? p.text
+          : p.text.map((r) => ({
+              text: r.text,
+              options: {
+                ...(r.color ? { color: r.color } : {}),
+                ...(r.bold ? { bold: true } : {}),
+                ...(r.mono ? { fontFace: FONT.mono } : {}),
+                ...(r.size ? { fontSize: r.size * PT_PER_PX } : {}),
+              },
+            }));
+      s.addText(text, {
+        ...shape,
+        ...(p.fill || p.stroke ? { shape: kind } : {}),
+        fontFace: p.mono ? FONT.mono : FONT.face,
+        fontSize: size,
+        color: p.color ?? AIGS.body,
+        bold: !!p.bold,
+        italic: !!p.italic,
+        align: p.align ?? "left",
+        valign: p.valign ?? "top",
+        margin: 0,
+        wrap: !p.nowrap,
+      });
+    }
+  }
+  addBottomLogo(s);
 }
 
 // --- Slides -----------------------------------------------------------------
@@ -730,7 +824,6 @@ function agaGuideSlide(pres: Pptx, r: MonthlyReport) {
 
 /** Encuesta AGA de un público en una diapositiva: KPIs + atributos + servicios. */
 function agaSlide(pres: Pptx, r: MonthlyReport, a: AgaSurvey) {
-  if (isSeasonal(r)) return agaSeasonSlide(pres, r, a);
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
   const m = a.month;
@@ -1020,7 +1113,8 @@ export async function buildDeck(r: MonthlyReport, edition: DeckEdition): Promise
         agaGuideSlide(pres, r);
         break;
       case "aga":
-        agaSlide(pres, r, r.aga[spec.index]);
+        if (isSeasonal(r)) addScene(pres, agaSeasonScene(r, spec.index));
+        else agaSlide(pres, r, r.aga[spec.index]);
         break;
       case "voice":
         voiceSlide(pres, r, r.aga[spec.index]);
@@ -1044,13 +1138,19 @@ export async function buildDeck(r: MonthlyReport, edition: DeckEdition): Promise
         tiemposSplitSlide(pres, r);
         break;
       case "tiempos-history":
-        tiemposHistorySlide(pres, r);
+        addScene(pres, tiemposHistoryScene(r));
         break;
-      case "tiempos-hours":
-        tiemposHoursSlide(pres, r);
+      case "tiempos-hotspot":
+        addScene(pres, tiemposHotspotScene(r, spec.index));
         break;
       case "aga-evolution":
-        agaEvolutionSlide(pres, r, spec.index);
+        addScene(pres, agaEvolutionScene(r, spec.index));
+        break;
+      case "aga-map":
+        addScene(pres, agaMapScene(r, spec.index));
+        break;
+      case "aga-compare":
+        addScene(pres, agaCompareScene(r));
         break;
       case "asq-empty":
         asqEmptySlide(pres, r);
@@ -1059,12 +1159,19 @@ export async function buildDeck(r: MonthlyReport, edition: DeckEdition): Promise
         // Resultados ACI ASQ (el outline solo los pide si hay datos).
         const a = r.seasonal?.asq;
         if (!a) asqEmptySlide(pres, r);
-        else if (spec.type === "asq-overall") asqOverallSlide(pres, r, a);
+        else if (spec.type === "asq-guide") addScene(pres, asqGuideScene());
+        else if (spec.type === "asq-overall") addScene(pres, asqKeyPointsScene(r, a));
+        else if (spec.type === "asq-profile") addScene(pres, asqProfileScene(r, a));
+        else if (spec.type === "asq-categories") addScene(pres, asqCategoriesScene(r, a));
+        else if (spec.type === "asq-group") addScene(pres, asqGroupScene(r, a, spec.index));
+        else if (spec.type === "asq-general") addScene(pres, asqGeneralScene(r, a));
+        else if (spec.type === "asq-airlines") addScene(pres, asqAirlinesScene(r, a));
+        else if (spec.type === "asq-indices") addScene(pres, asqIndicesScene(r, a));
+        else if (spec.type === "asq-benchmark") addScene(pres, asqBenchmarkScene(r, a));
         else if (spec.type === "asq-ranking") asqRankingSlide(pres, r, a);
-        else if (spec.type === "asq-categories") asqCategoriesSlide(pres, r, a);
         else if (spec.type === "asq-matrix") asqMatrixSlide(pres, r, a);
-        else if (spec.type === "asq-attributes") asqAttributesSlide(pres, r, a);
-        else if (spec.type === "asq-profile") asqProfileSlide(pres, r, a);
+        else if (spec.type === "asq-history") addScene(pres, asqHistoryScene(r, a));
+        else if (spec.type === "asq-history-bench") addScene(pres, asqHistoryBenchScene(r, a));
       }
     }
   }
@@ -1126,6 +1233,7 @@ function tiemposSummarySlide(pres: Pptx, r: MonthlyReport) {
   const rows = tiemposSummaryRows(r);
   const sv = rows.some((x) => x.atencion != null);
   const head = [
+    "",
     "Proceso",
     sv ? "Fila prom." : "Promedio",
     "Mediana",
@@ -1135,13 +1243,14 @@ function tiemposSummarySlide(pres: Pptx, r: MonthlyReport) {
     "Margen",
     ...(sv ? ["Atención", "Total"] : []),
   ].map((t, i) =>
-    headCell(t, i === 0 ? "left" : "right")
+    headCell(t, i <= 1 ? "left" : "right")
   );
   const mono = (text: string, color: string = AIGS.body, bold = false): Cell => ({
     text,
     options: { align: "right", fontFace: FONT.mono, color, bold },
   });
   const body = rows.map((x) => [
+    { text: "", options: { align: "left" } }, // el ícono va encima, en su propia columna
     { text: x.label, options: { align: "left", color: AIGS.ink } },
     mono(fmtMMSS(x.prom), AIGS.ink, true),
     mono(fmtMMSS(x.med)),
@@ -1157,12 +1266,16 @@ function tiemposSummarySlide(pres: Pptx, r: MonthlyReport) {
       ? [mono(x.atencion != null ? fmtMMSS(x.atencion) : "—", SERIES.at), mono(x.total != null ? fmtMMSS(x.total) : "—")]
       : []),
   ]);
-  const colW = (sv ? [0.28, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09] : [0.34, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11]).map(
+  const colW = (sv ? [0.05, 0.23, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09] : [0.05, 0.29, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11]).map(
     (f) => CONTENT_W * f
   );
   s.addTable([head, ...body], {
     x: MX, y: 2.2, w: CONTENT_W, colW, rowH: 0.62, fontFace: FONT.face, fontSize: 14, color: AIGS.body, valign: "middle",
     border: { type: "solid", color: AIGS.hairline, pt: 0.5 }, autoPage: false,
+  });
+  rows.forEach((x, i) => {
+    const name = iconFor(x.label);
+    if (name) s.addImage({ data: ICON_DATA_URI[name], x: MX + 0.1, y: 2.2 + 0.62 * (i + 1) + 0.04, w: 0.54, h: 0.54 });
   });
   s.addText(
     `Margen = Estándar IATA − promedio de fila (verde: dentro del estándar). La evolución por temporada va en el evolutivo de tiempos.${
@@ -1171,146 +1284,6 @@ function tiemposSummarySlide(pres: Pptx, r: MonthlyReport) {
       r.season.to < "2026-10-01" ? " Hasta septiembre de 2026 se mide solo el tiempo de fila." : ""
     }`,
     { x: MX, y: 2.2 + 0.62 * (body.length + 1) + 0.25, w: CONTENT_W, h: 0.7, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0, valign: "top" }
-  );
-  addBottomLogo(s);
-}
-
-/** Promedio de cada proceso por temporada (gráfico de líneas nativo). */
-function tiemposHistorySlide(pres: Pptx, r: MonthlyReport) {
-  const h = r.seasonal!.tiemposHistory;
-  const s = pres.addSlide();
-  s.background = { color: AIGS.white };
-  slideTitle(s, "Tiempos · evolutivo por temporada", `${airportFull(r)} · promedio por temporada hasta ${r.seasonal!.focusLabel}`);
-  const labels = h.seasons.map((x) => x.code);
-  const data = h.series.map((x) => ({ name: x.label, labels, values: x.values.map((v) => (v == null ? null : round1(v))) }));
-  const axis = timeAxis(h.series.flatMap((x) => x.values));
-  s.addChart(pres.ChartType.line, data, {
-    x: MX, y: 2.1, w: CONTENT_W, h: 7.6,
-    chartColors: h.series.map((_, j) => HISTORY_COLORS[j % HISTORY_COLORS.length]),
-    lineSize: 2.25, lineDataSymbol: "circle", lineDataSymbolSize: 6,
-    showLegend: true, legendPos: "t", legendFontFace: FONT.face, legendFontSize: 12, legendColor: AIGS.body,
-    catAxisLabelFontFace: FONT.face, catAxisLabelFontSize: 11, catAxisLabelColor: AIGS.muted,
-    valAxisLabelFontFace: FONT.face, valAxisLabelFontSize: 11, valAxisLabelColor: AIGS.muted,
-    valAxisMinVal: 0, valAxisMaxVal: axis.max, valAxisMajorUnit: axis.step, valAxisTitle: "minutos", showValAxisTitle: true, valAxisTitleFontSize: 11,
-    valGridLine: { color: "EEF2F6", size: 0.5 }, catGridLine: { style: "none" },
-  });
-  s.addText("SU = Summer (abr–sep) · WI = Winter (oct–mar) · temporadas sin mediciones no aparecen", {
-    x: W - MX - 12, y: H - 0.62, w: 12, h: 0.3, fontFace: FONT.face, fontSize: 10, color: AIGS.muted, align: "right", margin: 0,
-  });
-  addBottomLogo(s);
-}
-
-/** Promedio y n por franja horaria (inicio de la medición) en la temporada de detalle. */
-function tiemposHoursSlide(pres: Pptx, r: MonthlyReport) {
-  const t = r.seasonal!.tiemposHours;
-  const s = pres.addSlide();
-  s.background = { color: AIGS.white };
-  slideTitle(s, "Tiempos · por franja horaria", `${airportFull(r)} · ${r.seasonal!.focusLabel} · promedio y cantidad de mediciones`);
-  const head = [headCell("Proceso", "left"), ...t.bands.map((b) => headCell(b, "right"))];
-  const body = t.rows.map((row) => [
-    { text: row.label, options: { align: "left", color: AIGS.ink } },
-    ...row.cells.map((c) => {
-      if (c.n === 0) return { text: "—", options: { align: "right", color: AIGS.muted } };
-      const over = row.meta != null && c.prom != null ? c.prom > row.meta : null;
-      return {
-        text: [
-          { text: fmtMMSS(c.prom), options: { bold: true, fontFace: FONT.mono, color: over == null ? AIGS.ink : over ? AIGS.down : AIGS.up } },
-          { text: `  n=${fmtInt(c.n)}`, options: { fontSize: 10, color: AIGS.muted } },
-          ...(c.at != null ? [{ text: `\natención ${fmtMMSS(c.at)}`, options: { fontSize: 10, color: SERIES.at } }] : []),
-        ],
-        options: { align: "right" },
-      };
-    }),
-  ]);
-  const colW = [CONTENT_W * 0.32, ...t.bands.map(() => (CONTENT_W * 0.68) / t.bands.length)];
-  s.addTable([head, ...body] as unknown[], {
-    x: MX, y: 2.2, w: CONTENT_W, colW, rowH: 0.7, fontFace: FONT.face, fontSize: 14, color: AIGS.body, valign: "middle",
-    border: { type: "solid", color: AIGS.hairline, pt: 0.5 }, autoPage: false,
-  });
-  const anyAt = t.rows.some((x) => x.cells.some((c) => c.at != null));
-  s.addText(`Franja = hora de inicio de la medición (hora de Chile). Número grande: fila (verde dentro del Estándar IATA; rojo sobre el estándar).${anyAt ? " Debajo: atención promedio (sin meta)." : ""}`, {
-    x: MX, y: 2.2 + 0.7 * (body.length + 1) + 0.25, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0,
-  });
-  addBottomLogo(s);
-}
-
-/** Encuesta AGA en la temporada: nota promedio, % notas 4–5 y encuestas (sin NPS) + mejores/peores. */
-function agaSeasonSlide(pres: Pptx, r: MonthlyReport, a: AgaSurvey) {
-  const s = pres.addSlide();
-  s.background = { color: AIGS.white };
-  const m = a.month;
-  const pctTxt = (v: number | null | undefined) => (v != null ? `${v}%` : "—");
-  slideTitle(s, `Encuestas AGA · ${a.audience}`, `${airportFull(r)} · ${r.monthLabel}`);
-  if (m.n === 0) {
-    s.addText("Sin encuestas en esta temporada.", {
-      x: MX, y: 5, w: CONTENT_W, h: 1, fontFace: FONT.face, fontSize: 18, color: AIGS.muted, align: "center", margin: 0,
-    });
-    addBottomLogo(s);
-    return;
-  }
-  kpiRow(
-    s,
-    pres,
-    [
-      { label: "Nota promedio", value: `${fmtScore(m.ratingAvg)} / 5`, valueColor: scoreColor(m.ratingAvg), sub: "todas las notas de atributos y servicios" },
-      { label: "Notas 4–5", value: pctTxt(m.ratingTop2), sub: "% de notas 4 o 5" },
-      { label: "Encuestas de la temporada", value: fmtInt(m.n), sub: r.seasonal?.focusLabel },
-    ],
-    2.1,
-    2.6
-  );
-  const attrs = agaTopRows(a, "attributes", 10);
-  const svcs = agaTopRows(a, "services", 10);
-  const gap = 0.6;
-  const colW = (CONTENT_W - gap) / 2;
-  const top = 5.0;
-  const rowH = Math.min(0.45, (H - 0.95 - (top + 0.5)) / Math.max(attrs.length, svcs.length, 1));
-  scorePanel(s, pres, {
-    x: MX, y: top, w: colW, rowH,
-    title: m.attributes.length > 10 ? "Atributos · 5 mejores y 5 peores" : "Atributos de la experiencia",
-    note: "nota 1–5",
-    rows: attrs,
-  });
-  scorePanel(s, pres, {
-    x: MX + colW + gap, y: top, w: colW, rowH,
-    title: m.services.length > 10 ? "Servicios · 5 mejores y 5 peores" : "Servicios evaluados",
-    note: "nota 1–5 · % que lo usó",
-    rows: svcs,
-  });
-  scoreLegend(s, "N/A no se considera");
-  addBottomLogo(s);
-}
-
-/** Evolución de una Encuesta AGA: nota promedio por mes y por temporada, con la cantidad de encuestas. */
-function agaEvolutionSlide(pres: Pptx, r: MonthlyReport, index: number) {
-  const a = r.aga[index];
-  const h = r.seasonal!.agaHistory[index];
-  const s = pres.addSlide();
-  s.background = { color: AIGS.white };
-  slideTitle(s, `Encuestas AGA · ${a.audience} · evolución`, `${airportFull(r)} · nota promedio (1 a 5) y encuestas`);
-  const blocks = [
-    { title: "Por mes", rows: h.months.map((x) => ({ label: x.label.split(" ")[0], n: x.n, nota: x.ratingAvg })), x: MX, w: CONTENT_W * 0.4 },
-    { title: "Por temporada", rows: h.seasons.map((x) => ({ label: x.code, n: x.n, nota: x.ratingAvg })), x: MX + CONTENT_W * 0.45, w: CONTENT_W * 0.55 },
-  ];
-  for (const b of blocks) {
-    s.addText(b.title, { x: b.x, y: 2.1, w: b.w, h: 0.4, fontFace: FONT.face, fontSize: 14, bold: true, color: AIGS.ink, margin: 0 });
-    const labels = b.rows.map((x) => x.label);
-    s.addChart(pres.ChartType.line, [{ name: "Nota promedio", labels, values: b.rows.map((x) => x.nota) }], {
-      x: b.x, y: 2.55, w: b.w, h: 5.6,
-      chartColors: [AIGS.blue], lineSize: 2.25, lineDataSymbol: "circle", lineDataSymbolSize: 6,
-      showLegend: false, showValue: true, dataLabelFormatCode: "0.0", dataLabelFontSize: 9, dataLabelColor: AIGS.ink, dataLabelPosition: "t",
-      catAxisLabelFontFace: FONT.face, catAxisLabelFontSize: 10, catAxisLabelColor: AIGS.muted,
-      valAxisLabelFontFace: FONT.face, valAxisLabelFontSize: 10, valAxisLabelColor: AIGS.muted,
-      valAxisMinVal: 1, valAxisMaxVal: 5, valAxisMajorUnit: 1,
-      valGridLine: { color: "EEF2F6", size: 0.5 }, catGridLine: { style: "none" },
-    });
-    s.addText(`Encuestas: ${b.rows.map((x) => `${x.label} ${fmtInt(x.n)}`).join(" · ")}`, {
-      x: b.x, y: 8.2, w: b.w, h: 0.9, fontFace: FONT.face, fontSize: 10, color: AIGS.muted, margin: 0, valign: "top", fit: "shrink",
-    });
-  }
-  s.addText(
-    "Hasta septiembre de 2026, formulario antiguo (Google Forms); desde octubre de 2026, formulario web. Nota promedio = todas las calificaciones de atributos y servicios.",
-    { x: MX, y: H - 1.2, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 10.5, color: AIGS.muted, margin: 0 }
   );
   addBottomLogo(s);
 }
@@ -1346,47 +1319,6 @@ function asqEmptySlide(pres: Pptx, r: MonthlyReport) {
   addBottomLogo(s);
 }
 
-function asqOverallSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
-  const s = pres.addSlide();
-  s.background = { color: AIGS.white };
-  const o = a.overall;
-  slideTitle(s, "Satisfacción general ACI ASQ", `${airportFull(r)} · ${a.season.label}`);
-  kpiRow(
-    s,
-    pres,
-    [
-      { label: "Satisfacción general", value: `${fmtScore2(o.airport)} / 5`, valueColor: scoreColor(o.airport), sub: `${fmtInt(a.n)} encuestas` },
-      { label: "Muy buena o excelente", value: o.top2 != null ? `${o.top2}%` : "—", sub: "% de notas 4 y 5" },
-      { label: "Posición en Chile", value: `${ordinal(o.rankChile)} de ${o.totalChile}`, sub: `Promedio Chile ${fmtScore2(o.chile)}` },
-      { label: "Posición en la base", value: `${ordinal(o.rankAll)} de ${o.totalAll}`, sub: `Promedio base ${fmtScore2(o.all)}` },
-    ],
-    2.1,
-    2.3
-  );
-  const labels = a.history.map((h) => h.code);
-  const vals = a.history.flatMap((h) => [h.airport, h.chile, h.all]).filter((v): v is number => v != null);
-  const yMin = Math.max(1, Math.floor((Math.min(...vals, 5) - 0.2) * 2) / 2);
-  s.addText("Evolutivo por temporada", { x: MX, y: 4.65, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 14, bold: true, color: AIGS.ink, margin: 0 });
-  s.addChart(
-    pres.ChartType.line,
-    [
-      { name: r.airport.short ?? r.airport.code, labels, values: a.history.map((h) => h.airport) },
-      { name: "Promedio Chile", labels, values: a.history.map((h) => h.chile) },
-      { name: "Promedio base", labels, values: a.history.map((h) => h.all) },
-    ],
-    {
-      x: MX, y: 5.05, w: CONTENT_W, h: 5.4,
-      chartColors: [AIGS.blue, "3D7593", "A9B2BF"], lineSize: 2.25, lineDataSymbol: "circle", lineDataSymbolSize: 5,
-      showLegend: true, legendPos: "t", legendFontFace: FONT.face, legendFontSize: 11, legendColor: AIGS.body,
-      catAxisLabelFontFace: FONT.face, catAxisLabelFontSize: 10, catAxisLabelColor: AIGS.muted,
-      valAxisLabelFontFace: FONT.face, valAxisLabelFontSize: 10, valAxisLabelColor: AIGS.muted, valAxisLabelFormatCode: "0.0",
-      valAxisMinVal: yMin, valAxisMaxVal: 5, valGridLine: { color: "EEF2F6", size: 0.5 }, catGridLine: { style: "none" },
-    }
-  );
-  asqNote(s);
-  addBottomLogo(s);
-}
-
 function asqRankingSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
@@ -1410,39 +1342,7 @@ function asqRankingSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
     });
   };
   col(MX, `Aeropuertos chilenos (${a.rankingChile.length})`, a.rankingChile);
-  col(MX + colW + colGap, `Todos los aeropuertos de la base (${a.rankingAll.length})`, a.rankingAll);
-  asqNote(s);
-  addBottomLogo(s);
-}
-
-function asqCategoriesSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
-  const s = pres.addSlide();
-  s.background = { color: AIGS.white };
-  slideTitle(s, "Categorías e índices ACI ASQ", `${airportFull(r)} · ${a.season.label} · nota 1–5`);
-  const head = ["Categoría / índice", "Tipo", r.airport.short ?? r.airport.code, "Prom. Chile", "Prom. base", "Posición en Chile"].map((t, i) =>
-    headCell(t, i < 2 ? "left" : "right")
-  );
-  const mono = (text: string, color: string = AIGS.body, bold = false): Cell => ({ text, options: { align: "right", fontFace: FONT.mono, color, bold } });
-  const body = a.categories.map((c) => {
-    const d = c.airport != null && c.chile != null ? c.airport - c.chile : null;
-    const color = d == null || Math.abs(d) < 0.05 ? AIGS.ink : d > 0 ? AIGS.up : AIGS.down;
-    return [
-      { text: c.label, options: { align: "left", color: AIGS.ink } },
-      { text: c.kind, options: { align: "left", color: AIGS.muted } },
-      mono(fmtScore2(c.airport), color, true),
-      mono(fmtScore2(c.chile)),
-      mono(fmtScore2(c.all)),
-      mono(`${ordinal(c.rankChile)} de ${c.totalChile}`),
-    ];
-  });
-  const rowH = Math.min(0.6, 7.2 / (body.length + 1));
-  s.addTable([head, ...body], {
-    x: MX, y: 2.2, w: CONTENT_W, colW: [0.34, 0.12, 0.13, 0.13, 0.13, 0.15].map((f) => CONTENT_W * f), rowH,
-    fontFace: FONT.face, fontSize: 13, color: AIGS.body, valign: "middle", border: { type: "solid", color: AIGS.hairline, pt: 0.5 }, autoPage: false,
-  });
-  s.addText("Verde / rojo: sobre / bajo el promedio de los aeropuertos chilenos (diferencia de 0,05 o más).", {
-    x: MX, y: 2.2 + rowH * (body.length + 1) + 0.2, w: CONTENT_W, h: 0.4, fontFace: FONT.face, fontSize: 11, color: AIGS.muted, margin: 0,
-  });
+  col(MX + colW + colGap, `Programa regional (${a.rankingAll.length} aeropuertos)`, a.rankingAll);
   asqNote(s);
   addBottomLogo(s);
 }
@@ -1457,7 +1357,7 @@ const QUADRANT_COLOR: Record<string, string> = {
 function asqMatrixSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
-  slideTitle(s, "Matriz importancia–desempeño", `${airportFull(r)} · ${a.season.label} · importancia declarada por los pasajeros vs nota del atributo`);
+  slideTitle(s, "Importancia vs puntaje", `${airportFull(r)} · ${a.season.label} · importancia declarada por los pasajeros vs nota del atributo`);
   const { pts, midImp, midScore, quadrant, priority, strengths, number } = asqMatrix(a.attributes);
   const box = { x: MX + 0.6, y: 2.2, w: 11.4, h: 7.2 };
   const maxImp = Math.max(10, ...pts.map((p) => p.importance)) * 1.1;
@@ -1526,65 +1426,6 @@ function asqMatrixSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
   addBottomLogo(s);
 }
 
-function asqAttributesSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
-  const s = pres.addSlide();
-  s.background = { color: AIGS.white };
-  slideTitle(s, "Mejores y peores atributos ACI ASQ", `${airportFull(r)} · ${a.season.label}`);
-  const { best, worst } = asqBestWorst(a.attributes);
-  const colGap = 0.8;
-  const colW = (CONTENT_W - colGap) / 2;
-  const rowH = 0.85;
-  [
-    { title: "5 mejor evaluados", rows: best },
-    { title: "5 peor evaluados", rows: worst },
-  ].forEach((b, ci) => {
-    const x = MX + ci * (colW + colGap);
-    s.addText(
-      [
-        { text: b.title, options: { bold: true, color: AIGS.ink, fontSize: 14 } },
-        { text: "  · nota 1–5 · vs promedio Chile", options: { color: AIGS.muted, fontSize: 11 } },
-      ],
-      { x, y: 2.2, w: colW, h: 0.4, fontFace: FONT.face, margin: 0 }
-    );
-    b.rows.forEach((row, i) => {
-      const y = 2.75 + i * rowH;
-      s.addShape(pres.ShapeType.line, { x, y, w: colW, h: 0, line: { color: AIGS.hairline, width: 0.5 } });
-      const t = { y, h: rowH, fontFace: FONT.face, valign: "middle" as const, margin: 0 };
-      s.addText(row.label, { ...t, x, w: colW * 0.44, fontSize: 12, color: AIGS.body, fit: "shrink" });
-      hbar(s, pres, x + colW * 0.46, y + rowH / 2 - 0.07, colW * 0.2, 0.14, (row.airport ?? 0) / 5, scoreColor(row.airport));
-      s.addText(fmtScore2(row.airport), { ...t, x: x + colW * 0.67, w: 0.6, fontSize: 13, bold: true, fontFace: FONT.mono, color: AIGS.ink, align: "right" });
-      const dc = row.diff == null || Math.abs(row.diff) < 0.05 ? AIGS.muted : row.diff > 0 ? AIGS.up : AIGS.down;
-      s.addText(`Chile ${fmtScore2(row.chile)} (${row.diff == null ? "—" : `${row.diff >= 0 ? "+" : "−"}${fmtScore2(Math.abs(row.diff))}`})`, {
-        ...t, x: x + colW * 0.67 + 0.7, w: colW * 0.33 - 0.7, fontSize: 11, color: dc, align: "right",
-      });
-    });
-  });
-  asqNote(s);
-  addBottomLogo(s);
-}
-
-function asqProfileSlide(pres: Pptx, r: MonthlyReport, a: AsqData) {
-  const s = pres.addSlide();
-  s.background = { color: AIGS.white };
-  slideTitle(s, "Perfil del pasajero ACI ASQ", `${airportFull(r)} · ${a.season.label} · ${fmtInt(a.n)} encuestas`);
-  const cols = 3;
-  const gapX = 0.8;
-  const cellW = (CONTENT_W - gapX * (cols - 1)) / cols;
-  a.profile.forEach((p, i) => {
-    const x = MX + (i % cols) * (cellW + gapX);
-    const y0 = 2.2 + Math.floor(i / cols) * 4.1;
-    s.addText(p.title, { x, y: y0, w: cellW, h: 0.4, fontFace: FONT.face, fontSize: 13, bold: true, color: AIGS.ink, margin: 0 });
-    p.rows.forEach((row, j) => {
-      const y = y0 + 0.5 + j * 0.44;
-      s.addText(row.label, { x, y, w: 1.4, h: 0.38, fontFace: FONT.face, fontSize: 10.5, color: AIGS.body, valign: "middle", margin: 0 });
-      hbar(s, pres, x + 1.5, y + 0.12, cellW - 2.3, 0.15, row.pct / 100, AIGS.blue);
-      s.addText(`${row.pct}%`, { x: x + cellW - 0.7, y, w: 0.7, h: 0.38, fontFace: FONT.mono, fontSize: 10.5, color: AIGS.ink, align: "right", valign: "middle", margin: 0 });
-    });
-  });
-  asqNote(s);
-  addBottomLogo(s);
-}
-
 /** Fila vs atención por proceso (desde oct-2026): barras apiladas fila + atención = total. */
 function tiemposSplitSlide(pres: Pptx, r: MonthlyReport) {
   const s = pres.addSlide();
@@ -1610,7 +1451,11 @@ function tiemposSplitSlide(pres: Pptx, r: MonthlyReport) {
   rows.forEach((x, i) => {
     const y = top + i * rowH;
     s.addShape(pres.ShapeType.line, { x: MX, y, w: CONTENT_W, h: 0, line: { color: AIGS.hairline, width: 0.5 } });
-    s.addText(x.label, { x: MX, y, w: labelW, h: rowH, fontFace: FONT.face, fontSize: 14, color: AIGS.ink, valign: "middle", margin: 0 });
+    const name = isSeasonal(r) ? iconFor(x.label) : null;
+    const size = Math.min(0.72, rowH - 0.12);
+    if (name) s.addImage({ data: ICON_DATA_URI[name], x: MX, y: y + (rowH - size) / 2, w: size, h: size });
+    const shift = name ? size + 0.15 : 0;
+    s.addText(x.label, { x: MX + shift, y, w: labelW - shift, h: rowH, fontFace: FONT.face, fontSize: 14, color: AIGS.ink, valign: "middle", margin: 0 });
     const by = y + rowH / 2 - 0.17;
     const wf = (barW * x.fila) / max;
     const wa = (barW * x.atencion) / max;

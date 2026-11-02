@@ -92,46 +92,68 @@ describe("outline del informe mensual", () => {
 });
 
 describe("outline semestral", () => {
-  it("resumen ejecutivo, tiempos con resumen/histórico/franjas, AGA con evolución y recomendaciones", () => {
+  it("resumen ejecutivo, ASQ completo, hotspots de tiempos, AGA gráfico y recomendaciones", () => {
     const s = buildOutline(
       base({
         kind: "SEMESTRAL",
         modules: enabledKeys(defaultTemplate("SEMESTRAL")),
         notes: { recomendaciones: "Priorizar climatización" },
-        season: { history: true, hours: true, asq: true },
+        season: { history: true, hotspots: 2, asq: true, asqGroups: 2, asqHistory: true, agaCompare: true },
       })
     );
     expect(types(s)).toEqual([
       "cover",
       "exec-summary",
       "section:Encuestas ACI ASQ · Resultados",
+      "asq-guide",
       "asq-overall",
-      "asq-ranking",
-      "asq-categories",
-      "asq-matrix",
-      "asq-attributes",
       "asq-profile",
+      "asq-categories",
+      "asq-group",
+      "asq-group",
+      "asq-general",
+      "asq-airlines",
+      "asq-indices",
+      "asq-benchmark",
+      "asq-ranking",
+      "asq-matrix",
+      "asq-history",
+      "asq-history-bench",
       "section:Mediciones de tiempos",
       "tiempos-summary",
-      "proceso",
-      "proceso",
+      "tiempos-hotspot",
+      "tiempos-hotspot",
       "tiempos-history",
-      "tiempos-hours",
       "section:Encuestas AGA · Experiencia",
       "aga-guide",
       "aga",
+      "aga-map",
       "aga-evolution",
       "voice",
       "aga",
+      "aga-map",
       "aga-evolution",
+      "aga-compare",
       "text",
       "closing",
     ]);
     expect(s.find((x) => x.type === "section")).toMatchObject({ module: "Módulo 01" });
   });
+  it("público sin encuestas: sin mapa de nota vs alcance", () => {
+    const s = buildOutline(
+      base({
+        kind: "SEMESTRAL",
+        modules: ["aga-pasajeros"],
+        aga: [{ audience: "Pasajeros", hasVoice: false, hasData: false }],
+        season: { history: false, hotspots: 0, asq: false },
+      })
+    );
+    expect(types(s)).not.toContain("aga-map");
+    expect(types(s)).toContain("aga-evolution");
+  });
   it("sin base ACI ASQ de la temporada: aviso en lugar de los resultados", () => {
     const s = buildOutline(
-      base({ kind: "SEMESTRAL", modules: ["asq-resultados"], season: { history: false, hours: false, asq: false } })
+      base({ kind: "SEMESTRAL", modules: ["asq-resultados"], season: { history: false, hotspots: 0, asq: false } })
     );
     expect(types(s)).toEqual(["cover", "section:Encuestas ACI ASQ · Resultados", "asq-empty", "closing"]);
   });

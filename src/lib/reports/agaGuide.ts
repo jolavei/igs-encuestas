@@ -88,4 +88,4 @@ export const AGA_GUIDE_KPIS_SEASON: AgaGuideKpi[] = [
 ];
 
 export const AGA_GUIDE_PERIOD_NOTE_SEASON =
-  "Las tarjetas muestran la temporada del informe; la evolución por mes y por temporada va en la diapositiva siguiente.";
+  "Las tarjetas muestran la temporada del informe; más adelante van el mapa de nota vs alcance y los resultados históricos.";

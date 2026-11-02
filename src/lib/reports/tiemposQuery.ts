@@ -299,30 +299,62 @@ export async function queryTiemposBySeason(p: {
   }));
 }
 
-/** Franjas horarias del inicio de la medición (hora de Chile). */
-export const HOUR_BANDS = ["00–06 h", "06–12 h", "12–18 h", "18–24 h"] as const;
+/** Modalidad de Check in: tiene su propio Estándar IATA (counter 20 min, quiosco 5 min). */
+export type CheckinMode = "counter" | "quiosco";
 
-/** Promedio y n por franja horaria (índice de HOUR_BANDS) de un proceso en una ventana. */
-export async function queryTiemposByHourBand(p: {
+export type HotspotCell = { dow: number; hour: number; n: number; prom: number }; // dow: 0 = lunes … 6 = domingo
+export type HotspotBin = { min: number; n: number }; // medición con duración en [min, min + 1)
+export type HotspotAirline = { airline: string; n: number; prom: number; p90: number };
+export type HotspotData = {
+  total: { n: number; prom: number; p90: number } | null;
+  cells: HotspotCell[];
+  bins: HotspotBin[];
+  airlines: HotspotAirline[];
+  days: { dow: number; n: number; prom: number }[];
+  hours: { hour: number; n: number; prom: number }[];
+};
+
+/**
+ * Mapa de hotspots de un proceso en una ventana: promedio por día de la semana × hora de
+ * inicio de la medición (hora de Chile), distribución por minuto y resumen por aerolínea.
+ */
+export async function queryTiemposHotspot(p: {
   proceso: Proceso;
   fase?: Fase;
+  mode?: CheckinMode;
   airport: string;
   desde: string;
   hasta: string;
-}): Promise<{ band: number; n: number; prom: number }[]> {
+}): Promise<HotspotData> {
   const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
   const t1 = T1[p.proceso];
+  const airlineCol = p.proceso === "Check in" ? "checkin_airline" : p.proceso === "Retiro de equipajes" ? "baggage_claim_airline" : "NULL";
+  const airlineExpr =
+    p.proceso === "Retiro de equipajes" ? `REGEXP_REPLACE(${airlineCol}, r' - (Counter|Quiosco)$', '')` : `CAST(${airlineCol} AS STRING)`;
+  const modeClause =
+    p.mode === "quiosco"
+      ? " AND checkin_airline LIKE '%Quiosco%'"
+      : p.mode === "counter"
+        ? " AND (checkin_airline IS NULL OR checkin_airline NOT LIKE '%Quiosco%')"
+        : "";
+  const stats = `COUNT(*) AS n, AVG(dur) AS prom, APPROX_QUANTILES(dur, 100)[OFFSET(90)] AS p90`;
   const sql = `
-    SELECT band, COUNT(*) AS n, AVG(dur) AS prom
-    FROM (
-      SELECT DIV(EXTRACT(HOUR FROM DATETIME(${t1}, 'America/Santiago')), 6) AS band,
+    WITH v AS (
+      SELECT MOD(EXTRACT(DAYOFWEEK FROM DATETIME(${t1}, 'America/Santiago')) + 5, 7) AS dow,
+        EXTRACT(HOUR FROM DATETIME(${t1}, 'America/Santiago')) AS hour,
+        ${airlineExpr} AS airline,
         ${durExprOf(p.proceso, p.fase)} AS dur
       FROM ${table}
       WHERE process = @proceso AND location_name = @airport AND ${t1} IS NOT NULL
-        AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)${reportSourceClause}
-    )
-    WHERE dur >= 0 AND dur <= @cap AND band IS NOT NULL
-    GROUP BY band ORDER BY band`;
+        AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)${modeClause}${reportSourceClause}
+    ),
+    m AS (SELECT * FROM v WHERE dur >= 0 AND dur <= @cap)
+    SELECT 'total' AS k, 0 AS a, 0 AS b, '' AS airline, ${stats} FROM m
+    UNION ALL SELECT 'cell', dow, hour, '', ${stats} FROM m GROUP BY dow, hour
+    UNION ALL SELECT 'day', dow, 0, '', ${stats} FROM m GROUP BY dow
+    UNION ALL SELECT 'hour', hour, 0, '', ${stats} FROM m GROUP BY hour
+    UNION ALL SELECT 'bin', CAST(FLOOR(dur) AS INT64), 0, '', ${stats} FROM m GROUP BY 2
+    UNION ALL SELECT 'airline', 0, 0, airline, ${stats} FROM m WHERE airline IS NOT NULL AND airline != '' GROUP BY airline`;
   const rows = await bqQuery<Record<string, unknown>>(sql, {
     proceso: p.proceso,
     airport: p.airport,
@@ -331,7 +363,20 @@ export async function queryTiemposByHourBand(p: {
     cap: CAP_MIN,
     sourceCutoff: REPORT_SOURCE_CUTOFF,
   });
-  return rows.map((r) => ({ band: num(r.band), n: num(r.n), prom: num(r.prom) }));
+  const of = (k: string) => rows.filter((r) => r.k === k);
+  const total = of("total")[0];
+  return {
+    total: total && num(total.n) > 0 ? { n: num(total.n), prom: num(total.prom), p90: num(total.p90) } : null,
+    cells: of("cell").map((r) => ({ dow: num(r.a), hour: num(r.b), n: num(r.n), prom: num(r.prom) })),
+    days: of("day").map((r) => ({ dow: num(r.a), n: num(r.n), prom: num(r.prom) })),
+    hours: of("hour").map((r) => ({ hour: num(r.a), n: num(r.n), prom: num(r.prom) })),
+    bins: of("bin")
+      .map((r) => ({ min: num(r.a), n: num(r.n) }))
+      .sort((a, b) => a.min - b.min),
+    airlines: of("airline")
+      .map((r) => ({ airline: String(r.airline), n: num(r.n), prom: num(r.prom), p90: num(r.p90) }))
+      .sort((a, b) => b.n - a.n),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -456,41 +501,4 @@ export async function queryServiceStats(p: {
       .filter((r) => r.k === "airline")
       .map((r) => ({ airline: String(r.airline), ym: String(r.ym), n: num(r.n), prom: num(r.prom) })),
   };
-}
-
-/** Atención promedio por franja horaria (índice de HOUR_BANDS) en una ventana, desde SERVICE_FROM. */
-export async function queryServiceByHourBand(p: {
-  proceso: Proceso;
-  airport: string;
-  desde: string;
-  hasta: string;
-}): Promise<{ band: number; n: number; prom: number }[]> {
-  const t1 = T1[p.proceso];
-  const t2 = T2[p.proceso];
-  const t3 = T3[p.proceso];
-  if (!t3) return [];
-  const desde = p.desde > SERVICE_FROM ? p.desde : SERVICE_FROM;
-  if (p.hasta < desde) return [];
-  const table = `\`${bqProjectId()}.encuestas.mediciones_tiempos_consolidado\``;
-  const sql = `
-    SELECT band, COUNT(*) AS n, AVG(aten) AS prom
-    FROM (
-      SELECT DIV(EXTRACT(HOUR FROM DATETIME(${t1}, 'America/Santiago')), 6) AS band,
-        TIMESTAMP_DIFF(${t3}, ${t2}, SECOND) / 60.0 AS aten,
-        TIMESTAMP_DIFF(${t3}, ${t1}, SECOND) / 60.0 AS tot
-      FROM ${table}
-      WHERE process = @proceso AND location_name = @airport AND origen = 'app'
-        AND ${t1} IS NOT NULL AND ${t2} IS NOT NULL AND ${t3} IS NOT NULL
-        AND DATE(responded_at, 'America/Santiago') BETWEEN DATE(@desde) AND DATE(@hasta)
-    )
-    WHERE aten >= 0 AND tot >= 0 AND tot <= @cap AND band IS NOT NULL
-    GROUP BY band ORDER BY band`;
-  const rows = await bqQuery<Record<string, unknown>>(sql, {
-    proceso: p.proceso,
-    airport: p.airport,
-    desde,
-    hasta: p.hasta,
-    cap: CAP_MIN,
-  });
-  return rows.map((r) => ({ band: num(r.band), n: num(r.n), prom: num(r.prom) }));
 }

@@ -4,7 +4,6 @@ import { useLayoutEffect, useRef, useState } from "react";
 import {
   ComposedChart,
   Area,
-  Bar,
   Line,
   XAxis,
   YAxis,
@@ -28,17 +27,33 @@ import {
 } from "@/lib/reports/agaGuide";
 import {
   ASQ_NOTE,
-  HISTORY_COLORS,
   KIND_BADGE,
-  asqBestWorst,
   asqMatrix,
-  ordinal,
   serviceSplitRows,
-  agaTopRows,
   coverScope,
   execSummaryCards,
   tiemposSummaryRows,
 } from "@/lib/reports/seasonSlides";
+import {
+  agaCompareScene,
+  agaEvolutionScene,
+  agaMapScene,
+  agaSeasonScene,
+  asqAirlinesScene,
+  asqBenchmarkScene,
+  asqCategoriesScene,
+  asqGeneralScene,
+  asqGroupScene,
+  asqGuideScene,
+  asqHistoryBenchScene,
+  asqHistoryScene,
+  asqIndicesScene,
+  asqKeyPointsScene,
+  asqProfileScene,
+  tiemposHistoryScene,
+  tiemposHotspotScene,
+} from "@/lib/reports/seasonScenes";
+import { iconFor, type Prim, type ReportIcon, type Run, type Scene } from "@/lib/reports/scene";
 import type { SeasonExtras } from "@/lib/reports/seasonReport";
 import type { ReportKind } from "@/lib/reports/period";
 import { buildOutline, outlineInputFrom, type SlideSpec } from "@/lib/reports/outline";
@@ -107,6 +122,7 @@ type AgaStatsDeck = {
   ratingTop2?: number | null;
   attributes: AgaScoreDeck[];
   services: (AgaScoreDeck & { usePct: number | null; useN: number })[];
+  items: { section: string; label: string; n: number; sum: number; avg: number | null; dist: number[] }[];
 };
 type AgaVoiceDeck = { appraisal: string | null; quotes: { label: string; text: string; nps: number | null }[] };
 type AgaDeck = {
@@ -214,6 +230,7 @@ function SlideFor({ spec, data, photos }: { spec: SlideSpec; data: DeckData; pho
     case "aga-guide":
       return <AgaGuideSlide data={data} />;
     case "aga":
+      if ((data.kind ?? "MENSUAL") !== "MENSUAL") return <SceneSlide scene={agaSeasonScene(data, spec.index)} />;
       return <AgaSlide data={data} s={data.aga[spec.index]} />;
     case "voice":
       return <VoiceSlide data={data} s={data.aga[spec.index]} />;
@@ -237,11 +254,15 @@ function SlideFor({ spec, data, photos }: { spec: SlideSpec; data: DeckData; pho
     case "tiempos-split":
       return <TiemposSplitSlide data={data} />;
     case "tiempos-history":
-      return <TiemposHistorySlide data={data} />;
-    case "tiempos-hours":
-      return <TiemposHoursSlide data={data} />;
+      return <SceneSlide scene={tiemposHistoryScene(data)} />;
+    case "tiempos-hotspot":
+      return <SceneSlide scene={tiemposHotspotScene(data, spec.index)} />;
     case "aga-evolution":
-      return <AgaEvolutionSlide data={data} s={data.aga[spec.index]} index={spec.index} />;
+      return <SceneSlide scene={agaEvolutionScene(data, spec.index)} />;
+    case "aga-map":
+      return <SceneSlide scene={agaMapScene(data, spec.index)} />;
+    case "aga-compare":
+      return <SceneSlide scene={agaCompareScene(data)} />;
     case "asq-empty":
       return <AsqEmptySlide data={data} />;
   }
@@ -249,20 +270,158 @@ function SlideFor({ spec, data, photos }: { spec: SlideSpec; data: DeckData; pho
   const a = data.seasonal?.asq;
   if (!a) return <AsqEmptySlide data={data} />;
   switch (spec.type) {
+    case "asq-guide":
+      return <SceneSlide scene={asqGuideScene()} />;
     case "asq-overall":
-      return <AsqOverallSlide data={data} a={a} />;
+      return <SceneSlide scene={asqKeyPointsScene(data, a)} />;
+    case "asq-profile":
+      return <SceneSlide scene={asqProfileScene(data, a)} />;
+    case "asq-categories":
+      return <SceneSlide scene={asqCategoriesScene(data, a)} />;
+    case "asq-group":
+      return <SceneSlide scene={asqGroupScene(data, a, spec.index)} />;
+    case "asq-general":
+      return <SceneSlide scene={asqGeneralScene(data, a)} />;
+    case "asq-airlines":
+      return <SceneSlide scene={asqAirlinesScene(data, a)} />;
+    case "asq-indices":
+      return <SceneSlide scene={asqIndicesScene(data, a)} />;
+    case "asq-benchmark":
+      return <SceneSlide scene={asqBenchmarkScene(data, a)} />;
     case "asq-ranking":
       return <AsqRankingSlide data={data} a={a} />;
-    case "asq-categories":
-      return <AsqCategoriesSlide data={data} a={a} />;
     case "asq-matrix":
       return <AsqMatrixSlide data={data} a={a} />;
-    case "asq-attributes":
-      return <AsqAttributesSlide data={data} a={a} />;
-    case "asq-profile":
-      return <AsqProfileSlide data={data} a={a} />;
+    case "asq-history":
+      return <SceneSlide scene={asqHistoryScene(data, a)} />;
+    case "asq-history-bench":
+      return <SceneSlide scene={asqHistoryBenchScene(data, a)} />;
   }
   return null;
+}
+
+/* ---------- Escenas (semestral / anual): mismas primitivas que el PPTX ---------- */
+
+function SceneRuns({ text }: { text: string | Run[] }) {
+  if (typeof text === "string") return <>{text}</>;
+  return (
+    <>
+      {text.map((r, i) => (
+        <span
+          key={i}
+          style={{
+            color: r.color ? hx(r.color) : undefined,
+            fontWeight: r.bold ? 700 : undefined,
+            fontFamily: r.mono ? FONT.mono : undefined,
+            fontSize: r.size,
+          }}
+        >
+          {r.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function SceneBox({ p }: { p: Extract<Prim, { k: "box" }> }) {
+  const align = p.align ?? "left";
+  const valign = p.valign ?? "top";
+  return (
+    <div
+      title={p.tip}
+      style={{
+        position: "absolute",
+        left: p.x,
+        top: p.y,
+        width: p.w,
+        height: p.h,
+        boxSizing: "border-box",
+        background: p.fill ? hx(p.fill) : undefined,
+        border: p.stroke ? `${p.strokeW ?? 1}px solid ${hx(p.stroke)}` : undefined,
+        borderRadius: p.radius,
+        display: "flex",
+        alignItems: valign === "middle" ? "center" : valign === "bottom" ? "flex-end" : "flex-start",
+        justifyContent: align === "center" ? "center" : align === "right" ? "flex-end" : "flex-start",
+        textAlign: align,
+        fontSize: p.size,
+        lineHeight: 1.22,
+        color: p.color ? hx(p.color) : undefined,
+        fontWeight: p.bold ? 700 : 400,
+        fontStyle: p.italic ? "italic" : undefined,
+        fontFamily: p.mono ? FONT.mono : undefined,
+        whiteSpace: p.nowrap ? "nowrap" : undefined,
+      }}
+    >
+      {p.text != null && p.text !== "" && (
+        <span>
+          <SceneRuns text={p.text} />
+        </span>
+      )}
+    </div>
+  );
+}
+
+function IconImg({ icon, size, style }: { icon: ReportIcon; size: number; style?: React.CSSProperties }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={`/report/icons/${icon}.png`} alt="" style={{ width: size, height: size, flexShrink: 0, ...style }} />;
+}
+
+// Líneas y puntos consecutivos van en un mismo SVG; el orden de las primitivas define qué
+// queda encima, igual que en el PPTX.
+function SceneSlide({ scene }: { scene: Scene }) {
+  const groups: (Extract<Prim, { k: "box" | "img" }> | Extract<Prim, { k: "line" | "dot" }>[])[] = [];
+  for (const p of scene.prims) {
+    if (p.k === "box" || p.k === "img") groups.push(p);
+    else {
+      const last = groups[groups.length - 1];
+      if (Array.isArray(last)) last.push(p);
+      else groups.push([p]);
+    }
+  }
+  return (
+    <div style={{ position: "absolute", inset: 0 }}>
+      <SlideHead title={scene.title} subtitle={scene.subtitle} />
+      {groups.map((g, i) =>
+        Array.isArray(g) ? (
+          <svg key={i} width={SLIDE_W} height={SLIDE_H} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}>
+            {g.map((p, j) =>
+              p.k === "line" ? (
+                <line
+                  key={j}
+                  x1={p.x1}
+                  y1={p.y1}
+                  x2={p.x2}
+                  y2={p.y2}
+                  stroke={hx(p.color)}
+                  strokeWidth={p.width ?? 1}
+                  strokeDasharray={p.dash ? "6 4" : undefined}
+                  strokeLinecap="round"
+                />
+              ) : (
+                <circle
+                  key={j}
+                  cx={p.cx}
+                  cy={p.cy}
+                  r={p.r}
+                  fill={hx(p.fill)}
+                  stroke={p.stroke ? hx(p.stroke) : undefined}
+                  strokeWidth={p.stroke ? 2 : undefined}
+                  style={p.tip ? { pointerEvents: "auto" } : undefined}
+                >
+                  {p.tip && <title>{p.tip}</title>}
+                </circle>
+              )
+            )}
+          </svg>
+        ) : g.k === "img" ? (
+          <IconImg key={i} icon={g.icon} size={g.w} style={{ position: "absolute", left: g.x, top: g.y }} />
+        ) : (
+          <SceneBox key={i} p={g} />
+        )
+      )}
+      <BottomLogo />
+    </div>
+  );
 }
 
 /* ---------- Marco de diapositiva (escala en pantalla, 1 página al imprimir) ---------- */
@@ -790,7 +949,6 @@ function EmptyTiempos({ data }: { data: DeckData }) {
 // Encuesta AGA de un público (Pasajeros / Acompañantes) en una sola diapositiva:
 // KPIs del mes (con el acumulado del periodo abajo) + barras de atributos y servicios.
 function AgaSlide({ data, s }: { data: DeckData; s: AgaDeck }) {
-  if ((data.kind ?? "MENSUAL") !== "MENSUAL") return <AgaSeasonSlide data={data} s={s} />;
   const m = s.month;
   const p = s.period;
   const hasMonth = m.n > 0;
@@ -1233,9 +1391,16 @@ function TiemposSummarySlide({ data }: { data: DeckData }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.label} style={{ borderTop: `1px solid ${hx(AIGS.hairline)}`, height: 52 }}>
-                <Td align="left" color={AIGS.ink}>{r.label}</Td>
+            {rows.map((r) => {
+              const icon = iconFor(r.label);
+              return (
+              <tr key={r.label} style={{ borderTop: `1px solid ${hx(AIGS.hairline)}`, height: 58 }}>
+                <Td align="left" color={AIGS.ink}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    {icon && <IconImg icon={icon} size={42} />}
+                    {r.label}
+                  </span>
+                </Td>
                 <Td align="right" mono bold color={AIGS.ink}>{fmtMMSS(r.prom)}</Td>
                 <Td align="right" mono>{fmtMMSS(r.med)}</Td>
                 <Td align="right" mono>{fmtMMSS(r.p90)}</Td>
@@ -1252,7 +1417,8 @@ function TiemposSummarySlide({ data }: { data: DeckData }) {
                 {sv && <Td align="right" mono color={SERIES.at}>{r.atencion != null ? fmtMMSS(r.atencion) : "—"}</Td>}
                 {sv && <Td align="right" mono>{r.total != null ? fmtMMSS(r.total) : "—"}</Td>}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         <div style={{ fontSize: 12, color: hx(AIGS.muted), marginTop: 14, lineHeight: 1.5 }}>
@@ -1291,7 +1457,10 @@ function TiemposSplitSlide({ data }: { data: DeckData }) {
               borderTop: `1px solid ${hx(AIGS.hairline)}`,
             }}
           >
-            <span style={{ fontSize: 15, color: hx(AIGS.ink) }}>{r.label}</span>
+            <span style={{ fontSize: 15, color: hx(AIGS.ink), display: "flex", alignItems: "center", gap: 12 }}>
+              {data.seasonal && iconFor(r.label) && <IconImg icon={iconFor(r.label)!} size={Math.min(46, rowH - 8)} />}
+              {r.label}
+            </span>
             <span style={{ display: "flex", height: 22 }}>
               <span style={{ width: `${(r.fila / max) * 100}%`, background: hx(SERIES.prom) }} />
               <span style={{ width: `${(r.atencion / max) * 100}%`, background: hx(SERIES.at) }} />
@@ -1307,261 +1476,6 @@ function TiemposSplitSlide({ data }: { data: DeckData }) {
       <div style={{ position: "absolute", left: 72, right: 72, bottom: 56, fontSize: 12, color: hx(AIGS.muted) }}>
         El Estándar IATA aplica solo a la fila; la atención se informa sin meta. Fila = ingreso a la fila → salida de la
         fila; atención = salida de la fila → fin de la atención. Retiro de equipajes no aplica.
-      </div>
-      <BottomLogo />
-    </div>
-  );
-}
-
-// Promedio de cada proceso por temporada, desde la primera con mediciones.
-function TiemposHistorySlide({ data }: { data: DeckData }) {
-  const h = data.seasonal!.tiemposHistory;
-  const chartData = h.seasons.map((s, i) => {
-    const row: Record<string, string | number | null> = { label: s.code };
-    h.series.forEach((x, j) => (row[`s${j}`] = x.values[i]));
-    return row;
-  });
-  const axis = timeAxis(h.series.flatMap((x) => x.values));
-  return (
-    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead
-        title="Tiempos · evolutivo por temporada"
-        subtitle={`${airportFull(data)} · promedio por temporada hasta ${data.seasonal!.focusLabel}`}
-      />
-      <div style={{ position: "absolute", top: 140, left: 72, right: 72, display: "flex", flexWrap: "wrap", gap: 18 }}>
-        {h.series.map((x, j) => (
-          <LegendItem key={x.label} color={HISTORY_COLORS[j % HISTORY_COLORS.length]} label={x.label} />
-        ))}
-      </div>
-      <div style={{ position: "absolute", top: 180, left: 60, right: 72, bottom: 70 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chartData} margin={{ top: 8, right: 16, bottom: 4, left: 8 }}>
-            <CartesianGrid stroke="#eef2f6" vertical={false} />
-            <XAxis dataKey="label" tick={{ fill: hx(AIGS.muted), fontSize: 12 }} tickLine={false} axisLine={{ stroke: hx(AIGS.hairline) }} />
-            <YAxis
-              tickFormatter={(v) => fmtMMSS(Number(v))}
-              tick={{ fill: hx(AIGS.muted), fontSize: 12 }}
-              tickLine={false}
-              axisLine={false}
-              width={56}
-              domain={[0, axis.max]}
-              ticks={axis.ticks}
-              interval={0}
-            />
-            <Tooltip formatter={(v: number, n) => [fmtMMSS(v), h.series[Number(String(n).slice(1))]?.label ?? n]} />
-            {h.series.map((x, j) => (
-              <Line
-                key={x.label}
-                type="monotone"
-                dataKey={`s${j}`}
-                stroke={hx(HISTORY_COLORS[j % HISTORY_COLORS.length])}
-                strokeWidth={2}
-                dot={{ r: 3, fill: hx(HISTORY_COLORS[j % HISTORY_COLORS.length]) }}
-                isAnimationActive={false}
-                connectNulls
-              />
-            ))}
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-      <div style={{ position: "absolute", right: 72, bottom: 26, fontSize: 11, color: hx(AIGS.muted) }}>
-        SU = Summer (abr–sep) · WI = Winter (oct–mar) · temporadas sin mediciones no aparecen
-      </div>
-      <BottomLogo />
-    </div>
-  );
-}
-
-// Promedio por franja horaria (inicio de la medición) en la temporada de detalle.
-function TiemposHoursSlide({ data }: { data: DeckData }) {
-  const t = data.seasonal!.tiemposHours;
-  return (
-    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead
-        title="Tiempos · por franja horaria"
-        subtitle={`${airportFull(data)} · ${data.seasonal!.focusLabel} · promedio y cantidad de mediciones`}
-      />
-      <div style={{ position: "absolute", top: 150, left: 72, right: 72, bottom: 64, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15, tableLayout: "fixed" }}>
-          <thead>
-            <tr style={{ background: hx(AIGS.surfaceSoft), color: hx(AIGS.muted) }}>
-              <Th align="left" w="32%">Proceso</Th>
-              {t.bands.map((b) => (
-                <Th key={b} align="right" w={`${68 / t.bands.length}%`}>{b}</Th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {t.rows.map((r) => (
-              <tr key={r.label} style={{ borderTop: `1px solid ${hx(AIGS.hairline)}`, height: 58 }}>
-                <Td align="left" color={AIGS.ink}>{r.label}</Td>
-                {r.cells.map((c, i) => {
-                  const over = r.meta != null && c.prom != null ? c.prom > r.meta : null;
-                  return (
-                    <Td key={i} align="right" mono bold={c.n > 0} color={over == null ? AIGS.ink : over ? AIGS.down : AIGS.up}>
-                      {c.n > 0 ? (
-                        <>
-                          {fmtMMSS(c.prom)}
-                          <span style={{ fontSize: 11, fontWeight: 400, color: hx(AIGS.muted), marginLeft: 6 }}>n={fmtInt(c.n)}</span>
-                          {c.at != null && (
-                            <div style={{ fontSize: 12, fontWeight: 400, color: hx(SERIES.at) }}>atención {fmtMMSS(c.at)}</div>
-                          )}
-                        </>
-                      ) : (
-                        <span style={{ color: hx(AIGS.muted), fontWeight: 400 }}>—</span>
-                      )}
-                    </Td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div style={{ fontSize: 12, color: hx(AIGS.muted), marginTop: 14 }}>
-          Franja = hora de inicio de la medición (hora de Chile). Número grande: fila (verde dentro del Estándar IATA;
-          rojo sobre el estándar).{t.rows.some((r) => r.cells.some((c) => c.at != null)) ? " Debajo: atención promedio (sin meta)." : ""}
-        </div>
-      </div>
-      <BottomLogo />
-    </div>
-  );
-}
-
-// Encuesta AGA de un público en la temporada: nota promedio y % de notas 4–5 (comparables
-// con el histórico; el NPS no se informa en semestral/anual) y mejores/peores atributos y servicios.
-function AgaSeasonSlide({ data, s }: { data: DeckData; s: AgaDeck }) {
-  const m = s.month;
-  const attrs = agaTopRows(s, "attributes", 10);
-  const svcs = agaTopRows(s, "services", 10);
-  const rowH = Math.min(30, 318 / Math.max(attrs.length, svcs.length, 1));
-  const pctTxt = (v: number | null | undefined) => (v != null ? `${v}%` : "—");
-  return (
-    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead
-        title={`Encuestas AGA · ${s.audience}`}
-        subtitle={`${airportFull(data)} · ${data.monthLabel}`}
-      />
-      {m.n === 0 ? (
-        <Centered>Sin encuestas en esta temporada.</Centered>
-      ) : (
-        <>
-          <div style={{ position: "absolute", top: 140, left: 72, right: 72 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
-              <Kpi
-                label="Nota promedio"
-                value={`${fmtScore(m.ratingAvg)} / 5`}
-                valueColor={scoreColor(m.ratingAvg ?? null)}
-                sub="todas las notas de atributos y servicios"
-              />
-              <Kpi label="Notas 4–5" value={pctTxt(m.ratingTop2)} sub="% de notas 4 o 5" />
-              <Kpi label="Encuestas de la temporada" value={fmtInt(m.n)} sub={data.seasonal?.focusLabel} />
-            </div>
-          </div>
-          <div
-            style={{
-              position: "absolute",
-              top: 300,
-              left: 72,
-              right: 72,
-              bottom: 60,
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 40,
-              overflow: "hidden",
-            }}
-          >
-            <ScorePanel
-              title={m.attributes.length > 10 ? "Atributos · 5 mejores y 5 peores" : "Atributos de la experiencia"}
-              note="nota 1–5"
-              rows={attrs}
-              rowH={rowH}
-            />
-            <ScorePanel
-              title={m.services.length > 10 ? "Servicios · 5 mejores y 5 peores" : "Servicios evaluados"}
-              note="nota 1–5 · % que lo usó"
-              rows={svcs}
-              rowH={rowH}
-            />
-          </div>
-        </>
-      )}
-      <div style={{ position: "absolute", right: 72, bottom: 24, display: "flex", gap: 12, fontSize: 11, color: hx(AIGS.muted) }}>
-        <LegendDot color={AIGS.up} label="≥ 4,0" />
-        <LegendDot color={AIGS.yellow} label="3,5 – 3,9" />
-        <LegendDot color={AIGS.down} label="< 3,5" />
-        <span>· N/A no se considera</span>
-      </div>
-      <BottomLogo />
-    </div>
-  );
-}
-
-// Evolución de una Encuesta AGA: por mes en la ventana del informe y por temporada.
-function AgaEvolutionSlide({ data, s, index }: { data: DeckData; s: AgaDeck; index: number }) {
-  const h = data.seasonal!.agaHistory[index];
-  const charts = [
-    { title: "Por mes", rows: h.months.map((x) => ({ label: x.label.split(" ")[0], n: x.n, nota: x.ratingAvg })) },
-    { title: "Por temporada", rows: h.seasons.map((x) => ({ label: x.code, n: x.n, nota: x.ratingAvg })) },
-  ];
-  return (
-    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead
-        title={`Encuestas AGA · ${s.audience} · evolución`}
-        subtitle={`${airportFull(data)} · nota promedio (línea) y encuestas (barras)`}
-      />
-      <div
-        style={{
-          position: "absolute",
-          top: 140,
-          left: 72,
-          right: 72,
-          bottom: 92,
-          display: "grid",
-          gridTemplateColumns: "1fr 1.4fr",
-          gap: 36,
-        }}
-      >
-        {charts.map((c) => (
-          <div key={c.title} style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 8 }}>{c.title}</div>
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={c.rows} margin={{ top: 8, right: 4, bottom: 4, left: 0 }}>
-                  <CartesianGrid stroke="#eef2f6" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fill: hx(AIGS.muted), fontSize: 11 }} tickLine={false} axisLine={{ stroke: hx(AIGS.hairline) }} interval={0} />
-                  <YAxis yAxisId="n" tick={{ fill: hx(AIGS.muted), fontSize: 11 }} tickLine={false} axisLine={false} width={36} allowDecimals={false} />
-                  <YAxis
-                    yAxisId="nota"
-                    orientation="right"
-                    domain={[1, 5]}
-                    ticks={[1, 2, 3, 4, 5]}
-                    tick={{ fill: hx(AIGS.muted), fontSize: 11 }}
-                    tickLine={false}
-                    axisLine={false}
-                    width={26}
-                  />
-                  <Tooltip />
-                  <Bar yAxisId="n" dataKey="n" name="Encuestas" fill={hx(AIGS.surfaceStrong)} isAnimationActive={false} />
-                  <Line
-                    yAxisId="nota"
-                    type="monotone"
-                    dataKey="nota"
-                    name="Nota promedio"
-                    stroke={hx(AIGS.blue)}
-                    strokeWidth={2}
-                    dot={{ r: 3, fill: hx(AIGS.blue) }}
-                    isAnimationActive={false}
-                    connectNulls
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div style={{ position: "absolute", left: 72, right: 72, bottom: 56, fontSize: 12, color: hx(AIGS.muted) }}>
-        Hasta septiembre de 2026, formulario antiguo (Google Forms); desde octubre de 2026, formulario web. Nota
-        promedio = todas las calificaciones de atributos y servicios (1 a 5).
       </div>
       <BottomLogo />
     </div>
@@ -1592,81 +1506,6 @@ function AsqNote() {
   return (
     <div style={{ position: "absolute", right: 72, bottom: 26, fontSize: 11, color: hx(AIGS.muted), maxWidth: 820, textAlign: "right" }}>
       {ASQ_NOTE}
-    </div>
-  );
-}
-
-// Satisfacción general: KPIs de la temporada + evolutivo (aeropuerto, promedio Chile, promedio base).
-function AsqOverallSlide({ data, a }: { data: DeckData; a: AsqData }) {
-  const o = a.overall;
-  const vals = a.history.flatMap((h) => [h.airport, h.chile, h.all]).filter((v): v is number => v != null);
-  const yMin = Math.max(1, Math.floor((Math.min(...vals, 5) - 0.2) * 2) / 2);
-  const series = [
-    { key: "airport", label: data.airport.short ?? data.airport.code, color: AIGS.blue, width: 3 },
-    { key: "chile", label: "Promedio Chile", color: "3D7593", width: 2, dash: "6 4" },
-    { key: "all", label: "Promedio base", color: "A9B2BF", width: 2 },
-  ];
-  return (
-    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title="Satisfacción general ACI ASQ" subtitle={`${airportFull(data)} · ${a.season.label}`} />
-      <div style={{ position: "absolute", top: 140, left: 72, right: 72 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
-          <Kpi
-            label="Satisfacción general"
-            value={`${fmtScore2(o.airport)} / 5`}
-            valueColor={scoreColor(o.airport)}
-            sub={`${fmtInt(a.n)} encuestas`}
-          />
-          <Kpi label="Muy buena o excelente" value={o.top2 != null ? `${o.top2}%` : "—"} sub="% de notas 4 y 5" />
-          <Kpi
-            label="Posición en Chile"
-            value={`${ordinal(o.rankChile)} de ${o.totalChile}`}
-            sub={`Promedio Chile ${fmtScore2(o.chile)}`}
-          />
-          <Kpi label="Posición en la base" value={`${ordinal(o.rankAll)} de ${o.totalAll}`} sub={`Promedio base ${fmtScore2(o.all)}`} />
-        </div>
-      </div>
-      <div style={{ position: "absolute", top: 300, left: 72, right: 72, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink) }}>Evolutivo por temporada</div>
-        <div style={{ display: "flex", gap: 16 }}>
-          {series.map((s) => (
-            <LegendItem key={s.key} color={s.color} label={s.label} dashed={!!s.dash} />
-          ))}
-        </div>
-      </div>
-      <div style={{ position: "absolute", top: 330, left: 60, right: 72, bottom: 64 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={a.history.map((h) => ({ ...h, label: h.code }))} margin={{ top: 8, right: 16, bottom: 4, left: 8 }}>
-            <CartesianGrid stroke="#eef2f6" vertical={false} />
-            <XAxis dataKey="label" tick={{ fill: hx(AIGS.muted), fontSize: 12 }} tickLine={false} axisLine={{ stroke: hx(AIGS.hairline) }} />
-            <YAxis
-              domain={[yMin, 5]}
-              tickFormatter={(v) => fmtScore2(Number(v))}
-              tick={{ fill: hx(AIGS.muted), fontSize: 12 }}
-              tickLine={false}
-              axisLine={false}
-              width={40}
-            />
-            <Tooltip formatter={(v: number) => fmtScore2(v)} />
-            {series.map((s) => (
-              <Line
-                key={s.key}
-                type="monotone"
-                dataKey={s.key}
-                name={s.label}
-                stroke={hx(s.color)}
-                strokeWidth={s.width}
-                strokeDasharray={s.dash}
-                dot={s.key === "airport" ? { r: 3, fill: hx(s.color) } : false}
-                isAnimationActive={false}
-                connectNulls
-              />
-            ))}
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-      <AsqNote />
-      <BottomLogo />
     </div>
   );
 }
@@ -1716,57 +1555,12 @@ function AsqRankingSlide({ data, a }: { data: DeckData; a: AsqData }) {
       <SlideHead title="Ranking de satisfacción general" subtitle={`${airportFull(data)} · ${a.season.label} · nota 1–5`} />
       <div style={{ position: "absolute", top: 140, left: 72, right: 72, bottom: 64, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48 }}>
         <RankBars title={`Aeropuertos chilenos (${a.rankingChile.length})`} rows={a.rankingChile} rowH={rowH} />
-        <RankBars title={`Todos los aeropuertos de la base (${a.rankingAll.length})`} rows={a.rankingAll} rowH={rowH} />
+        <RankBars title={`Programa regional (${a.rankingAll.length} aeropuertos)`} rows={a.rankingAll} rowH={rowH} />
       </div>
       <div style={{ position: "absolute", left: 72, bottom: 52, display: "flex", gap: 14, fontSize: 11, color: hx(AIGS.muted) }}>
         <LegendDot color={AIGS.blue} label={data.airport.short ?? data.airport.code} />
         <LegendDot color="8DB0BB" label="Chile" />
         <LegendDot color={AIGS.surfaceStrong} label="Otros países" />
-      </div>
-      <AsqNote />
-      <BottomLogo />
-    </div>
-  );
-}
-
-// Categorías e índices: aeropuerto vs promedio Chile y base, y posición en Chile.
-function AsqCategoriesSlide({ data, a }: { data: DeckData; a: AsqData }) {
-  const rowH = Math.min(40, 440 / Math.max(a.categories.length + 1, 1));
-  return (
-    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title="Categorías e índices ACI ASQ" subtitle={`${airportFull(data)} · ${a.season.label} · nota 1–5`} />
-      <div style={{ position: "absolute", top: 140, left: 72, right: 72, bottom: 64, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15, tableLayout: "fixed" }}>
-          <thead>
-            <tr style={{ background: hx(AIGS.surfaceSoft), color: hx(AIGS.muted) }}>
-              <Th align="left" w="34%">Categoría / índice</Th>
-              <Th align="left" w="12%">Tipo</Th>
-              <Th align="right" w="13%">{data.airport.short ?? data.airport.code}</Th>
-              <Th align="right" w="13%">Prom. Chile</Th>
-              <Th align="right" w="13%">Prom. base</Th>
-              <Th align="right" w="15%">Posición en Chile</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {a.categories.map((c) => {
-              const d = c.airport != null && c.chile != null ? c.airport - c.chile : null;
-              const color = d == null || Math.abs(d) < 0.05 ? AIGS.ink : d > 0 ? AIGS.up : AIGS.down;
-              return (
-                <tr key={c.key} style={{ borderTop: `1px solid ${hx(AIGS.hairline)}`, height: rowH }}>
-                  <Td align="left" color={AIGS.ink}>{c.label}</Td>
-                  <Td align="left" color={AIGS.muted}>{c.kind}</Td>
-                  <Td align="right" mono bold color={color}>{fmtScore2(c.airport)}</Td>
-                  <Td align="right" mono>{fmtScore2(c.chile)}</Td>
-                  <Td align="right" mono>{fmtScore2(c.all)}</Td>
-                  <Td align="right" mono>{`${ordinal(c.rankChile)} de ${c.totalChile}`}</Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <div style={{ fontSize: 12, color: hx(AIGS.muted), marginTop: 12 }}>
-          Verde / rojo: sobre / bajo el promedio de los aeropuertos chilenos (diferencia de 0,05 o más).
-        </div>
       </div>
       <AsqNote />
       <BottomLogo />
@@ -1781,7 +1575,7 @@ const QUADRANT_COLOR: Record<string, string> = {
   "Menor prioridad": "A9B2BF",
 };
 
-// Matriz importancia (% que lo elige entre sus 3 más importantes) vs desempeño (nota 1–5).
+// Importancia (% que lo elige entre sus 3 más importantes) vs puntaje (nota 1–5).
 function AsqMatrixSlide({ data, a }: { data: DeckData; a: AsqData }) {
   const { pts, midImp, midScore, quadrant, priority, strengths, number } = asqMatrix(a.attributes);
   const W = 760;
@@ -1795,7 +1589,7 @@ function AsqMatrixSlide({ data, a }: { data: DeckData; a: AsqData }) {
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
       <SlideHead
-        title="Matriz importancia–desempeño"
+        title="Importancia vs puntaje"
         subtitle={`${airportFull(data)} · ${a.season.label} · importancia declarada por los pasajeros vs nota del atributo`}
       />
       <svg width={W} height={H} style={{ position: "absolute", top: 140, left: 60 }}>
@@ -1857,100 +1651,6 @@ function AsqMatrixSlide({ data, a }: { data: DeckData; a: AsqData }) {
       <div style={{ position: "absolute", left: 72, right: 72, bottom: 52, fontSize: 11, color: hx(AIGS.muted) }}>
         Líneas: mediana de importancia y nota promedio de los atributos del aeropuerto. Atributos con al menos 10 respuestas.
       </div>
-      <BottomLogo />
-    </div>
-  );
-}
-
-// 5 mejores y 5 peores atributos, con la diferencia vs el promedio de los aeropuertos chilenos.
-function AsqAttributesSlide({ data, a }: { data: DeckData; a: AsqData }) {
-  const { best, worst } = asqBestWorst(a.attributes);
-  const block = (title: string, rows: typeof best) => (
-    <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 8 }}>
-        {title} <span style={{ fontSize: 12, fontWeight: 400, color: hx(AIGS.muted) }}>· nota 1–5 · vs promedio Chile</span>
-      </div>
-      {rows.map((r) => (
-        <div
-          key={r.key}
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) 22% 40px 110px",
-            alignItems: "center",
-            gap: 10,
-            height: 52,
-            fontSize: 14,
-            borderTop: `1px solid ${hx(AIGS.hairline)}`,
-          }}
-        >
-          <span style={{ color: hx(AIGS.body) }}>{r.label}</span>
-          <span style={{ height: 9, borderRadius: 4, background: hx(AIGS.surfaceStrong), overflow: "hidden" }}>
-            <span style={{ display: "block", height: "100%", width: `${(r.airport! / 5) * 100}%`, background: hx(scoreColor(r.airport)) }} />
-          </span>
-          <span style={{ fontFamily: FONT.mono, fontWeight: 700, textAlign: "right", color: hx(AIGS.ink) }}>{fmtScore2(r.airport)}</span>
-          <span
-            style={{
-              fontSize: 12,
-              textAlign: "right",
-              color: hx(r.diff == null || Math.abs(r.diff) < 0.05 ? AIGS.muted : r.diff > 0 ? AIGS.up : AIGS.down),
-            }}
-          >
-            Chile {fmtScore2(r.chile)} ({r.diff == null ? "—" : `${r.diff >= 0 ? "+" : "−"}${fmtScore2(Math.abs(r.diff))}`})
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-  return (
-    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title="Mejores y peores atributos ACI ASQ" subtitle={`${airportFull(data)} · ${a.season.label}`} />
-      <div style={{ position: "absolute", top: 150, left: 72, right: 72, bottom: 64, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48 }}>
-        {block("5 mejor evaluados", best)}
-        {block("5 peor evaluados", worst)}
-      </div>
-      <AsqNote />
-      <BottomLogo />
-    </div>
-  );
-}
-
-// Perfil del pasajero: distribución (%) de cada característica, ponderada.
-function AsqProfileSlide({ data, a }: { data: DeckData; a: AsqData }) {
-  return (
-    <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title="Perfil del pasajero ACI ASQ" subtitle={`${airportFull(data)} · ${a.season.label} · ${fmtInt(a.n)} encuestas`} />
-      <div
-        style={{
-          position: "absolute",
-          top: 140,
-          left: 72,
-          right: 72,
-          bottom: 64,
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gridTemplateRows: "1fr 1fr",
-          gap: "20px 40px",
-        }}
-      >
-        {a.profile.map((p) => (
-          <div key={p.title} style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: hx(AIGS.ink), marginBottom: 6 }}>{p.title}</div>
-            {p.rows.map((r) => (
-              <div
-                key={r.label}
-                style={{ display: "grid", gridTemplateColumns: "84px minmax(0, 1fr) 40px", alignItems: "center", gap: 8, height: 26, fontSize: 12.5 }}
-              >
-                <span style={{ color: hx(AIGS.body), whiteSpace: "nowrap" }}>{r.label}</span>
-                <span style={{ height: 10, background: hx(AIGS.surfaceSoft), borderRadius: 3, overflow: "hidden" }}>
-                  <span style={{ display: "block", height: "100%", width: `${r.pct}%`, background: hx(AIGS.blue) }} />
-                </span>
-                <span style={{ fontFamily: FONT.mono, textAlign: "right", color: hx(AIGS.ink) }}>{r.pct}%</span>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-      <AsqNote />
       <BottomLogo />
     </div>
   );

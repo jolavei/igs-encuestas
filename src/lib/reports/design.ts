@@ -126,6 +126,42 @@ export function scoreColor(v: number | null | undefined): string {
   return v >= 4 ? AIGS.up : v >= 3.5 ? AIGS.yellow : AIGS.down;
 }
 
+// Estándar AIGS: nivel de servicio mínimo esperable en una nota 1–5 (ACI ASQ y AGA).
+export const SCORE_STANDARD = 3.5;
+
+// Series de las comparaciones con la industria: el aeropuerto en azul AIGS, el resto en segundo plano.
+export const BENCH = { airport: AIGS.blue, chile: "2E9AA8", all: "A9B2BF" } as const;
+
+// Notas 1–5 de una distribución, de peor a mejor (divergente: rojo ↔ gris ↔ azul).
+export const LIKERT = ["B3261E", "E8A29C", "C9CED6", "7FB2C6", "1F5F86"] as const;
+
+const hexRgb = (c: string) => [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));
+const mix = (a: string, b: string, t: number) => {
+  const [x, y] = [hexRgb(a), hexRgb(b)];
+  return x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("").toUpperCase();
+};
+const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
+
+/**
+ * Celda de un mapa de calor de notas (divergente alrededor del Estándar AIGS, gris en el
+ * centro). Devuelve el fondo y la tinta legible sobre él.
+ */
+export function scoreHeat(v: number | null | undefined): { fill: string; ink: string } {
+  if (v == null) return { fill: AIGS.surfaceSoft, ink: AIGS.muted };
+  const d = v - SCORE_STANDARD;
+  const t = clamp01(Math.abs(d) / 1.1);
+  const fill = d < 0 ? mix("EEF0F3", "B3261E", t) : mix("EEF0F3", "1F5F86", t);
+  return { fill, ink: t > 0.55 ? AIGS.white : AIGS.ink };
+}
+
+/** Celda del mapa de tiempos (una sola tinta, de claro a oscuro: más minutos, más oscuro). */
+export function timeHeat(v: number | null | undefined, max: number): { fill: string; ink: string } {
+  if (v == null) return { fill: "F4F5F7", ink: AIGS.muted };
+  const t = clamp01(max > 0 ? v / max : 0);
+  const fill = t < 0.5 ? mix("FDF0E3", "EE9A4D", t * 2) : mix("EE9A4D", "9C1C14", (t - 0.5) * 2);
+  return { fill, ink: t > 0.62 ? AIGS.white : AIGS.ink };
+}
+
 /** Color del NPS: ≥30 verde · 0–29 azul · negativo rojo. */
 export function npsColor(v: number | null | undefined): string {
   if (v == null) return AIGS.muted;

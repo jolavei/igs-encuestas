@@ -19,15 +19,14 @@ import { BigQueryCredentialsError } from "@/lib/bigquery";
 import { computeNps } from "@/lib/metrics";
 import { AIRPORTS, PROCESOS, hasAirline, metaFor, ymLabel, type Fase, type Proceso } from "@/lib/dashboardTiempos";
 import {
-  HOUR_BANDS,
   REPORT_SOURCE_CUTOFF,
   queryTiempos,
   queryTiemposByAirline,
-  queryTiemposByHourBand,
   queryTiemposBySeason,
-  hasService,
+  queryTiemposHotspot,
   hasServiceColumns,
-  queryServiceByHourBand,
+  type CheckinMode,
+  type HotspotData,
   type SeasonAggRow,
 } from "@/lib/reports/tiemposQuery";
 import {
@@ -48,18 +47,18 @@ import { seasonFromCode, seasonOrder, type PeriodContext, type Season } from "@/
 import type { ModuleKey } from "@/lib/reports/modules";
 import { getAsqResults, type AsqResults } from "@/lib/asq/results";
 import { attachService, periodHasService } from "@/lib/reports/serviceTimes";
+import { agaCategoryOf } from "@/lib/reports/seasonSlides";
 
 export type SeasonExtras = {
   focusLabel: string; // "Summer 2026"
+  focusCode: string; // "SU26"
   tiemposHistory: {
     seasons: { code: string; label: string }[];
     series: { label: string; meta: number | null; values: (number | null)[] }[];
   };
-  tiemposHours: {
-    bands: string[];
-    // `at` = atención promedio de la franja (solo informes desde oct-2026; si no, no existe).
-    rows: { label: string; meta: number | null; cells: { n: number; prom: number | null; at?: number | null }[] }[];
-  };
+  // Mapa de hotspots (día × hora) por proceso en la temporada de detalle. Check in se abre
+  // en tradicional y quiosco porque cada modalidad tiene su propio Estándar IATA.
+  tiemposHot: { label: string; meta: number | null; data: HotspotData }[];
   // Resultados ACI ASQ de la temporada de detalle (null: base no cargada o sin encuestas).
   asq: AsqResults | null;
   asqError: string | null;
@@ -67,6 +66,8 @@ export type SeasonExtras = {
   agaHistory: {
     seasons: { code: string; label: string; n: number; ratingAvg: number | null; nps: number | null }[];
     months: { ym: string; label: string; n: number; ratingAvg: number | null }[];
+    // Nota por categoría en cada temporada (alineada con `seasons`).
+    categories: { label: string; values: (number | null)[] }[];
   }[];
 };
 
@@ -112,8 +113,9 @@ export async function getSeasonReport(
   const label = ctx.kind === "ANUAL" ? `${ctx.label} · detalle ${ctx.season.label}` : ctx.label;
   const seasonal: SeasonExtras = {
     focusLabel: ctx.season.label,
+    focusCode: ctx.season.code,
     tiemposHistory: { seasons: [], series: [] },
-    tiemposHours: { bands: [...HOUR_BANDS], rows: [] },
+    tiemposHot: [],
     asq: null,
     asqError: null,
     agaHistory: [],
@@ -184,7 +186,7 @@ async function loadTiempos(
     const results = await Promise.all(
       jobs.map(async (job) => {
         const fase = job.fase ?? undefined;
-        const [bySeason, main, airlineRows, hours] = await Promise.all([
+        const [bySeason, main, airlineRows] = await Promise.all([
           queryTiemposBySeason({ proceso: job.proceso, fase, airport, hasta: ctx.window.to }),
           queryTiempos({
             proceso: job.proceso,
@@ -205,17 +207,44 @@ async function loadTiempos(
                 reportSource: true,
               })
             : Promise.resolve([]),
-          queryTiemposByHourBand({ proceso: job.proceso, fase, airport, desde: ctx.season.from, hasta: ctx.season.to }),
         ]);
-        const serviceHours =
-          withService && hasService(job.proceso)
-            ? await queryServiceByHourBand({ proceso: job.proceso, airport, desde: ctx.season.from, hasta: ctx.season.to }).catch(
-                () => null
-              )
-            : null;
-        return { job, bySeason, main, airlineRows, hours, serviceHours };
+        return { job, bySeason, main, airlineRows };
       })
     );
+
+    // Hotspots de la temporada de detalle.
+    type HotJob = { label: string; proceso: Proceso; fase?: Fase; mode?: CheckinMode; meta: number | null };
+    const hotJobs = jobs.flatMap((j): HotJob[] => {
+      if (j.proceso === "Check in")
+        return [
+          { label: "Check in tradicional", proceso: j.proceso, mode: "counter" as const, meta: metaFor(j.proceso, "Todas") },
+          { label: "Check in quiosco", proceso: j.proceso, mode: "quiosco" as const, meta: metaFor(j.proceso, "LATAM Airlines - Quiosco") },
+        ];
+      return [
+        {
+          label: `${j.proceso}${j.faseLabel ? ` — ${j.faseLabel}` : ""}`,
+          proceso: j.proceso,
+          fase: j.fase ?? undefined,
+          meta: metaFor(j.proceso, "Todas"),
+        },
+      ];
+    });
+    const hot = await Promise.all(
+      hotJobs.map(async (h) => ({
+        label: h.label,
+        meta: h.meta,
+        data: await queryTiemposHotspot({ proceso: h.proceso, fase: h.fase, mode: h.mode, airport, desde: ctx.season.from, hasta: ctx.season.to }),
+      }))
+    );
+    seasonal.tiemposHot = hot
+      .filter((h) => h.data.total)
+      .map((h) => ({
+        ...h,
+        data: {
+          ...h.data,
+          airlines: h.data.airlines.map((a) => ({ ...a, airline: a.airline.includes(" - ") ? a.airline : shortAirline(a.airline) })),
+        },
+      }));
 
     // Temporadas con datos (de cualquier proceso) hasta el fin de la ventana: eje del histórico.
     const codes = new Set<string>();
@@ -227,7 +256,7 @@ async function loadTiempos(
     seasonal.tiemposHistory.seasons = histSeasons.map((s) => ({ code: s.code, label: s.label }));
 
     const processes: ReportProcess[] = [];
-    for (const { job, bySeason, main, airlineRows, hours, serviceHours } of results) {
+    for (const { job, bySeason, main, airlineRows } of results) {
       const agg = new Map<string, SeasonAggRow>(bySeason.map((s) => [s.code, s]));
       const focus = agg.get(ctx.season.code);
       if (!focus || focus.n === 0) continue; // sin mediciones en la temporada de detalle
@@ -285,16 +314,6 @@ async function loadTiempos(
         meta,
         values: histSeasons.map((s) => agg.get(s.code)?.prom ?? null),
       });
-      seasonal.tiemposHours.rows.push({
-        label: procLabel,
-        meta,
-        cells: HOUR_BANDS.map((_, b) => {
-          const h = hours.find((x) => x.band === b);
-          const cell: { n: number; prom: number | null; at?: number | null } = { n: h?.n ?? 0, prom: h ? h.prom : null };
-          if (serviceHours) cell.at = serviceHours.find((x) => x.band === b)?.prom ?? null;
-          return cell;
-        }),
-      });
     }
     if (withService) await attachService(processes, { airport, desde: ctx.season.from, hasta: ctx.season.to, month: null });
     return { processes, bqError: null };
@@ -310,6 +329,7 @@ async function loadTiempos(
 // ---------------------------------------------------------------------------
 
 type HistRow = { id: string; createdAt: Date; source: string; sum: number | null; cnt: bigint | number; nps: number | null };
+type HistItemRow = { ym: string; source: string; section: string | null; text: string; sum: number | null; cnt: bigint | number };
 
 async function loadAga(
   companyId: string,
@@ -334,7 +354,7 @@ async function loadAga(
     if (!ids?.length) continue;
     const cfg = SURVEY_VIEWS[audience === "Pasajeros" ? "aga-pasajeros" : "aga-acompanantes"];
 
-    const [sets, hist] = await Promise.all([
+    const [sets, hist, histItems] = await Promise.all([
       prisma.responseSet.findMany({
         where: {
           workPlanId: { in: ids },
@@ -366,6 +386,18 @@ async function loadAga(
         WHERE r."workPlanId" IN (${Prisma.join(ids)})
           AND r."createdAt" <= ${new Date(`${ctx.window.to}T23:59:59Z`)}
         GROUP BY r.id`),
+      // Notas por ítem y mes (todas las temporadas), para el mapa de categorías por temporada.
+      prisma.$queryRaw<HistItemRow[]>(Prisma.sql`
+        SELECT to_char(r."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Santiago', 'YYYY-MM') AS ym, r.source, s.title AS section, q.text,
+          SUM(a."valueNumber") AS sum, COUNT(a."valueNumber") AS cnt
+        FROM "ResponseSet" r
+        JOIN "Answer" a ON a."responseSetId" = r.id
+        JOIN "Question" q ON q.id = a."questionId"
+        LEFT JOIN "QuestionSection" s ON s.id = q."sectionId"
+        WHERE r."workPlanId" IN (${Prisma.join(ids)})
+          AND r."createdAt" <= ${new Date(`${ctx.window.to}T23:59:59Z`)}
+          AND q.type = 'RATING' AND q.text !~* 'satisfacci[oó]n general'
+        GROUP BY 1, 2, 3, 4`),
     ]);
 
     const valid = sets
@@ -432,7 +464,31 @@ async function loadAga(
         nps: computeNps(v.nps).nps,
       }));
 
-    seasonal.agaHistory.push({ seasons, months });
+    // Nota por categoría en cada temporada.
+    const catSeason = new Map<string, Map<string, { sum: number; cnt: number }>>();
+    for (const h of histItems) {
+      if (!isValidAgaSource(`${h.ym}-01`, h.source, REPORT_SOURCE_CUTOFF)) continue;
+      const cat = agaCategoryOf((h.section ?? "").replace(/\s*[—–-]\s*evaluaci[oó]n\s*$/i, ""), cleanLabel(h.text));
+      const code = seasonCodeOfDay(`${h.ym}-01`);
+      const m = catSeason.get(cat) ?? new Map<string, { sum: number; cnt: number }>();
+      const acc = m.get(code) ?? { sum: 0, cnt: 0 };
+      acc.sum += Number(h.sum ?? 0);
+      acc.cnt += Number(h.cnt ?? 0);
+      m.set(code, acc);
+      catSeason.set(cat, m);
+    }
+    const categories = [...catSeason.entries()]
+      .map(([label, m]) => ({
+        label,
+        values: seasons.map((x) => {
+          const acc = m.get(x.code);
+          return acc && acc.cnt > 0 ? Math.round((acc.sum / acc.cnt) * 100) / 100 : null;
+        }),
+      }))
+      .filter((c) => c.values.some((v) => v != null))
+      .sort((a, b) => a.label.localeCompare(b.label, "es"));
+
+    seasonal.agaHistory.push({ seasons, months, categories });
   }
   return out;
 }
