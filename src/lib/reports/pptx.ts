@@ -2,7 +2,7 @@
 // nativos (portada/cierre sobrios con logo + badge, sin foto de fondo).
 // Server-only (runtime nodejs). Import dinámico para no forzar el bundle.
 
-import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor } from "@/lib/reports/design";
+import { AIGS, FONT, SERIES, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor, stackPointLabels, timeAxis } from "@/lib/reports/design";
 import { LOGO_DATA_URI, LOGO_TEXT_DATA_URI } from "@/lib/reports/assets";
 import type { MonthlyReport, ReportProcess, ReportAirlineBreakdown } from "@/lib/reports/monthlyReport";
 import type { AgaScore, AgaSurvey } from "@/lib/reports/agaSurvey";
@@ -55,13 +55,6 @@ function addBottomLogo(slide: Slide) {
 // "Aeropuerto El Loa - Calama" -> "Aeropuerto El Loa, Calama"
 function airportFull(r: MonthlyReport): string {
   return r.airport.companyName.replace(" - ", ", ");
-}
-
-// Tope "bonito" (minutos) para compartir escala entre el gráfico principal y los mini.
-function niceMax(m: number): number {
-  const steps = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120];
-  const target = Math.max(1, m) * 1.1;
-  return steps.find((s) => s >= target) ?? Math.ceil(target / 30) * 30;
 }
 
 /** Logo (superior) para portada y cierre. */
@@ -430,6 +423,7 @@ function miniAirlineChart(
     valAxisLabelFontSize: 7,
     valAxisMinVal: 0,
     valAxisMaxVal: yMax,
+    valAxisMajorUnit: yMax / 2,
     valGridLine: { color: "F1F5F9", size: 0.5 },
     catGridLine: { style: "none" },
   });
@@ -479,8 +473,14 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   );
 
   const hasMini = p.byAirline.length > 0;
-  const yMax = niceMax(
-    Math.max(0, ...p.series.flatMap((x) => [x.prom ?? 0, x.med ?? 0, x.p90 ?? 0]), ...(sv?.series ?? []).map((v) => v ?? 0), p.meta ?? 0)
+  // Escala común del evolutivo y los mini: incluye lo que dibuja cada uno.
+  const axis = timeAxis(
+    [
+      ...p.series.flatMap((x) => [x.prom, x.med, x.p90]),
+      ...(sv?.series ?? []),
+      ...p.byAirline.slice(0, 6).flatMap((a) => a.series.map((x) => x.prom)),
+    ],
+    p.meta
   );
 
   if (sv) {
@@ -530,11 +530,16 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     color: AIGS.ink,
     margin: 0,
   });
+  const chartY = hasMini ? (sv ? 5.02 : 4.95) : 5.2;
+  const chartH = hasMini ? (sv ? 2.4 : 2.45) : 5.0;
+  // Área de trazado fija (pulgadas) para ubicar las etiquetas de valor sobre los puntos.
+  const plot = { x: MX + 0.7, y: chartY + 0.25, w: CONTENT_W - 0.85, h: chartH - 0.95 };
   s.addChart(pres.ChartType.line, data, {
     x: MX,
-    y: hasMini ? (sv ? 5.02 : 4.95) : 5.2,
+    y: chartY,
     w: CONTENT_W,
-    h: hasMini ? (sv ? 2.4 : 2.45) : 5.0,
+    h: chartH,
+    layout: { x: 0.7 / CONTENT_W, y: 0.25 / chartH, w: plot.w / CONTENT_W, h: plot.h / chartH },
     chartColors,
     lineSize: 2.25,
     lineSmooth: false,
@@ -552,9 +557,37 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     valAxisLabelFontFace: FONT.face,
     valAxisLabelFontSize: 11,
     valAxisMinVal: 0,
-    valAxisMaxVal: yMax,
+    valAxisMaxVal: axis.max,
+    valAxisMajorUnit: axis.step,
     valGridLine: { color: "EEF2F6", size: 0.5 },
     catGridLine: { style: "none" },
+  });
+
+  // Valor (mm:ss) sobre cada punto de fila/promedio y atención. pptxgenjs solo etiqueta todas
+  // las series a la vez y en decimales, por eso van como texto sobre el gráfico.
+  const yOf = (v: number | null | undefined) => (v == null ? null : plot.y + plot.h * (1 - v / axis.max));
+  const labelH = 0.2;
+  const pointLabel = (i: number, base: number | null, v: number | null | undefined, color: string) => {
+    if (base == null) return;
+    s.addText(fmtMMSS(v), {
+      x: plot.x + ((i + 0.5) / labels.length) * plot.w - 0.45,
+      y: Math.max(chartY, base - labelH),
+      w: 0.9,
+      h: labelH,
+      fontFace: FONT.mono,
+      fontSize: 11,
+      bold: true,
+      color,
+      align: "center",
+      valign: "bottom",
+      margin: 0,
+    });
+  };
+  p.series.forEach((x, i) => {
+    const at = sv?.series[i];
+    const [promBase, atBase] = stackPointLabels(yOf(x.prom), yOf(at), 0.07, labelH);
+    pointLabel(i, promBase, x.prom, SERIES.prom);
+    pointLabel(i, atBase, at, SERIES.at);
   });
 
   // Mini-gráficos por aerolínea (Check in / Retiro), misma escala Y que el principal.
@@ -574,7 +607,7 @@ function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
     const gap = 0.28;
     const w = (CONTENT_W - gap * (cards.length - 1)) / cards.length;
     cards.forEach((a, i) =>
-      miniAirlineChart(s, pres, a, MX + i * (w + gap), 7.95, w, 2.35, yMax, sv ? sv.byAirline[a.airline] ?? null : undefined)
+      miniAirlineChart(s, pres, a, MX + i * (w + gap), 7.95, w, 2.35, axis.max, sv ? sv.byAirline[a.airline] ?? null : undefined)
     );
   }
 
@@ -1157,7 +1190,7 @@ function tiemposHistorySlide(pres: Pptx, r: MonthlyReport) {
   slideTitle(s, "Tiempos · evolutivo por temporada", `${airportFull(r)} · promedio por temporada hasta ${r.seasonal!.focusLabel}`);
   const labels = h.seasons.map((x) => x.code);
   const data = h.series.map((x) => ({ name: x.label, labels, values: x.values.map((v) => (v == null ? null : round1(v))) }));
-  const yMax = niceMax(Math.max(0, ...h.series.flatMap((x) => x.values.map((v) => v ?? 0))));
+  const axis = timeAxis(h.series.flatMap((x) => x.values));
   s.addChart(pres.ChartType.line, data, {
     x: MX, y: 2.1, w: CONTENT_W, h: 7.6,
     chartColors: h.series.map((_, j) => HISTORY_COLORS[j % HISTORY_COLORS.length]),
@@ -1165,7 +1198,7 @@ function tiemposHistorySlide(pres: Pptx, r: MonthlyReport) {
     showLegend: true, legendPos: "t", legendFontFace: FONT.face, legendFontSize: 12, legendColor: AIGS.body,
     catAxisLabelFontFace: FONT.face, catAxisLabelFontSize: 11, catAxisLabelColor: AIGS.muted,
     valAxisLabelFontFace: FONT.face, valAxisLabelFontSize: 11, valAxisLabelColor: AIGS.muted,
-    valAxisMinVal: 0, valAxisMaxVal: yMax, valAxisTitle: "minutos", showValAxisTitle: true, valAxisTitleFontSize: 11,
+    valAxisMinVal: 0, valAxisMaxVal: axis.max, valAxisMajorUnit: axis.step, valAxisTitle: "minutos", showValAxisTitle: true, valAxisTitleFontSize: 11,
     valGridLine: { color: "EEF2F6", size: 0.5 }, catGridLine: { style: "none" },
   });
   s.addText("SU = Summer (abr–sep) · WI = Winter (oct–mar) · temporadas sin mediciones no aparecen", {

@@ -12,8 +12,9 @@ import {
   Tooltip,
   ReferenceLine,
   ResponsiveContainer,
+  Customized,
 } from "recharts";
-import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor } from "@/lib/reports/design";
+import { AIGS, SERIES, FONT, hx, fmtInt, fmtMMSS, pct, fmtScore, fmtScore2, fmtNps, scoreColor, npsColor, stackPointLabels, timeAxis } from "@/lib/reports/design";
 import {
   AGA_GUIDE_KPIS,
   AGA_GUIDE_PERIOD_NOTE,
@@ -468,13 +469,6 @@ function AsqSlide({ data }: { data: DeckData }) {
   );
 }
 
-// Tope "bonito" (minutos) para compartir escala entre el gráfico principal y los mini.
-function niceMax(m: number): number {
-  const steps = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120];
-  const target = Math.max(1, m) * 1.1;
-  return steps.find((s) => s >= target) ?? Math.ceil(target / 30) * 30;
-}
-
 function LegendItem({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
@@ -503,8 +497,14 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
   const hasMini = p.byAirline.length > 0;
   const cols = Math.min(p.byAirline.length, 6);
   const seasonMargin = p.meta != null ? p.meta - p.kpiSeason.prom : null;
-  const yMax = niceMax(
-    Math.max(0, ...p.series.flatMap((s) => [s.prom ?? 0, s.med ?? 0, s.p90 ?? 0]), ...(p.service?.series ?? []).map((v) => v ?? 0), p.meta ?? 0)
+  // Escala común del evolutivo y los mini: incluye lo que dibuja cada uno.
+  const axis = timeAxis(
+    [
+      ...p.series.flatMap((s) => [s.prom, s.med, s.p90]),
+      ...(p.service?.series ?? []),
+      ...p.byAirline.slice(0, 6).flatMap((a) => a.series.map((s) => s.prom)),
+    ],
+    p.meta
   );
   // Sin mediciones este mes: la diapositiva se muestra igual (hubo mediciones antes en la
   // temporada). Los KPIs del mes van en "—" y se apoya el lector en el acumulado del periodo.
@@ -589,7 +589,7 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
           <div style={{ fontSize: 15, fontWeight: 700, color: hx(AIGS.ink) }}>Evolutivo</div>
           <ChartLegend meta={p.meta} service={!!sv} />
         </div>
-        <ProcesoChart p={p} height={hasMini ? (sv ? 132 : 146) : 210} yMax={yMax} />
+        <ProcesoChart p={p} height={hasMini ? (sv ? 132 : 146) : 210} axis={axis} />
       </div>
 
       {/* Mini-gráficos por aerolínea (Check in / Retiro), misma escala Y que el principal */}
@@ -601,7 +601,7 @@ function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][nu
           </div>
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 12 }}>
             {p.byAirline.slice(0, 6).map((a) => (
-              <MiniAirlineChart key={a.airline} a={a} yMax={yMax} at={sv ? sv.byAirline[a.airline] ?? null : undefined} />
+              <MiniAirlineChart key={a.airline} a={a} yMax={axis.max} at={sv ? sv.byAirline[a.airline] ?? null : undefined} />
             ))}
           </div>
         </div>
@@ -656,7 +656,8 @@ function MiniAirlineChart({
             <CartesianGrid stroke="#f1f5f9" vertical={false} />
             <YAxis
               domain={[0, yMax]}
-              ticks={[0, Math.round(yMax / 2), yMax]}
+              ticks={[0, yMax / 2, yMax]}
+              interval={0}
               tickFormatter={(v) => fmtMMSS(Number(v))}
               tick={{ fill: hx(AIGS.muted), fontSize: 8 }}
               tickLine={false}
@@ -672,7 +673,7 @@ function MiniAirlineChart({
               interval={0}
             />
             {a.meta != null && <ReferenceLine y={a.meta} stroke={hx(SERIES.meta)} strokeDasharray="3 3" strokeWidth={1} />}
-            <Line type="monotone" dataKey="prom" stroke={hx(SERIES.prom)} strokeWidth={1.75} dot={false} isAnimationActive={false} connectNulls />
+            <Line type="monotone" dataKey="prom" stroke={hx(SERIES.prom)} strokeWidth={1.75} dot={{ r: 2.5, fill: hx(SERIES.prom) }} isAnimationActive={false} connectNulls />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -680,7 +681,59 @@ function MiniAirlineChart({
   );
 }
 
-function ProcesoChart({ p, height = 200, yMax }: { p: DeckData["processes"][number]; height?: number; yMax: number }) {
+// Valor (mm:ss) sobre cada punto de fila/promedio y atención del evolutivo.
+function PointLabels({
+  chart,
+  rows,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  chart: any;
+  rows: { label: string; prom: number | null; at: number | null }[];
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const xAxis = Object.values(chart.xAxisMap ?? {})[0] as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const yAxis = Object.values(chart.yAxisMap ?? {})[0] as any;
+  if (!xAxis || !yAxis) return null;
+  const fs = 11;
+  // Los puntos extremos caen en el borde: la etiqueta se corre para no pisar el eje Y ni cortarse.
+  const halfW = 18;
+  const clampX = (x: number) => Math.min(xAxis.x + xAxis.width - 2, Math.max(xAxis.x + halfW, x));
+  const text = (key: string, x: number, y: number | null, v: number | null, color: string) =>
+    y == null ? null : (
+      <text
+        key={key}
+        x={x}
+        y={Math.max(fs, y)}
+        textAnchor="middle"
+        fontSize={fs}
+        fontWeight={700}
+        fontFamily={FONT.mono}
+        fill={hx(color)}
+        stroke="#fff"
+        strokeWidth={3}
+        paintOrder="stroke"
+      >
+        {fmtMMSS(v)}
+      </text>
+    );
+  return (
+    <g>
+      {rows.map((r) => {
+        const x = clampX(xAxis.scale(r.label) + (xAxis.scale.bandwidth?.() ?? 0) / 2);
+        const [promY, atY] = stackPointLabels(
+          r.prom == null ? null : yAxis.scale(r.prom),
+          r.at == null ? null : yAxis.scale(r.at),
+          5,
+          fs + 1
+        );
+        return [text(`p${r.label}`, x, promY, r.prom, SERIES.prom), text(`a${r.label}`, x, atY, r.at, SERIES.at)];
+      })}
+    </g>
+  );
+}
+
+function ProcesoChart({ p, height = 200, axis }: { p: DeckData["processes"][number]; height?: number; axis: ReturnType<typeof timeAxis> }) {
   const chartData = p.series.map((s, i) => ({
     at: p.service?.kpi ? (p.service.series[i] ?? null) : null,
     label: s.label,
@@ -691,7 +744,7 @@ function ProcesoChart({ p, height = 200, yMax }: { p: DeckData["processes"][numb
   }));
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={chartData} margin={{ top: 6, right: 16, bottom: 4, left: 8 }}>
+      <ComposedChart data={chartData} margin={{ top: 12, right: 16, bottom: 4, left: 8 }}>
         <CartesianGrid stroke="#eef2f6" vertical={false} />
         <XAxis dataKey="label" tick={{ fill: hx(AIGS.muted), fontSize: 12 }} tickLine={false} axisLine={{ stroke: hx(AIGS.hairline) }} />
         <YAxis
@@ -700,7 +753,9 @@ function ProcesoChart({ p, height = 200, yMax }: { p: DeckData["processes"][numb
           tickLine={false}
           axisLine={false}
           width={56}
-          domain={[0, yMax]}
+          domain={[0, axis.max]}
+          ticks={axis.ticks}
+          interval={0}
         />
         <Tooltip formatter={(v: number, n) => [fmtMMSS(v), n]} />
         <Area type="monotone" dataKey="med" stackId="band" stroke="none" fill="transparent" isAnimationActive={false} />
@@ -719,6 +774,7 @@ function ProcesoChart({ p, height = 200, yMax }: { p: DeckData["processes"][numb
         {p.service?.kpi && (
           <Line type="monotone" dataKey="at" name="Atención" stroke={hx(SERIES.at)} strokeWidth={2} dot={{ r: 2, fill: hx(SERIES.at) }} isAnimationActive={false} connectNulls />
         )}
+        <Customized component={(chart: unknown) => <PointLabels chart={chart} rows={chartData} />} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -1272,7 +1328,7 @@ function TiemposHistorySlide({ data }: { data: DeckData }) {
     h.series.forEach((x, j) => (row[`s${j}`] = x.values[i]));
     return row;
   });
-  const yMax = niceMax(Math.max(0, ...h.series.flatMap((x) => x.values.map((v) => v ?? 0))));
+  const axis = timeAxis(h.series.flatMap((x) => x.values));
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
       <SlideHead
@@ -1295,7 +1351,9 @@ function TiemposHistorySlide({ data }: { data: DeckData }) {
               tickLine={false}
               axisLine={false}
               width={56}
-              domain={[0, yMax]}
+              domain={[0, axis.max]}
+              ticks={axis.ticks}
+              interval={0}
             />
             <Tooltip formatter={(v: number, n) => [fmtMMSS(v), h.series[Number(String(n).slice(1))]?.label ?? n]} />
             {h.series.map((x, j) => (

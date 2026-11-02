@@ -43,6 +43,35 @@ export function fmtMMSS(v: number | null | undefined): string {
   return `${sign}${String(Math.floor(a / 60)).padStart(2, "0")}:${String(a % 60).padStart(2, "0")}`;
 }
 
+/**
+ * Eje Y (minutos) de los gráficos de tiempos, común al deck HTML y al PPTX. Se ajusta a los
+ * datos y nunca queda bajo el Estándar IATA: mientras los datos no lo superen, el tope es el
+ * estándar; si lo superan, sube lo justo (con un margen) hasta el siguiente múltiplo del paso.
+ */
+export function timeAxis(values: (number | null | undefined)[], standard?: number | null) {
+  const data = Math.max(0, ...values.map((v) => v ?? 0));
+  const floor = standard ?? 0;
+  const target = Math.max(1, data > floor ? data * 1.05 : floor);
+  const step = [0.5, 1, 2, 5, 10, 15, 20, 30, 60].find((s) => target / s <= 6) ?? Math.ceil(target / 6 / 60) * 60;
+  const max = Math.ceil(target / step) * step;
+  const ticks = Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step);
+  return { max, step, ticks };
+}
+
+/**
+ * Base (y, hacia abajo) de las etiquetas de dos puntos del mismo mes, siempre sobre el punto
+ * para no chocar con el eje X. Si están muy cerca, ambas van apiladas sobre el punto superior.
+ */
+export function stackPointLabels(a: number | null, b: number | null, gap: number, lineH: number): [number | null, number | null] {
+  if (a == null || b == null) return [a == null ? null : a - gap, b == null ? null : b - gap];
+  const upper = Math.min(a, b);
+  const lower = Math.max(a, b);
+  const close = lower - upper < lineH + gap;
+  const lowerBase = (close ? upper : lower) - gap;
+  const upperBase = close ? lowerBase - lineH : upper - gap;
+  return a <= b ? [upperBase, lowerBase] : [lowerBase, upperBase];
+}
+
 /** Porcentaje de avance (0..100), acotado. */
 export function pct(done: number, target: number): number {
   return target > 0 ? Math.min(100, Math.round((done / target) * 100)) : 0;
