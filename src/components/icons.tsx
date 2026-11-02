@@ -30,7 +30,8 @@ export type IconName =
   | "compliance"
   | "report"
   | "upload"
-  | "planning";
+  | "planning"
+  | "database";
 
 export const HomeIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
@@ -218,6 +219,20 @@ export const PlanningIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
+export const DatabaseIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <ellipse cx="12" cy="5" rx="8" ry="3" />
+    <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+    <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
+  </Svg>
+);
+
+export const FilterIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d="M3 5h18l-7 8.5V20l-4-2v-4.5z" />
+  </Svg>
+);
+
 export const NAV_ICONS: Record<IconName, (p: SVGProps<SVGSVGElement>) => JSX.Element> = {
   home: HomeIcon,
   questionnaire: QuestionnaireIcon,
@@ -231,4 +246,5 @@ export const NAV_ICONS: Record<IconName, (p: SVGProps<SVGSVGElement>) => JSX.Ele
   report: ReportIcon,
   upload: UploadIcon,
   planning: PlanningIcon,
+  database: DatabaseIcon,
 };

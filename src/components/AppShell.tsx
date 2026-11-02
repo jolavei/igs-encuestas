@@ -42,6 +42,7 @@ const NAV: Record<Role, NavItem[]> = {
     },
     { href: "/admin/planificacion", label: "Planificación", icon: "planning" },
     { href: "/admin/informes", label: "Informes", icon: "report" },
+    { href: "/admin/bases", label: "Bases de datos", icon: "database" },
     { href: "/admin/levantar", label: "Levantar encuesta", icon: "workplan" },
     { href: "/admin/cuestionarios", label: "Cuestionarios", icon: "questionnaire" },
     { href: "/admin/planes", label: "Planes de trabajo", icon: "assignment" },
@@ -314,7 +315,14 @@ export default function AppShell({
         </aside>
 
         <main className="min-w-0 flex-1">
-          <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+          {/* La grilla de bases de datos aprovecha todo el ancho, como una planilla. */}
+          <div
+            className={`mx-auto px-4 py-6 sm:px-6 lg:px-8 ${
+              pathname.startsWith("/admin/bases") ? "" : "max-w-6xl"
+            }`}
+          >
+            {children}
+          </div>
         </main>
       </div>
     </div>
