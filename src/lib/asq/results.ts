@@ -21,7 +21,7 @@ import { seasonFromCode, seasonOrder } from "@/lib/reports/period";
 export const ASQ_GROUPS = [
   { key: "Arrival_Category", label: "Accesos al aeropuerto" },
   { key: "Checkin_Category", label: "Check in" },
-  { key: "Security_Category", label: "Filtro de seguridad (AVSEC)" },
+  { key: "Security_Category", label: "Filtro de Seguridad" },
   { key: "Border_Category", label: "Control migratorio" },
   { key: "RestShops_Category", label: "Restaurantes y tiendas" },
   { key: "Gates_Category", label: "Zona de puertas" },

@@ -49,24 +49,43 @@ export const KIND_BADGE: Record<ReportKind, string> = {
   ANUAL: "Informe anual",
 };
 
+/** Badge de la portada: el mensual lleva el mes ("Informe mensual - Octubre 2026"). */
+export function coverBadge(r: { kind?: ReportKind; monthLabel: string }): string {
+  const kind = r.kind ?? "MENSUAL";
+  return kind === "MENSUAL" ? `${KIND_BADGE.MENSUAL} - ${r.monthLabel}` : KIND_BADGE[kind];
+}
+
+/** Línea final de la portada del mensual. */
+export const MONTHLY_COVER_TAGLINE = "Avance del Estudio de Comparación de la Industria Aeroportuaria";
+
+/** Ciudad del aeropuerto desde el nombre de la empresa ("Aeropuerto El Loa - Calama" → "Calama"). */
+export function airportCity(companyName: string): string {
+  const i = companyName.lastIndexOf(" - ");
+  return i >= 0 ? companyName.slice(i + 3).trim() : companyName;
+}
+
 /** Línea de la portada que dice qué cubre el informe. */
 export function coverScope(r: Report): string {
   if ((r.kind ?? "MENSUAL") === "MENSUAL") {
     return r.aga.length > 0
-      ? "Cumplimiento de Encuestas ASQ, mediciones de tiempos y Encuestas AGA"
+      ? "Cumplimiento de Encuestas ASQ, mediciones de tiempos y Encuestas Complementarias"
       : "Cumplimiento de Encuestas ASQ y mediciones de tiempos";
   }
   const items = [
     r.seasonal?.asq ? "Resultados ACI ASQ" : null,
     r.processes.length > 0 ? "mediciones de tiempos" : null,
-    r.aga.length > 0 ? "Encuestas AGA" : null,
+    r.aga.length > 0 ? "Encuestas Complementarias" : null,
   ].filter((x): x is string => !!x);
   if (items.length === 0) return "Resultados de la temporada";
   const parts = items.length > 1 ? `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}` : items[0];
   return parts.charAt(0).toUpperCase() + parts.slice(1);
 }
 
-export const procLabel = (p: Proc) => `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}`;
+/** Nombre de un proceso en las presentaciones (la clave interna "AVSEC" no se muestra). */
+export const procName = (proceso: string) => (proceso === "AVSEC" ? "Filtro de Seguridad" : proceso);
+
+export const procLabel = (p: { proceso: string; faseLabel: string | null }) =>
+  `${procName(p.proceso)}${p.faseLabel ? ` — ${p.faseLabel}` : ""}`;
 
 export type TiemposSummaryRow = {
   label: string;
@@ -150,7 +169,7 @@ export function execSummaryCards(r: Report): SummaryCard[] {
     if (s.month.n === 0) continue;
     const cur = s.month.ratingAvg ?? null;
     cards.push({
-      label: `AGA ${s.audience} · nota promedio`,
+      label: `Complementarias ${s.audience} · nota promedio`,
       value: `${fmtScore(cur)} / 5`,
       sub: `${fmtInt(s.month.n)} encuestas${s.month.ratingTop2 != null ? ` · ${s.month.ratingTop2}% notas 4–5` : ""}`,
       valueColor: scoreColor(cur),
@@ -174,7 +193,7 @@ const AGA_ALIAS: [RegExp, string][] = [
   [/^comidas? y bebidas$/i, "Locales de comida y bebida"],
   [/^estacionamientos?$/i, "Estacionamientos"],
   [/^transporte/i, "Transporte público"],
-  [/^control de seguridad$/i, "Seguridad (AVSEC)"],
+  [/^control de seguridad$/i, "Filtro de Seguridad"],
   [/^control sanitario$/i, "Protección sanitaria"],
 ];
 

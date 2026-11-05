@@ -27,10 +27,13 @@ import {
 } from "@/lib/reports/agaGuide";
 import {
   ASQ_NOTE,
-  KIND_BADGE,
+  MONTHLY_COVER_TAGLINE,
+  airportCity,
   asqMatrix,
   serviceSplitRows,
+  coverBadge,
   coverScope,
+  procLabel,
   execSummaryCards,
   tiemposSummaryRows,
 } from "@/lib/reports/seasonSlides";
@@ -464,19 +467,22 @@ function airportFull(data: DeckData): string {
 }
 
 function Cover({ data }: { data: DeckData }) {
+  const monthly = (data.kind ?? "MENSUAL") === "MENSUAL";
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72, color: hx(AIGS.ink) }}>
       <div style={{ position: "absolute", top: 56, left: 72 }}>
         <Logo />
       </div>
       <div style={{ position: "absolute", left: 72, top: 300, right: 72 }}>
-        <Badge color={AIGS.blue}>{KIND_BADGE[data.kind ?? "MENSUAL"]}</Badge>
+        <Badge color={AIGS.blue}>{coverBadge(data)}</Badge>
         <div style={{ fontSize: 60, lineHeight: 1.02, letterSpacing: "-0.02em", marginTop: 16 }}>
           {data.airport.name}
         </div>
-        <div style={{ fontSize: 22, color: hx(AIGS.body), marginTop: 20 }}>{data.airport.companyName}</div>
+        <div style={{ fontSize: 22, color: hx(AIGS.body), marginTop: 20 }}>
+          {monthly ? airportCity(data.airport.companyName) : data.airport.companyName}
+        </div>
         <div style={{ fontSize: 16, color: hx(AIGS.muted), marginTop: 8 }}>
-          {coverScope(data)} · {data.monthLabel}
+          {monthly ? MONTHLY_COVER_TAGLINE : `${coverScope(data)} · ${data.monthLabel}`}
         </div>
       </div>
       <div style={{ position: "absolute", left: 72, bottom: 48, fontSize: 13, color: hx(AIGS.muted) }}>
@@ -651,7 +657,7 @@ function ChartLegend({ meta, service }: { meta: number | null; service?: boolean
 
 function ProcesoSlide({ data, p }: { data: DeckData; p: DeckData["processes"][number] }) {
   const marginOk = p.margin != null && p.margin >= 0;
-  const title = `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}`;
+  const title = procLabel(p);
   const full = airportFull(data);
   const hasMini = p.byAirline.length > 0;
   const cols = Math.min(p.byAirline.length, 6);
@@ -962,7 +968,7 @@ function AgaSlide({ data, s }: { data: DeckData; s: AgaDeck }) {
   const rowH = Math.min(30, 318 / rows);
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title={`Encuestas AGA · ${s.audience}`} subtitle={subtitle} />
+      <SlideHead title={`Encuestas Complementarias · ${s.audience}`} subtitle={subtitle} />
       {p.n === 0 ? (
         <Centered>Aún no hay encuestas registradas para este plan.</Centered>
       ) : (
@@ -1043,7 +1049,7 @@ const guideKpis = (data: DeckData) => ((data.kind ?? "MENSUAL") === "MENSUAL" ? 
 function AgaGuideSlide({ data }: { data: DeckData }) {
   return (
     <div style={{ position: "absolute", inset: 0, padding: 72 }}>
-      <SlideHead title="Cómo leer las Encuestas AGA" subtitle={`${airportFull(data)} · Indicadores y leyenda`} />
+      <SlideHead title="Cómo leer las Encuestas Complementarias" subtitle={`${airportFull(data)} · Indicadores y leyenda`} />
       <div
         style={{
           position: "absolute",

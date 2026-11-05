@@ -9,6 +9,10 @@
 
 import { moduleDef, type ModuleKey, type ModuleNotes } from "@/lib/reports/modules";
 import type { ReportKind } from "@/lib/reports/period";
+import { procLabel } from "@/lib/reports/seasonSlides";
+
+/** Nombre del módulo en las diapositivas: las encuestas AGA se presentan como "Complementarias". */
+const deckModuleLabel = (key: ModuleKey) => moduleDef(key)!.label.replace(/^AGA\b/, "Complementarias");
 
 export type OutlineInput = {
   kind: ReportKind;
@@ -72,7 +76,7 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
     out.push({ type: "section", module: `Módulo ${String(++section).padStart(2, "0")}`, title });
   const addNote = (key: ModuleKey) => {
     const body = input.notes[key];
-    if (body) out.push({ type: "text", role: "note", title: `Análisis · ${moduleDef(key)!.label}`, body });
+    if (body) out.push({ type: "text", role: "note", title: `Análisis · ${deckModuleLabel(key)}`, body });
   };
 
   const mods = input.modules;
@@ -111,7 +115,7 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
             .filter((a) => a.audience === moduleDef(k)!.survey!.audience),
         }));
         if (blocks.every((b) => b.surveys.length === 0)) break; // sin plan AGA: no aplica
-        addSection("Encuestas AGA · Experiencia");
+        addSection("Encuestas Complementarias · Experiencia");
         out.push({ type: "aga-guide" });
         for (const b of blocks) {
           for (const s of b.surveys) {
@@ -182,7 +186,8 @@ export function buildOutline(input: OutlineInput): SlideSpec[] {
     }
   }
 
-  out.push({ type: "closing" });
+  // El mensual termina en su último contenido (sin diapositiva de cierre).
+  if (seasonal) out.push({ type: "closing" });
   return out;
 }
 
@@ -200,9 +205,9 @@ export function slideLabel(s: SlideSpec, input: OutlineInput): string {
     case "proceso":
       return input.processes[s.index]?.label ?? "Proceso";
     case "aga-guide":
-      return "Cómo leer las Encuestas AGA";
+      return "Cómo leer las Encuestas Complementarias";
     case "aga":
-      return `Encuesta AGA · ${input.aga[s.index]?.audience ?? ""}`;
+      return `Encuesta Complementaria · ${input.aga[s.index]?.audience ?? ""}`;
     case "voice":
       return `Voz del ${input.aga[s.index]?.audience === "Acompañantes" ? "acompañante" : "pasajero"}`;
     case "text":
@@ -222,11 +227,11 @@ export function slideLabel(s: SlideSpec, input: OutlineInput): string {
     case "tiempos-hotspot":
       return `Tiempos · mapa de hotspots ${s.index + 1}`;
     case "aga-evolution":
-      return `Encuesta AGA · ${input.aga[s.index]?.audience ?? ""} · resultados históricos`;
+      return `Encuesta Complementaria · ${input.aga[s.index]?.audience ?? ""} · resultados históricos`;
     case "aga-map":
-      return `Encuesta AGA · ${input.aga[s.index]?.audience ?? ""} · nota vs alcance`;
+      return `Encuesta Complementaria · ${input.aga[s.index]?.audience ?? ""} · nota vs alcance`;
     case "aga-compare":
-      return "Encuesta AGA · pasajeros vs acompañantes";
+      return "Encuesta Complementaria · pasajeros vs acompañantes";
     case "asq-guide":
       return "ACI ASQ · qué evalúa el programa";
     case "asq-overall":
@@ -286,7 +291,7 @@ export function outlineInputFrom(
           agaCompare: data.aga.length > 1 && data.aga.every((a) => (a.month?.n ?? 0) > 0),
         }
       : undefined,
-    processes: data.processes.map((p) => ({ label: `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}` })),
+    processes: data.processes.map((p) => ({ label: procLabel(p) })),
     aga: data.aga.map((a) => ({
       audience: a.audience === "Acompañantes" ? "Acompañantes" : "Pasajeros",
       hasVoice: !!a.voice.appraisal || a.voice.quotes.length > 0,

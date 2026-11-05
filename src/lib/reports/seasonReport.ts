@@ -47,7 +47,7 @@ import { seasonFromCode, seasonOrder, type PeriodContext, type Season } from "@/
 import type { ModuleKey } from "@/lib/reports/modules";
 import { getAsqResults, type AsqResults } from "@/lib/asq/results";
 import { attachService, periodHasService } from "@/lib/reports/serviceTimes";
-import { agaCategoryOf } from "@/lib/reports/seasonSlides";
+import { agaCategoryOf, procLabel as procDisplayLabel } from "@/lib/reports/seasonSlides";
 
 export type SeasonExtras = {
   focusLabel: string; // "Summer 2026"
@@ -222,7 +222,7 @@ async function loadTiempos(
         ];
       return [
         {
-          label: `${j.proceso}${j.faseLabel ? ` — ${j.faseLabel}` : ""}`,
+          label: procDisplayLabel(j),
           proceso: j.proceso,
           fase: j.fase ?? undefined,
           meta: metaFor(j.proceso, "Todas"),
@@ -261,7 +261,7 @@ async function loadTiempos(
       const focus = agg.get(ctx.season.code);
       if (!focus || focus.n === 0) continue; // sin mediciones en la temporada de detalle
       const meta = metaFor(job.proceso, "Todas");
-      const procLabel = `${job.proceso}${job.faseLabel ? ` — ${job.faseLabel}` : ""}`;
+      const procLabel = procDisplayLabel(job);
 
       const byYm = new Map(main.series.map((s) => [s.ym, s]));
       const series = months.map((ym) => {

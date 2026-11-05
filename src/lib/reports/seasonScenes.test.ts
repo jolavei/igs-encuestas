@@ -90,7 +90,7 @@ describe("íconos", () => {
       [
         "Accesos al aeropuerto",
         "Check in",
-        "Filtro de seguridad (AVSEC)",
+        "Filtro de Seguridad",
         "Control migratorio",
         "Restaurantes y tiendas",
         "Zona de puertas",

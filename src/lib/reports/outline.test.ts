@@ -28,7 +28,7 @@ describe("outline del informe mensual", () => {
       "section:Mediciones de tiempos",
       "proceso",
       "proceso",
-      "section:Encuestas AGA · Experiencia",
+      "section:Encuestas Complementarias · Experiencia",
       "aga-guide",
       "aga",
       "voice",
@@ -36,7 +36,6 @@ describe("outline del informe mensual", () => {
       "text",
       "photos",
       "photos",
-      "closing",
     ]);
     const sections = s.filter((x) => x.type === "section").map((x) => (x as { module: string }).module);
     expect(sections).toEqual(["Módulo 01", "Módulo 02", "Módulo 03"]);
@@ -55,7 +54,6 @@ describe("outline del informe mensual", () => {
       "asq",
       "section:Mediciones de tiempos",
       "tiempos-empty",
-      "closing",
     ]);
   });
 
@@ -124,7 +122,7 @@ describe("outline semestral", () => {
       "tiempos-hotspot",
       "tiempos-hotspot",
       "tiempos-history",
-      "section:Encuestas AGA · Experiencia",
+      "section:Encuestas Complementarias · Experiencia",
       "aga-guide",
       "aga",
       "aga-map",

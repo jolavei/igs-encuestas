@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { asqBestWorst, asqMatrix, execSummaryCards, tiemposSummaryRows } from "./seasonSlides";
+import { airportCity, asqBestWorst, asqMatrix, coverBadge, execSummaryCards, procLabel, tiemposSummaryRows } from "./seasonSlides";
 
 const attr = (label: string, airport: number, chile: number, importance: number) => ({ label, airport, chile, importance });
 
@@ -48,10 +48,25 @@ describe("resumen ejecutivo", () => {
     expect(cards.map((c) => c.label)).toEqual([
       "Satisfacción general ACI ASQ",
       "Tiempos dentro del Estándar IATA",
-      "AGA Pasajeros · nota promedio",
+      "Complementarias Pasajeros · nota promedio",
     ]);
     expect(cards[0]).toMatchObject({ value: "4,03 / 5", sub: "4° de 10 en Chile · 10° de 19 en el programa regional · 370 encuestas" });
-    expect(cards[1]).toMatchObject({ value: "1 de 2", sub: "Sobre el estándar (fila): AVSEC (+02:00)" });
+    expect(cards[1]).toMatchObject({ value: "1 de 2", sub: "Sobre el estándar (fila): Filtro de Seguridad (+02:00)" });
     expect(tiemposSummaryRows({ processes: [], aga: [], asq: null })).toEqual([]);
+  });
+});
+
+describe("portada y nombres en las presentaciones", () => {
+  it("badge del mensual con el mes; semestral sin mes", () => {
+    expect(coverBadge({ kind: "MENSUAL", monthLabel: "Octubre 2026" })).toBe("Informe mensual - Octubre 2026");
+    expect(coverBadge({ kind: "SEMESTRAL", monthLabel: "Winter 2026" })).toBe("Informe semestral");
+  });
+  it("ciudad desde el nombre de la empresa", () => {
+    expect(airportCity("Aeropuerto El Loa - Calama")).toBe("Calama");
+    expect(airportCity("Aeropuerto El Tepual")).toBe("Aeropuerto El Tepual");
+  });
+  it("AVSEC se muestra como Filtro de Seguridad", () => {
+    expect(procLabel({ proceso: "AVSEC", faseLabel: null })).toBe("Filtro de Seguridad");
+    expect(procLabel({ proceso: "Retiro de equipajes", faseLabel: "Última maleta" })).toBe("Retiro de equipajes — Última maleta");
   });
 });

@@ -1121,7 +1121,7 @@ export function tiemposHistoryScene(r: SceneReport): Scene {
 export function agaSeasonScene(r: SceneReport, index: number): Scene {
   const s = r.aga[index];
   const m = s.month;
-  const title = `Encuestas AGA · ${s.audience}`;
+  const title = `Encuestas Complementarias · ${s.audience}`;
   const subtitle = `${full(r)} · ${r.seasonal!.focusLabel}`;
   const prims: Prim[] = [];
   if (m.n === 0) {
@@ -1265,7 +1265,7 @@ export function agaEvolutionScene(r: SceneReport, index: number): Scene {
   );
   if (focus >= 0) prims.push(box(AREA.x + labelW + focus * cellW, yHead, cellW, 21 + h.categories.length * rowH + 22, { stroke: INK, strokeW: 1.5, radius: 4 }));
   prims.push(note("Azul: sobre 3,50; rojo: bajo 3,50. Línea punteada: Estándar AIGS. Hasta septiembre de 2026, formulario antiguo (Google Forms); desde octubre de 2026, formulario web."));
-  return { title: `Encuestas AGA · ${s.audience} · resultados históricos`, subtitle: `${full(r)} · nota por categoría y temporada hasta ${r.seasonal!.focusLabel}`, prims };
+  return { title: `Encuestas Complementarias · ${s.audience} · resultados históricos`, subtitle: `${full(r)} · nota por categoría y temporada hasta ${r.seasonal!.focusLabel}`, prims };
 }
 
 export function agaMapScene(r: SceneReport, index: number): Scene {
@@ -1338,7 +1338,7 @@ export function agaMapScene(r: SceneReport, index: number): Scene {
     });
   }
   prims.push(note("Líneas: mediana de alcance y nota promedio de la encuesta. Ítems con al menos 10 respuestas."));
-  return { title: `Encuestas AGA · ${s.audience} · nota vs alcance`, subtitle: `${full(r)} · ${r.seasonal!.focusLabel} · dónde una mejora llega a más personas`, prims };
+  return { title: `Encuestas Complementarias · ${s.audience} · nota vs alcance`, subtitle: `${full(r)} · ${r.seasonal!.focusLabel} · dónde una mejora llega a más personas`, prims };
 }
 
 export function agaCompareScene(r: SceneReport): Scene {
@@ -1388,5 +1388,5 @@ export function agaCompareScene(r: SceneReport): Scene {
   const sx = S(SCORE_STANDARD);
   prims.push(line(sx, top, sx, top + rows.length * rowH, STANDARD, { width: 1.5, dash: true }));
   prims.push(note("Categorías evaluadas por ambos públicos, ordenadas por la mayor diferencia (pasajeros − acompañantes). Línea punteada: Estándar AIGS 3,50."));
-  return { title: "Encuestas AGA · pasajeros vs acompañantes", subtitle: `${full(r)} · ${r.seasonal!.focusLabel} · nota promedio por categoría`, prims };
+  return { title: "Encuestas Complementarias · pasajeros vs acompañantes", subtitle: `${full(r)} · ${r.seasonal!.focusLabel} · nota promedio por categoría`, prims };
 }

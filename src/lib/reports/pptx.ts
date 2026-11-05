@@ -20,9 +20,13 @@ import {
 import {
   ASQ_NOTE,
   KIND_BADGE,
+  MONTHLY_COVER_TAGLINE,
+  airportCity,
   asqMatrix,
   serviceSplitRows,
+  coverBadge,
   coverScope,
+  procLabel,
   execSummaryCards,
   tiemposSummaryRows,
 } from "@/lib/reports/seasonSlides";
@@ -281,7 +285,8 @@ function coverSlide(pres: Pptx, r: MonthlyReport) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
   addLogo(s);
-  addBadge(s, pres, KIND_BADGE[r.kind ?? "MENSUAL"], MX, 4.3, AIGS.blue);
+  const monthly = !isSeasonal(r);
+  addBadge(s, pres, coverBadge(r), MX, 4.3, AIGS.blue);
   s.addText(r.airport.name, {
     x: MX,
     y: 4.9,
@@ -296,9 +301,12 @@ function coverSlide(pres: Pptx, r: MonthlyReport) {
   });
   s.addText(
     [
-      { text: r.airport.companyName + "\n", options: { fontSize: 22, color: AIGS.body } },
       {
-        text: `${coverScope(r)} · ${r.monthLabel}`,
+        text: (monthly ? airportCity(r.airport.companyName) : r.airport.companyName) + "\n",
+        options: { fontSize: 22, color: AIGS.body },
+      },
+      {
+        text: monthly ? MONTHLY_COVER_TAGLINE : `${coverScope(r)} · ${r.monthLabel}`,
         options: { fontSize: 16, color: AIGS.muted },
       },
     ],
@@ -526,7 +534,7 @@ function miniAirlineChart(
 function procesoSlide(pres: Pptx, r: MonthlyReport, p: ReportProcess) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
-  const title = `${p.proceso}${p.faseLabel ? ` — ${p.faseLabel}` : ""}`;
+  const title = procLabel(p);
   // Sin mediciones este mes: la diapositiva se muestra igual (hubo mediciones antes en la
   // temporada); los KPIs del mes van en "—" y se apoya el lector en el acumulado del periodo.
   const subtitle = p.monthHasData
@@ -779,7 +787,7 @@ function scoreLegend(s: Slide, tail: string) {
 function agaGuideSlide(pres: Pptx, r: MonthlyReport) {
   const s = pres.addSlide();
   s.background = { color: AIGS.white };
-  slideTitle(s, "Cómo leer las Encuestas AGA", `${airportFull(r)} · Indicadores y leyenda`);
+  slideTitle(s, "Cómo leer las Encuestas Complementarias", `${airportFull(r)} · Indicadores y leyenda`);
 
   const gap = 0.3;
   const kpis = isSeasonal(r) ? AGA_GUIDE_KPIS_SEASON : AGA_GUIDE_KPIS;
@@ -832,7 +840,7 @@ function agaSlide(pres: Pptx, r: MonthlyReport, a: AgaSurvey) {
   const shown = hasMonth ? m : p;
   slideTitle(
     s,
-    `Encuestas AGA · ${a.audience}`,
+    `Encuestas Complementarias · ${a.audience}`,
     `${airportFull(r)} · ${r.monthLabel} · ${a.planTitle}${
       hasMonth || p.n === 0 ? "" : " · sin encuestas este mes (se muestra el acumulado del periodo)"
     }`
