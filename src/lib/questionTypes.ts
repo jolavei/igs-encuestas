@@ -58,7 +58,8 @@ export function hasOptions(t: QuestionType): boolean {
 }
 
 // goto: ruteo por opción (solo SINGLE_CHOICE). "SUBMIT" | "GOTO:<order>". Ausente = seguir sección.
-export type Option = { value: string; label: string; goto?: string };
+// labelEn: etiqueta en inglés (encuesta bilingüe); el valor guardado sigue siendo `value`.
+export type Option = { value: string; label: string; labelEn?: string; goto?: string };
 
 // Config por pregunta (validaciones). Todo opcional segun tipo.
 export type QuestionConfig = {
@@ -423,4 +424,6 @@ export const submitSchema = z.object({
   // Métricas de la toma (opcionales): las reporta el cronómetro del cliente.
   startedAt: z.string().datetime().optional(), // ISO 8601 del inicio de la encuesta
   durationMs: z.number().int().min(0).max(86_400_000).optional(), // duración (tope 24 h)
+  // Idioma en que se respondió (botón ES | EN). Opcional: envíos antiguos no lo traen.
+  language: z.enum(["es", "en"]).optional(),
 });

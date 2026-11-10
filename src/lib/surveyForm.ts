@@ -7,6 +7,7 @@ type DbQuestion = {
   order: number;
   type: string;
   text: string;
+  textEn?: string | null;
   required: boolean;
   config: string | null;
   sectionId: string | null;
@@ -16,6 +17,8 @@ type DbSection = {
   order: number;
   title: string;
   description: string | null;
+  titleEn?: string | null;
+  descriptionEn?: string | null;
   routing: string;
 };
 
@@ -31,6 +34,7 @@ export function buildClientSections(
     order: q.order,
     type: q.type as QuestionType,
     text: q.text,
+    textEn: q.textEn ?? null,
     required: q.required,
     config: fromJson<QuestionConfig>(q.config),
   });
@@ -46,6 +50,8 @@ export function buildClientSections(
       order: s.order,
       title: s.title,
       description: s.description,
+      titleEn: s.titleEn ?? null,
+      descriptionEn: s.descriptionEn ?? null,
       routing: s.routing,
       questions: sorted.filter((q) => q.sectionId === s.id).map(toCQ),
     }));

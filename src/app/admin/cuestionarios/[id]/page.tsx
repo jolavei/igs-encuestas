@@ -16,19 +16,29 @@ import QuestionnaireBuilder, {
 import QrManager from "@/components/QrManager";
 import DataformPanel from "@/components/DataformPanel";
 import QuestionnaireTitleEditor from "@/components/QuestionnaireTitleEditor";
+import QuestionnaireLanguageSettings from "@/components/QuestionnaireLanguageSettings";
 
 type VersionQuestion = {
   sectionId: string | null;
   order: number;
   type: string;
   text: string;
+  textEn: string | null;
   required: boolean;
   config: string | null;
   bqColumnName: string | null;
   bqType: string | null;
   bqDescription: string | null;
 };
-type VersionSection = { id: string; order: number; title: string; description: string | null; routing: string };
+type VersionSection = {
+  id: string;
+  order: number;
+  title: string;
+  description: string | null;
+  titleEn: string | null;
+  descriptionEn: string | null;
+  routing: string;
+};
 
 // Reconstruye las secciones (con sus preguntas) para pre-cargar el builder.
 function toSections(questions: VersionQuestion[], sections: VersionSection[]): SectionDraft[] {
@@ -49,8 +59,13 @@ function toSections(questions: VersionQuestion[], sections: VersionSection[]): S
       key: qKeys.get(q.order)!,
       type: q.type as QuestionType,
       text: q.text,
+      textEn: q.textEn ?? undefined,
       required: q.required,
-      options: cfg.options?.map((o) => ({ label: o.label, goto: o.goto ? convBack(o.goto) : "NEXT" })),
+      options: cfg.options?.map((o) => ({
+        label: o.label,
+        labelEn: o.labelEn,
+        goto: o.goto ? convBack(o.goto) : "NEXT",
+      })),
       maxStars: cfg.maxStars,
       maxLength: cfg.maxLength,
       min: cfg.min,
@@ -75,6 +90,8 @@ function toSections(questions: VersionQuestion[], sections: VersionSection[]): S
       key: sKeys.get(s.order)!,
       title: s.title,
       description: s.description ?? undefined,
+      titleEn: s.titleEn ?? undefined,
+      descriptionEn: s.descriptionEn ?? undefined,
       routing: convBack(s.routing),
       questions: questions.filter((q) => q.sectionId === s.id).map(toDraft),
     }));
@@ -121,6 +138,7 @@ export default async function QuestionnaireDetail({ params }: { params: { id: st
           ← Cuestionarios
         </Link>
         <QuestionnaireTitleEditor id={q.id} title={q.title} />
+        <QuestionnaireLanguageSettings id={q.id} bilingual={q.bilingual} titleEn={q.titleEn} />
         {companies.length > 0 && (
           <p className="flex flex-wrap gap-1 text-slate-500">
             {companies.map((c) => (
@@ -136,6 +154,7 @@ export default async function QuestionnaireDetail({ params }: { params: { id: st
         questionnaireId={q.id}
         nextVersion={nextVersion}
         initialSections={initialSections}
+        bilingual={q.bilingual}
       />
 
       <div className="space-y-3">
@@ -168,6 +187,9 @@ export default async function QuestionnaireDetail({ params }: { params: { id: st
               {v.questions.map((qq) => (
                 <li key={qq.id}>
                   {qq.order}. {qq.text}{" "}
+                  {q.bilingual && qq.textEn && (
+                    <span className="text-slate-400">/ {qq.textEn} </span>
+                  )}
                   <span className="text-slate-400">
                     ({QUESTION_TYPE_LABELS[qq.type as QuestionType] ?? qq.type})
                   </span>

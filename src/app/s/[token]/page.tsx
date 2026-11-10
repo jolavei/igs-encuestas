@@ -59,21 +59,29 @@ export default async function PublicSurvey({
           <p className="mt-1 text-sm text-slate-600">
             Gracias por participar. Solo se admite una respuesta por dispositivo.
           </p>
+          {qr.questionnaire.bilingual && (
+            // El idioma del pasajero no se conoce aquí (render del servidor): ambos.
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <h2 className="text-lg font-semibold">We already have your response</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Thank you for taking part. Only one response per device is allowed.
+              </p>
+            </div>
+          )}
         </div>
       ) : (
-        <>
-          <p className="px-5 pt-3 text-center text-xs text-slate-400 sm:px-8">
-            Tus respuestas son anónimas y se usan para mejorar el servicio.
-          </p>
-          <SurveyRunner
-            sections={sections}
-            versionId={version.id}
-            endpoint={`/api/public/${params.token}`}
-            title={qr.questionnaire.title}
-            subtitle={`${qr.location.name}`}
-            lockKey={params.token}
-          />
-        </>
+        <SurveyRunner
+          sections={sections}
+          versionId={version.id}
+          endpoint={`/api/public/${params.token}`}
+          title={qr.questionnaire.title}
+          titleEn={qr.questionnaire.titleEn}
+          bilingual={qr.questionnaire.bilingual}
+          autoLang
+          anonymousNote
+          subtitle={`${qr.location.name}`}
+          lockKey={params.token}
+        />
       )}
     </main>
   );

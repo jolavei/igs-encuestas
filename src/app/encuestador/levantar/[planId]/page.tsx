@@ -38,6 +38,12 @@ export default async function Levantar({ params }: { params: { planId: string } 
         subtitle={data.plan.location?.name}
         sections={data.sections}
         locations={data.locations ?? undefined}
+        bilingual={data.plan.questionnaire.bilingual}
+        titleEn={
+          data.plan.questionnaire.titleEn
+            ? planDisplayTitle(data.plan.questionnaire.titleEn, data.plan.name)
+            : null
+        }
       />
     </div>
   );

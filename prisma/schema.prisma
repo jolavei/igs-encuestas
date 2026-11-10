@@ -145,6 +145,11 @@ model Questionnaire {
   id        String   @id @default(cuid())
   title     String
   active    Boolean  @default(true) // false = no vigente (se conserva histórico)
+  // Encuesta bilingüe: muestra el botón ES | EN en la encuesta (campo y QR). Las
+  // traducciones viven en las preguntas/secciones (textEn, titleEn, labelEn de cada
+  // opción en config); las respuestas se guardan siempre con el valor en español.
+  bilingual Boolean  @default(false)
+  titleEn   String? // título visible en inglés
   createdAt DateTime @default(now())
 
   companies   Company[]              @relation("CompanyQuestionnaires")
@@ -184,6 +189,9 @@ model QuestionSection {
   order       Int
   title       String               @default("")
   description String?
+  // Traducción al inglés (encuesta bilingüe). Editable sin crear versión nueva.
+  titleEn       String?
+  descriptionEn String?
   routing     String               @default("NEXT") // "NEXT" | "SUBMIT" | "GOTO:<order>"
 
   questions Question[]
@@ -202,6 +210,9 @@ model Question {
   order     Int
   type      String
   text      String
+  // Texto en inglés (encuesta bilingüe). Editable sin crear versión nueva: no cambia
+  // lo que se guarda. Las etiquetas EN de las opciones van en config.options[].labelEn.
+  textEn    String?
   required  Boolean              @default(false)
   // Validacion/config por tipo (JSON como texto): { min, max, step, maxLength, options, multi }
   config    String?
@@ -292,6 +303,8 @@ model ResponseSet {
   durationMs    Int?
   userAgent     String?
   deviceType    String? // "mobile" | "tablet" | "desktop" (derivado del userAgent)
+  // Idioma en que se respondió: "es" | "en" (botón ES | EN). null = envíos anteriores.
+  language      String?
   // Idempotencia: UUID que genera el cliente por envío. Un reintento (o el reenvío
   // de la cola offline) con el mismo id NO crea un duplicado: se devuelve el existente.
   clientSubmissionId String? @unique

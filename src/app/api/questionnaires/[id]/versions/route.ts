@@ -24,6 +24,7 @@ const questionSchema = z.object({
     "NUMBER",
   ]),
   text: z.string().min(1),
+  textEn: z.string().max(2000).optional().nullable(), // traducción (encuesta bilingüe)
   required: z.boolean().default(false),
   config: z.any().optional(),
   bqColumnName: z.string().optional().nullable(),
@@ -35,6 +36,8 @@ const sectionSchema = z.object({
   order: z.number().int(),
   title: z.string().default(""),
   description: z.string().optional().nullable(),
+  titleEn: z.string().max(500).optional().nullable(),
+  descriptionEn: z.string().max(2000).optional().nullable(),
   routing: z.string().default("NEXT"), // "NEXT" | "SUBMIT" | "GOTO:<order>"
   questions: z.array(questionSchema).default([]),
 });
@@ -99,6 +102,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           order: s.order,
           title: s.title,
           description: s.description ?? null,
+          titleEn: s.titleEn?.trim() || null,
+          descriptionEn: s.descriptionEn?.trim() || null,
           routing: s.routing,
         },
       });
@@ -110,6 +115,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
             order: q.order,
             type: q.type,
             text: q.text,
+            textEn: q.textEn?.trim() || null,
             required: q.required,
             config: toJson(q.config),
             equivalenceKey: keyOf(q),

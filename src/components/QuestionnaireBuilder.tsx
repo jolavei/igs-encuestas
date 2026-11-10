@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   QUESTION_TYPE_LABELS,
   BUILDER_QUESTION_TYPES,
@@ -11,12 +11,15 @@ import { BQ_TYPES, defaultBqType, type BqType } from "@/lib/dataform";
 import { CopyIcon, TrashIcon } from "@/components/icons";
 
 // Opción de una pregunta. goto (solo SINGLE_CHOICE): "NEXT" | "SUBMIT" | "GOTO:<sectionKey>".
-export type OptionDraft = { label: string; goto: string };
+// labelEn: etiqueta en inglés (encuesta bilingüe); lo que se guarda sigue siendo la
+// etiqueta en español.
+export type OptionDraft = { label: string; labelEn?: string; goto: string };
 
 export type Draft = {
   key: string;
   type: QuestionType;
   text: string;
+  textEn?: string; // traducción (encuesta bilingüe)
   required: boolean;
   options?: OptionDraft[]; // SINGLE_CHOICE / MULTI_CHOICE / DROPDOWN
   maxStars?: number; // RATING
@@ -35,9 +38,53 @@ export type SectionDraft = {
   key: string;
   title: string;
   description?: string;
+  titleEn?: string;
+  descriptionEn?: string;
   routing: string; // "NEXT" | "SUBMIT" | "GOTO:<sectionKey>"
   questions: Draft[];
 };
+
+// Texto que no necesita traducción: sin letras minúsculas (códigos IATA como "SCL",
+// "LATAM - LA/LU", números). Si no se traduce, se muestra igual en ambos idiomas.
+function isNeutral(s: string): boolean {
+  return !/[a-záéíóúüñ]/.test(s);
+}
+// ¿Falta el inglés de este texto? (vacío en español = no hay nada que traducir)
+function missingEn(es: string | undefined, en: string | undefined): boolean {
+  const t = (es ?? "").trim();
+  return !!t && !isNeutral(t) && !(en ?? "").trim();
+}
+
+// Campo de traducción al inglés, bajo el texto en español. Resaltado si falta.
+function EnInput({
+  value,
+  source,
+  onChange,
+  placeholder,
+  className = "",
+}: {
+  value: string | undefined;
+  source: string | undefined;
+  onChange: (v: string) => void;
+  placeholder: string;
+  className?: string;
+}) {
+  const missing = missingEn(source, value);
+  return (
+    <div className={`flex min-w-0 items-center gap-2 ${className}`}>
+      <span className="w-7 shrink-0 rounded border border-accent px-0.5 py-0.5 text-center text-[10px] font-bold text-accent">
+        EN
+      </span>
+      <input
+        className={`input min-w-0 flex-1 ${missing ? "border-amber-400 bg-amber-50" : "bg-white"}`}
+        placeholder={placeholder}
+        value={value ?? ""}
+        data-en-missing={missing ? "1" : undefined}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
 
 function emptyOption(): OptionDraft {
   return { label: "", goto: "NEXT" };
@@ -67,10 +114,11 @@ function buildConfig(d: Draft, convGoto: (g: string) => string): Record<string, 
       const options = (d.options ?? [])
         .filter((o) => o.label.trim())
         .map((o) => {
-          const base: { value: string; label: string; goto?: string } = {
+          const base: { value: string; label: string; labelEn?: string; goto?: string } = {
             value: o.label.trim(),
             label: o.label.trim(),
           };
+          if (o.labelEn?.trim()) base.labelEn = o.labelEn.trim();
           // Ruteo por opción solo en SINGLE_CHOICE, y solo si difiere de "seguir".
           if (d.type === "SINGLE_CHOICE" && o.goto && o.goto !== "NEXT") {
             base.goto = convGoto(o.goto);
@@ -105,12 +153,14 @@ function OptionsEditor({
   onChange,
   sectionTargets,
   showRouting,
+  bilingual,
 }: {
   type: QuestionType;
   options: OptionDraft[];
   onChange: (opts: OptionDraft[]) => void;
   sectionTargets: { key: string; label: string }[];
   showRouting: boolean;
+  bilingual: boolean;
 }) {
   const marker = type === "MULTI_CHOICE" ? "▢" : type === "DROPDOWN" ? "" : "○";
   const list = options.length ? options : [emptyOption()];
@@ -130,6 +180,15 @@ function OptionsEditor({
             value={opt.label}
             onChange={(e) => setAt(i, { label: e.target.value })}
           />
+          {bilingual && (
+            <EnInput
+              className="w-full sm:w-auto sm:flex-1"
+              value={opt.labelEn}
+              source={opt.label}
+              placeholder={`Opción ${i + 1} en inglés`}
+              onChange={(v) => setAt(i, { labelEn: v })}
+            />
+          )}
           {showRouting && (
             <select
               // En móvil baja a línea propia a ancho completo (order-last + w-full);
@@ -195,10 +254,12 @@ function AnswerPreview({
   d,
   onChange,
   sectionTargets,
+  bilingual,
 }: {
   d: Draft;
   onChange: (patch: Partial<Draft>) => void;
   sectionTargets: { key: string; label: string }[];
+  bilingual: boolean;
 }) {
   switch (d.type) {
     case "TEXT":
@@ -215,6 +276,7 @@ function AnswerPreview({
           onChange={(options) => onChange({ options })}
           sectionTargets={sectionTargets}
           showRouting={d.type === "SINGLE_CHOICE"}
+          bilingual={bilingual}
         />
       );
     case "FILE_UPLOAD":
@@ -370,10 +432,12 @@ function QuestionCard({
   onRemove,
   onDuplicate,
   onMove,
+  bilingual,
 }: {
   d: Draft;
   index: number;
   total: number;
+  bilingual: boolean;
   datetimeOptions: { key: string; text: string }[];
   sectionTargets: { key: string; label: string }[];
   onChange: (patch: Partial<Draft>) => void;
@@ -409,11 +473,25 @@ function QuestionCard({
               </option>
             ))}
           </select>
+          {bilingual && (
+            <EnInput
+              className="sm:col-span-2"
+              value={d.textEn}
+              source={d.text}
+              placeholder="Pregunta en inglés"
+              onChange={(v) => onChange({ textEn: v })}
+            />
+          )}
         </div>
       </div>
 
       <div className="pl-8">
-        <AnswerPreview d={d} onChange={onChange} sectionTargets={sectionTargets} />
+        <AnswerPreview
+          d={d}
+          onChange={onChange}
+          sectionTargets={sectionTargets}
+          bilingual={bilingual}
+        />
 
         {d.type === "DATETIME" && datetimeOptions.length > 0 && (
           <div className="mt-3">
@@ -530,10 +608,13 @@ export default function QuestionnaireBuilder({
   questionnaireId,
   nextVersion,
   initialSections = [],
+  bilingual = false,
 }: {
   questionnaireId: string;
   nextVersion: number;
   initialSections?: SectionDraft[];
+  // Encuesta bilingüe: muestra los campos en inglés y la barra de traducción.
+  bilingual?: boolean;
 }) {
   const router = useRouter();
   const [sections, setSections] = useState<SectionDraft[]>(
@@ -542,6 +623,92 @@ export default function QuestionnaireBuilder({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  // true si el contenido es el de la última versión (precargado o con "Cargar vN"):
+  // habilita "Guardar solo inglés en vN".
+  const [loadedLatest, setLoadedLatest] = useState(initialSections.length > 0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const prevVersion = nextVersion - 1;
+
+  // ---- Traducción: qué falta en inglés ----
+  function translationSlots(ss: SectionDraft[]): { es: string; en: string | undefined; apply: (ss: SectionDraft[], v: string) => SectionDraft[] }[] {
+    const out: { es: string; en: string | undefined; apply: (ss: SectionDraft[], v: string) => SectionDraft[] }[] = [];
+    const mapS = (ss: SectionDraft[], sk: string, fn: (s: SectionDraft) => SectionDraft) =>
+      ss.map((s) => (s.key === sk ? fn(s) : s));
+    const mapQ = (ss: SectionDraft[], sk: string, qk: string, fn: (q: Draft) => Draft) =>
+      mapS(ss, sk, (s) => ({ ...s, questions: s.questions.map((q) => (q.key === qk ? fn(q) : q)) }));
+    for (const s of ss) {
+      out.push({ es: s.title, en: s.titleEn, apply: (x, v) => mapS(x, s.key, (y) => ({ ...y, titleEn: v })) });
+      if (s.description)
+        out.push({ es: s.description, en: s.descriptionEn, apply: (x, v) => mapS(x, s.key, (y) => ({ ...y, descriptionEn: v })) });
+      for (const q of s.questions) {
+        out.push({ es: q.text, en: q.textEn, apply: (x, v) => mapQ(x, s.key, q.key, (y) => ({ ...y, textEn: v })) });
+        if (hasOptions(q.type))
+          (q.options ?? []).forEach((o, i) =>
+            out.push({
+              es: o.label,
+              en: o.labelEn,
+              apply: (x, v) =>
+                mapQ(x, s.key, q.key, (y) => ({
+                  ...y,
+                  options: (y.options ?? []).map((oo, j) => (j === i ? { ...oo, labelEn: v } : oo)),
+                })),
+            })
+          );
+      }
+    }
+    return out;
+  }
+  const slots = bilingual ? translationSlots(sections) : [];
+  const toTranslate = slots.filter((x) => (x.es ?? "").trim() && !isNeutral(x.es.trim()));
+  const missing = toTranslate.filter((x) => missingEn(x.es, x.en));
+  const pctDone = toTranslate.length
+    ? Math.round(((toTranslate.length - missing.length) / toTranslate.length) * 100)
+    : 100;
+
+  function focusMissing() {
+    const el = rootRef.current?.querySelector<HTMLInputElement>('[data-en-missing="1"]');
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      el.focus({ preventScroll: true });
+    }
+  }
+
+  async function autoTranslate() {
+    if (!missing.length) return;
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      // Textos únicos (las opciones "Sí/No" o "Relación precio–calidad" se repiten).
+      const uniq = Array.from(new Set(missing.map((m) => m.es.trim())));
+      const r = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texts: uniq }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error ?? "No se pudo traducir.");
+      const byEs = new Map<string, string>(uniq.map((u, i) => [u, data.translations?.[i] ?? ""]));
+      setSections((ss) => {
+        let next = ss;
+        // Se recalcula sobre el estado actual y solo se llenan campos aún vacíos.
+        for (const slot of translationSlots(ss)) {
+          if (!missingEn(slot.es, slot.en)) continue;
+          const v = byEs.get(slot.es.trim());
+          if (v) next = slot.apply(next, v);
+        }
+        return next;
+      });
+      setInfo(
+        `Se tradujeron ${missing.length} texto(s). Es un borrador: revísalo antes de guardar.`
+      );
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // Todas las preguntas DATETIME (para "posterior a"), a través de las secciones.
   const allDatetime = sections
@@ -609,20 +776,16 @@ export default function QuestionnaireBuilder({
     });
   }
 
-  async function save(publish: boolean) {
+  // Arma el payload de secciones (orden, ruteo, config). Devuelve un string si hay error.
+  function buildPayload() {
     const cleanSections = sections
       .map((s) => ({ ...s, questions: s.questions.filter((q) => q.text.trim()) }))
       .filter((s) => s.questions.length > 0);
-    if (cleanSections.length === 0) {
-      setError("Agrega al menos una pregunta con texto.");
-      return;
-    }
+    if (cleanSections.length === 0) return "Agrega al menos una pregunta con texto.";
     for (const s of cleanSections)
       for (const q of s.questions)
-        if (hasOptions(q.type) && (q.options ?? []).filter((o) => o.label.trim()).length === 0) {
-          setError(`La pregunta "${q.text}" necesita al menos una opción.`);
-          return;
-        }
+        if (hasOptions(q.type) && (q.options ?? []).filter((o) => o.label.trim()).length === 0)
+          return `La pregunta "${q.text}" necesita al menos una opción.`;
 
     // Orden global de preguntas (para afterQuestionOrder) y orden de secciones.
     const globalOrder: Record<string, number> = {};
@@ -648,13 +811,12 @@ export default function QuestionnaireBuilder({
       return "NEXT";
     };
 
-    setBusy(true);
-    setError(null);
-    try {
-      const payloadSections = cleanSections.map((s, si) => ({
+    return cleanSections.map((s, si) => ({
         order: si + 1,
         title: s.title || "",
         description: s.description || null,
+        titleEn: s.titleEn?.trim() || null,
+        descriptionEn: s.description ? s.descriptionEn?.trim() || null : null,
         routing: convRouting(s.routing),
         questions: s.questions.map((q) => {
           const cfg = buildConfig(q, convGoto);
@@ -666,6 +828,7 @@ export default function QuestionnaireBuilder({
             order: globalOrder[q.key],
             type: q.type,
             text: q.text,
+            textEn: q.textEn?.trim() || null,
             required: q.required,
             config,
             bqColumnName: q.bqColumnName || null,
@@ -674,7 +837,18 @@ export default function QuestionnaireBuilder({
           };
         }),
       }));
+  }
 
+  async function save(publish: boolean) {
+    const payloadSections = buildPayload();
+    if (typeof payloadSections === "string") {
+      setError(payloadSections);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
       const r = await fetch(`/api/questionnaires/${questionnaireId}/versions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -683,6 +857,58 @@ export default function QuestionnaireBuilder({
       if (!r.ok) throw new Error((await r.json()).error ?? "Error");
       setSections([newSection()]);
       setNote("");
+      setLoadedLatest(false);
+      router.refresh();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Guarda SOLO el inglés en la última versión (sin crear una nueva). El servidor
+  // rechaza si el contenido en español cambió (eso sí requiere versión nueva).
+  async function saveTranslations() {
+    const payloadSections = buildPayload();
+    if (typeof payloadSections === "string") {
+      setError(payloadSections);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const r = await fetch(`/api/questionnaires/${questionnaireId}/translations`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strict: true,
+          sections: payloadSections.map((s) => ({
+            order: s.order,
+            title: s.title,
+            titleEn: s.titleEn,
+            descriptionEn: s.descriptionEn,
+            questions: s.questions.map((q) => ({
+              order: q.order,
+              text: q.text,
+              textEn: q.textEn,
+              options: (
+                (q.config as { options?: { value: string; labelEn?: string }[] } | null)
+                  ?.options ?? []
+              ).map((o) => ({ value: o.value, labelEn: o.labelEn ?? null })),
+            })),
+          })),
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const detail =
+          Array.isArray(data.mismatches) && data.mismatches.length
+            ? ` (${data.mismatches.slice(0, 3).join(" ")})`
+            : "";
+        throw new Error((data.error ?? "Error") + detail);
+      }
+      setInfo(`Traducción guardada en la v${data.versionNumber}, sin crear una versión nueva.`);
       router.refresh();
     } catch (e: any) {
       setError(e.message);
@@ -692,20 +918,67 @@ export default function QuestionnaireBuilder({
   }
 
   return (
-    <div className="card space-y-4">
+    <div className="card space-y-4" ref={rootRef}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Nueva versión (v{nextVersion})</h2>
         {initialSections.length > 0 && (
           <button
             type="button"
             className="btn-secondary"
-            onClick={() => setSections(initialSections)}
-            title={`Cargar las preguntas de la v${nextVersion - 1}`}
+            onClick={() => {
+              setSections(initialSections);
+              setLoadedLatest(true);
+            }}
+            title={`Cargar las preguntas de la v${prevVersion}`}
           >
-            Cargar v{nextVersion - 1}
+            Cargar v{prevVersion}
           </button>
         )}
       </div>
+
+      {bilingual && (
+        <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-[12rem] flex-1 space-y-1.5">
+              <p className="text-sm text-slate-700">
+                {missing.length === 0 ? (
+                  <>Inglés: todo traducido</>
+                ) : (
+                  <>
+                    Inglés: <b>{missing.length}</b> de {toTranslate.length} texto(s) sin traducir
+                    <span className="text-slate-400"> · se muestran en español</span>
+                  </>
+                )}
+              </p>
+              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-accent" style={{ width: `${pctDone}%` }} />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={!missing.length}
+                onClick={focusMissing}
+              >
+                Ver faltantes
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={busy || !missing.length}
+                onClick={autoTranslate}
+              >
+                Traducir automáticamente
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">
+            Lo que se guarda en las respuestas es siempre el texto en español. Los códigos sin
+            minúsculas (SCL, LATAM - LA/LU) no necesitan traducción.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-5">
         {sections.map((s, si) => (
@@ -750,12 +1023,30 @@ export default function QuestionnaireBuilder({
                 </button>
               )}
             </div>
+            {bilingual && (
+              <EnInput
+                className="mb-3"
+                value={s.titleEn}
+                source={s.title}
+                placeholder="Título de la sección en inglés"
+                onChange={(v) => patchSection(s.key, { titleEn: v })}
+              />
+            )}
             <input
               className="input mb-3 bg-white text-sm"
               placeholder="Descripción de la sección (opcional)"
               value={s.description ?? ""}
               onChange={(e) => patchSection(s.key, { description: e.target.value })}
             />
+            {bilingual && s.description?.trim() && (
+              <EnInput
+                className="mb-3"
+                value={s.descriptionEn}
+                source={s.description}
+                placeholder="Descripción en inglés"
+                onChange={(v) => patchSection(s.key, { descriptionEn: v })}
+              />
+            )}
 
             {/* Preguntas de la sección */}
             <div className="space-y-3">
@@ -773,6 +1064,7 @@ export default function QuestionnaireBuilder({
                   onRemove={() => removeQ(s.key, d.key)}
                   onDuplicate={() => duplicateQ(s.key, d.key)}
                   onMove={(dir) => moveQ(s.key, d.key, dir)}
+                  bilingual={bilingual}
                 />
               ))}
             </div>
@@ -829,14 +1121,25 @@ export default function QuestionnaireBuilder({
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {info && <p className="text-sm text-emerald-700">{info}</p>}
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <button className="btn" disabled={busy} onClick={() => save(true)}>
           Publicar versión
         </button>
         <button className="btn-secondary" disabled={busy} onClick={() => save(false)}>
           Guardar borrador
         </button>
+        {bilingual && loadedLatest && prevVersion > 0 && (
+          <button
+            className="btn-secondary"
+            disabled={busy}
+            onClick={saveTranslations}
+            title={`Guarda solo los textos en inglés en la v${prevVersion}, sin crear una versión nueva`}
+          >
+            Guardar solo inglés en v{prevVersion}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -84,6 +84,7 @@ export async function POST(
     deviceType: deviceTypeFromUA(userAgent),
     startedAt: parsed.data.startedAt ? new Date(parsed.data.startedAt) : null,
     durationMs: parsed.data.durationMs ?? null,
+    language: parsed.data.language ?? null,
   });
   if (!result.ok) return NextResponse.json(result, { status: result.status });
 

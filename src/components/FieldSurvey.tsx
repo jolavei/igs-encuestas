@@ -12,6 +12,8 @@ export default function FieldSurvey({
   subtitle,
   sections,
   locations,
+  bilingual = false,
+  titleEn,
 }: {
   workPlanId: string;
   versionId: string; // versión con la que se renderiza el formulario
@@ -19,6 +21,8 @@ export default function FieldSurvey({
   subtitle?: string;
   sections: ClientSection[];
   locations?: { id: string; name: string }[]; // si viene, hay que elegir sede
+  bilingual?: boolean; // muestra el botón ES | EN
+  titleEn?: string | null;
 }) {
   const [locationId, setLocationId] = useState("");
   const needsLocation = !!locations && locations.length > 0;
@@ -55,6 +59,8 @@ export default function FieldSurvey({
       versionId={versionId}
       endpoint="/api/responses"
       title={title}
+      titleEn={titleEn}
+      bilingual={bilingual}
       subtitle={needsLocation ? locations!.find((l) => l.id === locationId)?.name : subtitle}
       offline
       allowFileUpload

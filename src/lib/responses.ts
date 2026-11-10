@@ -29,6 +29,7 @@ type Args = {
   deviceType?: string | null;
   startedAt?: Date | null;
   durationMs?: number | null;
+  language?: string | null; // "es" | "en" (botón ES | EN)
 };
 
 /**
@@ -156,6 +157,7 @@ export async function createResponseSet(args: Args) {
         deviceType: args.deviceType ?? null,
         startedAt: args.startedAt ?? null,
         durationMs: args.durationMs ?? null,
+        language: args.language ?? null,
         answers: {
           create: answers.map((a) => ({
             questionId: a.questionId,

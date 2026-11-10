@@ -1,8 +1,16 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import QuestionInput, { type ClientSection } from "./QuestionInput";
 import SurveyFooter from "./SurveyFooter";
 import { FIELD_ONLY_TYPES, validateAnswers, type RawAnswer } from "@/lib/questionTypes";
+import {
+  SURVEY_UI,
+  browserLang,
+  localizeSections,
+  localizeText,
+  translateError,
+  type SurveyLang,
+} from "@/lib/surveyI18n";
 
 const QUEUE_KEY = "igs.offlineQueue";
 
@@ -58,7 +66,41 @@ type Props = {
   // Si se define, activa "una respuesta por dispositivo cada 24 h" (QR público).
   // Es la clave del candado en localStorage; usar el token del QR.
   lockKey?: string;
+  // Encuesta bilingüe: muestra el botón ES | EN. El idioma elegido se mantiene en
+  // todas las secciones hasta enviar; cada respuesta nueva parte en español.
+  bilingual?: boolean;
+  titleEn?: string | null;
+  // QR público: el idioma inicial sigue al navegador del pasajero (inglés si su
+  // navegador está en inglés). En campo siempre parte en español.
+  autoLang?: boolean;
+  // Muestra sobre la tarjeta la nota de anonimato (QR público), en el idioma elegido.
+  anonymousNote?: boolean;
 };
+
+// Botón ES | EN. Va en el encabezado de todas las secciones.
+function LangToggle({ lang, onChange }: { lang: SurveyLang; onChange: (l: SurveyLang) => void }) {
+  return (
+    <div
+      role="group"
+      aria-label={SURVEY_UI[lang].langGroup}
+      className="inline-flex shrink-0 overflow-hidden rounded-full border border-brand-600"
+    >
+      {(["es", "en"] as const).map((l) => (
+        <button
+          key={l}
+          type="button"
+          aria-pressed={lang === l}
+          onClick={() => onChange(l)}
+          className={`px-3 py-1.5 text-xs font-bold focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amber-400 ${
+            lang === l ? "bg-brand-600 text-white" : "bg-white text-brand-600 hover:bg-brand-50"
+          }`}
+        >
+          {l.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type Queued = { endpoint: string; body: string; at: number };
 
@@ -161,11 +203,25 @@ export default function SurveyRunner({
   extra,
   onDone,
   lockKey,
+  bilingual = false,
+  titleEn,
+  autoLang = false,
+  anonymousNote = false,
 }: Props) {
   // El QR público no muestra preguntas solo-campo (carga de archivos, medición de
   // flujo) ni las exige.
   const visible = (s: ClientSection) =>
     allowFileUpload ? s.questions : s.questions.filter((q) => !FIELD_ONLY_TYPES.includes(q.type));
+  // Idioma de esta respuesta. Solo cambia lo que se muestra: ids, values y ruteo son
+  // los mismos en ambos idiomas, así que cambiarlo a mitad de camino no borra nada.
+  const [lang, setLang] = useState<SurveyLang>("es");
+  useEffect(() => {
+    if (bilingual && autoLang) setLang(browserLang());
+  }, [bilingual, autoLang]);
+  const activeLang: SurveyLang = bilingual ? lang : "es";
+  const t = SURVEY_UI[activeLang];
+  const shown = useMemo(() => localizeSections(sections, activeLang), [sections, activeLang]);
+  const shownTitle = title ? localizeText(title, titleEn, activeLang) : title;
   const [answers, setAnswers] = useState<Record<string, RawAnswer>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<number[]>([0]);
@@ -209,6 +265,7 @@ export default function SurveyRunner({
 
   const curIdx = history[history.length - 1];
   const section = sections[curIdx];
+  const shownSection = shown[curIdx];
   const multi = sections.length > 1 || !!section?.title;
   const goesToSubmit = section ? nextIndex(sections, curIdx, answers) < 0 : true;
 
@@ -255,6 +312,7 @@ export default function SurveyRunner({
       versionId,
       startedAt: new Date(startMs).toISOString(),
       durationMs: Math.max(0, Date.now() - startMs),
+      language: activeLang,
       ...extra,
       clientSubmissionId: submissionId.current,
     });
@@ -296,7 +354,7 @@ export default function SurveyRunner({
       setStatus("queued");
       onDone?.();
     } else if (!r) {
-      setErrorMsgs(["No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo."]);
+      setErrorMsgs([t.noConnection]);
       setStatus("error");
     } else {
       showServerError(r.status, await readJson(r));
@@ -313,8 +371,9 @@ export default function SurveyRunner({
     const msgs: string[] = [];
     if (perQ && Object.keys(perQ).length) {
       for (const [qid, msg] of Object.entries(perQ)) {
-        const q = sections.flatMap((s) => s.questions).find((x) => x.id === qid);
-        msgs.push(q ? `«${q.text}»: ${msg}` : String(msg));
+        const q = shown.flatMap((s) => s.questions).find((x) => x.id === qid);
+        const m = translateError(String(msg), activeLang);
+        msgs.push(q ? `«${q.text}»: ${m}` : m);
       }
       setErrors(perQ);
       const firstId = Object.keys(perQ)[0];
@@ -324,7 +383,7 @@ export default function SurveyRunner({
         window.scrollTo({ top: 0 });
       }
     } else if (typeof data?.error === "string" && data.error) {
-      msgs.push(data.error);
+      msgs.push(translateError(data.error, activeLang));
     } else if (code === 401) {
       msgs.push("Tu sesión expiró. Inicia sesión de nuevo en otra pestaña y vuelve a enviar.");
     } else if (code === 429) {
@@ -359,6 +418,8 @@ export default function SurveyRunner({
     setErrors({});
     setHistory([0]);
     setStatus("idle");
+    // El siguiente encuestado puede hablar otro idioma: vuelve al inicial.
+    setLang(bilingual && autoLang ? browserLang() : "es");
     // Nueva respuesta = nuevo id de idempotencia y cronómetro reiniciado.
     submissionId.current = makeSubmissionId();
     startedAtMs.current = Date.now();
@@ -367,16 +428,25 @@ export default function SurveyRunner({
   // Evita mostrar el formulario un instante antes de resolver el candado local.
   if (lockKey && !lockChecked) return null;
 
+  // Nota de anonimato del QR público, sobre la tarjeta y en el idioma elegido.
+  const note = anonymousNote ? (
+    <p className="px-5 pt-3 text-center text-xs text-slate-400 sm:px-8">{t.anonymous}</p>
+  ) : null;
+
   if (status === "ok" || status === "queued") {
     return (
+      <>
+      {note}
       <div className="my-6 rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm sm:px-8">
-        <h2 className="text-lg font-semibold">¡Gracias!</h2>
+        <h2 className="text-lg font-semibold">{t.thanks}</h2>
         <p className="mt-1 text-sm text-slate-600">
           {status === "ok"
-            ? "Respuesta registrada."
-            : "Sin conexión: respuesta guardada y se sincronizará automáticamente."}
+            ? t.recorded
+            : // Solo en campo (cola offline): lo lee el agente, queda en español.
+              "Sin conexión: respuesta guardada y se sincronizará automáticamente."}
         </p>
-        {/* En el QR público no se ofrece "Nueva respuesta": una por dispositivo. */}
+        {/* En el QR público no se ofrece "Nueva respuesta": una por dispositivo.
+            Es un botón del agente: queda en español y la siguiente parte en ES. */}
         {!lockKey && (
           <button className="btn mt-6" onClick={reset}>
             Nueva respuesta
@@ -384,31 +454,42 @@ export default function SurveyRunner({
         )}
         <SurveyFooter />
       </div>
+      </>
     );
   }
 
   // Ya respondió desde este dispositivo en las últimas 24 h (candado local).
   if (lockKey && locked) {
     return (
+      <>
+      {note}
       <div className="my-6 rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center shadow-sm sm:px-8">
-        <h2 className="text-lg font-semibold">Ya registramos tu respuesta</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Gracias por participar. Solo se admite una respuesta por dispositivo.
-        </p>
+        <h2 className="text-lg font-semibold">{t.alreadyTitle}</h2>
+        <p className="mt-1 text-sm text-slate-600">{t.alreadyBody}</p>
         <SurveyFooter />
       </div>
+      </>
     );
   }
 
-  if (!section) return null;
+  if (!section || !shownSection) return null;
+
+  const toggle = bilingual ? <LangToggle lang={activeLang} onChange={setLang} /> : null;
 
   return (
+    <>
+    {note}
     <div className="my-6 rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-sm sm:px-8">
-      {title && (
-        <div className="pb-2">
-          <h1 className="text-xl font-bold text-slate-900">{title}</h1>
-          {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+      {shownTitle ? (
+        <div className="flex items-start justify-between gap-3 pb-2">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-slate-900">{shownTitle}</h1>
+            {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+          </div>
+          {toggle}
         </div>
+      ) : (
+        toggle && <div className="flex justify-end pb-2">{toggle}</div>
       )}
 
       {multiSection && (
@@ -437,20 +518,20 @@ export default function SurveyRunner({
         </p>
       )}
 
-      {multi && (section.title || section.description) && (
+      {multi && (shownSection.title || shownSection.description) && (
         <div className="pb-1 pt-3">
-          {section.title && (
-            <h2 className="text-base font-semibold text-slate-900">{section.title}</h2>
+          {shownSection.title && (
+            <h2 className="text-base font-semibold text-slate-900">{shownSection.title}</h2>
           )}
-          {section.description && (
-            <p className="mt-0.5 text-sm text-slate-500">{section.description}</p>
+          {shownSection.description && (
+            <p className="mt-0.5 text-sm text-slate-500">{shownSection.description}</p>
           )}
         </div>
       )}
 
       {/* Las preguntas van sobre el mismo fondo blanco, separadas solo por una línea fina. */}
       <div className="divide-y divide-slate-100 border-t border-slate-100">
-        {visible(section)
+        {visible(shownSection)
           .slice()
           .sort((a, b) => a.order - b.order)
           .map((q, i, arr) => {
@@ -464,8 +545,9 @@ export default function SurveyRunner({
                 key={q.id}
                 q={q}
                 value={answers[q.id] ?? { questionId: q.id }}
-                error={errors[q.id]}
+                error={errors[q.id] ? translateError(errors[q.id], activeLang) : undefined}
                 canUpload={allowFileUpload}
+                lang={activeLang}
                 prevDatetime={prevDatetime}
                 onChange={(v) => setAnswers((s) => ({ ...s, [q.id]: v }))}
               />
@@ -475,7 +557,7 @@ export default function SurveyRunner({
 
       {status === "error" && (
         <div className="pt-4 text-sm text-red-600" role="alert">
-          <p className="font-medium">No se pudo enviar la respuesta.</p>
+          <p className="font-medium">{t.sendFailed}</p>
           {errorMsgs.length === 1 ? (
             <p className="mt-0.5">{errorMsgs[0]}</p>
           ) : (
@@ -489,10 +571,9 @@ export default function SurveyRunner({
       )}
       {status === "stale" && (
         <p className="pt-4 text-sm text-red-600">
-          El formulario está desactualizado (se publicó una versión nueva). Recarga la página
-          y vuelve a responder.{" "}
+          {t.stale}{" "}
           <button type="button" className="underline" onClick={() => window.location.reload()}>
-            Recargar
+            {t.reload}
           </button>
         </p>
       )}
@@ -500,19 +581,16 @@ export default function SurveyRunner({
       <div className="flex justify-center gap-3 pt-6">
         {history.length > 1 && (
           <button className="btn-secondary" onClick={onBack} disabled={status === "sending"}>
-            ← Atrás
+            {t.back}
           </button>
         )}
         <button className="btn w-1/2" disabled={status === "sending"} onClick={onNext}>
-          {status === "sending"
-            ? "Enviando…"
-            : goesToSubmit
-            ? "Enviar respuestas"
-            : "Siguiente →"}
+          {status === "sending" ? t.sending : goesToSubmit ? t.submit : t.next}
         </button>
       </div>
 
       <SurveyFooter />
     </div>
+    </>
   );
 }

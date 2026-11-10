@@ -9,12 +9,14 @@ import {
   type QuestionType,
   type RawAnswer,
 } from "@/lib/questionTypes";
+import { SURVEY_UI, type SurveyLang } from "@/lib/surveyI18n";
 
 export type ClientQuestion = {
   id: string;
   order: number;
   type: QuestionType;
   text: string;
+  textEn?: string | null; // traducción (encuesta bilingüe)
   required: boolean;
   config: QuestionConfig | null;
 };
@@ -23,6 +25,8 @@ export type ClientSection = {
   order: number;
   title: string;
   description?: string | null;
+  titleEn?: string | null;
+  descriptionEn?: string | null;
   routing: string; // "NEXT" | "SUBMIT" | "GOTO:<order>"
   questions: ClientQuestion[];
 };
@@ -34,6 +38,9 @@ type Props = {
   onChange: (v: RawAnswer) => void;
   canUpload?: boolean; // habilita subir archivos (solo levantamiento de campo)
   prevDatetime?: string; // valor de la pregunta DATETIME anterior (para "Duración de medición")
+  // Idioma de los textos fijos (placeholders, "— elegir —"). El texto de la pregunta y
+  // de las opciones ya llega traducido (ver localizeSections).
+  lang?: SurveyLang;
 };
 
 // Formatea segundos como "Xh Ym Zs".
@@ -45,8 +52,17 @@ function fmtDur(secs: number): string {
   return `${h}h ${m}m ${sec}s`;
 }
 
-export default function QuestionInput({ q, value, error, onChange, canUpload, prevDatetime }: Props) {
+export default function QuestionInput({
+  q,
+  value,
+  error,
+  onChange,
+  canUpload,
+  prevDatetime,
+  lang = "es",
+}: Props) {
   const cfg = q.config ?? {};
+  const t = SURVEY_UI[lang];
 
   function set(patch: Partial<RawAnswer>) {
     onChange({ ...value, ...patch, questionId: q.id });
@@ -125,7 +141,7 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
           className="input"
           type="text"
           maxLength={cfg.maxLength}
-          placeholder="Texto de respuesta breve"
+          placeholder={t.shortAnswer}
           value={value.valueText ?? ""}
           onChange={(e) => set({ valueText: e.target.value })}
         />
@@ -136,7 +152,7 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
           className="input"
           rows={4}
           maxLength={cfg.maxLength}
-          placeholder="Texto de respuesta largo"
+          placeholder={t.longAnswer}
           value={value.valueText ?? ""}
           onChange={(e) => set({ valueText: e.target.value })}
         />
@@ -154,7 +170,7 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
                   type="button"
                   onClick={() => set({ valueText: "N/A", valueNumber: null })}
                   className="flex shrink-0 flex-col items-center gap-1"
-                  aria-label="No aplica"
+                  aria-label={t.notApplicable}
                 >
                   <span className="text-xs text-slate-500">N/A</span>
                   <span
@@ -169,7 +185,7 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
                     type="button"
                     onClick={() => set({ valueNumber: n, valueText: null })}
                     className="flex shrink-0 flex-col items-center gap-1"
-                    aria-label={`${n} de ${max}`}
+                    aria-label={t.ofMax(n, max)}
                   >
                     <span className="text-xs text-slate-500">{n}</span>
                     <span
@@ -216,7 +232,7 @@ export default function QuestionInput({ q, value, error, onChange, canUpload, pr
           value={value.valueText ?? ""}
           onChange={(e) => set({ valueText: e.target.value })}
         >
-          <option value="">— elegir —</option>
+          <option value="">{t.choose}</option>
           {(cfg.options ?? []).map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
