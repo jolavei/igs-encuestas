@@ -217,3 +217,62 @@ export function planTranslations(
   }
   return plan;
 }
+
+/**
+ * Traducción por DICCIONARIO (texto en español → inglés), para cargar una traducción
+ * aprobada en cualquier versión aunque el orden o la cantidad de preguntas difiera.
+ * Solo escribe lo que está en el diccionario (no borra traducciones existentes) y
+ * devuelve en `untranslated` los textos con minúsculas que no encontró.
+ */
+export function planDictionaryTranslations(
+  dbQuestions: DbQ[],
+  dbSections: (DbS & { description?: string | null; titleEn?: string | null; descriptionEn?: string | null })[],
+  dbTextEn: Map<string, string | null>, // textEn actual por id de pregunta
+  dict: Record<string, string>
+): TranslationPlan & { untranslated: string[] } {
+  const byNorm = new Map(Object.entries(dict).map(([k, v]) => [norm(k), clean(v)]));
+  const untranslated = new Set<string>();
+  const look = (es: string | null | undefined): string | null | undefined => {
+    if (!es || !es.trim()) return undefined;
+    const v = byNorm.get(norm(es));
+    if (v) return v;
+    if (/[a-záéíóúüñ]/.test(es)) untranslated.add(es.trim());
+    return undefined;
+  };
+  const plan: TranslationPlan & { untranslated: string[] } = {
+    questions: [],
+    sections: [],
+    mismatches: [],
+    untranslated: [],
+  };
+
+  for (const s of dbSections) {
+    const t = look(s.title);
+    const d = look(s.description);
+    plan.sections.push({
+      id: s.id,
+      titleEn: t ?? s.titleEn ?? null,
+      descriptionEn: d ?? s.descriptionEn ?? null,
+    });
+  }
+  for (const q of dbQuestions) {
+    const t = look(q.text);
+    let config = q.config;
+    let cfg: { options?: { value: string; label: string; labelEn?: string }[] } | null = null;
+    try {
+      cfg = q.config ? JSON.parse(q.config) : null;
+    } catch {
+      cfg = null;
+    }
+    if (cfg?.options?.length) {
+      const options = cfg.options.map((o) => {
+        const en = look(o.label);
+        return en ? { ...o, labelEn: en } : o;
+      });
+      config = JSON.stringify({ ...cfg, options });
+    }
+    plan.questions.push({ id: q.id, textEn: t ?? dbTextEn.get(q.id) ?? null, config });
+  }
+  plan.untranslated = Array.from(untranslated);
+  return plan;
+}

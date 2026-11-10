@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { apiUser } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
-import { planTranslations } from "@/lib/surveyI18n";
+import { planDictionaryTranslations, planTranslations } from "@/lib/surveyI18n";
 
 const optionSchema = z.object({
   value: z.string().max(500),
@@ -24,8 +24,13 @@ const sectionSchema = z.object({
 });
 const schema = z.object({
   // Versión a traducir; por defecto, la última (la que carga el constructor).
+  // target "active" = la versión ACTIVE (la que responden los encuestados).
   versionId: z.string().max(60).optional(),
-  sections: z.array(sectionSchema).max(200),
+  target: z.enum(["latest", "active"]).default("latest"),
+  // Por orden (constructor): secciones/preguntas con su texto en español para verificar.
+  sections: z.array(sectionSchema).max(200).optional(),
+  // Por diccionario (carga de una traducción aprobada): texto en español -> inglés.
+  dictionary: z.record(z.string().max(2000), z.string().max(2000)).optional(),
   // strict (constructor): si algo no calza, no se guarda nada. false (carga masiva
   // por script): se guarda lo que calza y se informa lo demás.
   strict: z.boolean().default(true),
@@ -41,16 +46,35 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const parsed = schema.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
 
+  const { versionId, target, sections, dictionary } = parsed.data;
+  if (!sections && !dictionary) {
+    return NextResponse.json({ error: "Faltan las traducciones." }, { status: 400 });
+  }
   const version = await prisma.questionnaireVersion.findFirst({
-    where: parsed.data.versionId
-      ? { id: parsed.data.versionId, questionnaireId: params.id }
+    where: versionId
+      ? { id: versionId, questionnaireId: params.id }
+      : target === "active"
+      ? { questionnaireId: params.id, status: "ACTIVE" }
       : { questionnaireId: params.id },
     orderBy: { versionNumber: "desc" },
     include: { questions: true, sections: true },
   });
-  if (!version) return NextResponse.json({ error: "Versión no encontrada." }, { status: 404 });
+  if (!version) {
+    return NextResponse.json(
+      { error: target === "active" ? "El cuestionario no tiene versión activa." : "Versión no encontrada." },
+      { status: 404 }
+    );
+  }
 
-  const plan = planTranslations(version.questions, version.sections, parsed.data.sections);
+  const plan = dictionary
+    ? planDictionaryTranslations(
+        version.questions,
+        version.sections,
+        new Map(version.questions.map((q) => [q.id, q.textEn])),
+        dictionary
+      )
+    : planTranslations(version.questions, version.sections, sections!);
+  const untranslated = "untranslated" in plan ? plan.untranslated : [];
   if (parsed.data.strict && plan.mismatches.length) {
     return NextResponse.json(
       {
@@ -83,6 +107,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   return NextResponse.json({
     versionNumber: version.versionNumber,
+    status: version.status,
+    untranslated,
     questions: plan.questions.length,
     sections: plan.sections.length,
     mismatches: plan.mismatches,

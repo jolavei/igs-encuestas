@@ -1,5 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { localizeSections, planTranslations, translateError } from "./surveyI18n";
+import {
+  localizeSections,
+  planDictionaryTranslations,
+  planTranslations,
+  translateError,
+} from "./surveyI18n";
+
+describe("planDictionaryTranslations", () => {
+  it("traduce por texto, conserva lo existente y lista lo que falta", () => {
+    const qs = [
+      {
+        id: "a",
+        order: 7,
+        text: "¿Usó  los baños del aeropuerto?",
+        sectionId: "s1",
+        config: JSON.stringify({ options: [{ value: "Sí", label: "Sí" }, { value: "Otro", label: "Otro" }] }),
+      },
+      { id: "b", order: 8, text: "Pregunta nueva", sectionId: "s1", config: null },
+      { id: "c", order: 9, text: "SCL", sectionId: "s1", config: null },
+    ];
+    const plan = planDictionaryTranslations(
+      qs,
+      [{ id: "s1", order: 1, title: "Baños", description: null, titleEn: null, descriptionEn: null }],
+      new Map([["b", "Kept EN"]]),
+      { "¿Usó los baños del aeropuerto?": "Did you use the airport restrooms?", "Sí": "Yes", "Baños": "Restrooms" }
+    );
+    expect(plan.sections[0].titleEn).toBe("Restrooms");
+    expect(plan.questions.find((q) => q.id === "a")!.textEn).toBe("Did you use the airport restrooms?");
+    expect(JSON.parse(plan.questions[0].config!).options).toEqual([
+      { value: "Sí", label: "Sí", labelEn: "Yes" },
+      { value: "Otro", label: "Otro" },
+    ]);
+    expect(plan.questions.find((q) => q.id === "b")!.textEn).toBe("Kept EN");
+    expect(plan.untranslated.sort()).toEqual(["Otro", "Pregunta nueva"]);
+  });
+});
 import type { ClientSection } from "@/components/QuestionInput";
 
 const sections: ClientSection[] = [
