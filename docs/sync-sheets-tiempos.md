@@ -30,7 +30,7 @@ script resuelve el índice real leyendo la fila 1 de cada hoja en cada corrida.
 ## Qué hace el script
 
 1. Lee cada hoja con la **Google Sheets API v4** (cuenta de servicio, solo lectura).
-2. Se queda solo con **Check-in, AVSEC y Retiro de equipaje** (excluye "Reporte Diario").
+2. Se queda con **Check-in, AVSEC y Retiro de equipaje** y, en IQQ, **Pasaporte emigración, Pasaporte inmigración y Control aduana / SAG** (desde oct-2025; columnas "Hora inicio/fin medición" 4ª, 5ª y 6ª ocurrencia). Excluye "Reporte Diario" y la "Aduana Sanitaria" de PMC (control sanitario de 2021).
 3. Arma cada `*_t1/t2/t3` como **TIMESTAMP** = fecha de la "Marca temporal" + hora-del-día
    de la medición, en **hora de Chile** (respeta horario de verano). Si el fin es menor
    al inicio, asume **cruce de medianoche** (+24 h).

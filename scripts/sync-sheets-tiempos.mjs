@@ -209,11 +209,25 @@ async function readSheet(token, spreadsheetId, tab) {
   return data.values || [];
 }
 
+// Procesos de fila simple (inicio/fin) → prefijo de columna en el esquema destino.
+const QUEUE_PROCESSES = {
+  "Pasaporte emigración": "passport_outbound",
+  "Pasaporte inmigración": "passport_inbound",
+  "Control aduana / SAG": "border_protection",
+};
+
 // --- Transformación de una sede ---
 export function transformSede(sede, rows) {
   const stats = {
     total: rows.length - 1,
-    porProceso: { "Check in": 0, AVSEC: 0, "Retiro de equipajes": 0 },
+    porProceso: {
+      "Check in": 0,
+      AVSEC: 0,
+      "Retiro de equipajes": 0,
+      "Pasaporte emigración": 0,
+      "Pasaporte inmigración": 0,
+      "Control aduana / SAG": 0,
+    },
     excluidas: 0,
     stampInvalida: 0,
     invalidos: 0,
@@ -296,6 +310,20 @@ export function transformSede(sede, rows) {
         get(row, "obs")
       );
       stats.porProceso["Retiro de equipajes"]++;
+    } else if (QUEUE_PROCESSES[process]) {
+      // Pasaporte emigración / inmigración y Control aduana / SAG: inicio y fin de la
+      // fila (el histórico no tiene el fin de la atención, t3 queda NULL).
+      const col = QUEUE_PROCESSES[process];
+      const t1raw = get(row, `${col}_t1`), t2raw = get(row, `${col}_t2`);
+      const { times: [t1, t2], invalid } = chainClean([buildTs(measDate, t1raw), buildTs(measDate, t2raw)]);
+      if (invalid) stats.invalidos++;
+      o[`${col}_t1`] = iso(t1);
+      o[`${col}_t2`] = iso(t2);
+      o[`${col}_comments`] = joinComments(
+        invalid ? `⚠ horas fuera de rango (orig ${t1raw || "?"}–${t2raw || "?"})` : null,
+        get(row, "obs")
+      );
+      stats.porProceso[process]++;
     }
 
     out.push(o);
@@ -337,7 +365,10 @@ async function main() {
     if (missing.length) console.warn(`  ⚠ columnas no encontradas: ${missing.join(", ")}`);
     console.log(
       `  mapeadas: ${out.length} | Check-in: ${stats.porProceso["Check in"]}, ` +
-        `AVSEC: ${stats.porProceso.AVSEC}, Retiro: ${stats.porProceso["Retiro de equipajes"]} | ` +
+        `AVSEC: ${stats.porProceso.AVSEC}, Retiro: ${stats.porProceso["Retiro de equipajes"]}, ` +
+        `Pas. emigración: ${stats.porProceso["Pasaporte emigración"]}, ` +
+        `Pas. inmigración: ${stats.porProceso["Pasaporte inmigración"]}, ` +
+        `Aduana/SAG: ${stats.porProceso["Control aduana / SAG"]} | ` +
         `excluidas: ${stats.excluidas}, timestamp inválido: ${stats.stampInvalida}, ` +
         `horas fuera de rango: ${stats.invalidos}`
     );

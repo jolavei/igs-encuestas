@@ -7,9 +7,11 @@
 // El script resuelve el índice real leyendo la fila 1 de cada hoja en tiempo de
 // ejecución, así que si se agregan columnas antes/después el mapeo aguanta.
 //
-// Solo se consolidan Check-in, AVSEC y Retiro de equipaje (se excluye "Reporte
-// Diario"). Los datos que no tienen columna destino (N° de counters, N° de
-// máquinas de rayos X, aerolínea del retiro) se guardan en los `*_comments`.
+// Se consolidan Check-in, AVSEC, Retiro de equipaje y, en IQQ (único con vuelos
+// internacionales), Pasaporte emigración / inmigración y Control aduana / SAG. Se
+// excluye "Reporte Diario" y la "Aduana Sanitaria" de PMC (control sanitario de 2021).
+// Los datos que no tienen columna destino (N° de counters, N° de máquinas de rayos X,
+// aerolínea del retiro) se guardan en los `*_comments`.
 
 export const SEDES = [
   {
@@ -19,7 +21,7 @@ export const SEDES = [
     // el sync resuelve el nombre real en tiempo de ejecución, así que aguanta
     // renombres de la pestaña. `tab` queda como referencia/fallback.
     gid: 180156108,
-    tab: "Respuestas de formulario 2",
+    tab: "Respuestas de formulario 3",
     location_name: "Aeropuerto Diego Aracena",
     company_name: "Aeropuerto Diego Aracena - Iquique",
     cols: {
@@ -39,6 +41,14 @@ export const SEDES = [
       avsec_xray: { name: "Cantidad de máquinas de rayos x abiertas" },
       avsec_t1: { name: "Hora inicio medición", occ: 2 },
       avsec_t2: { name: "Hora fin medición", occ: 2 },
+      // (3ª ocurrencia de inicio/fin: sección sin uso en el formulario)
+      // Pasaporte emigración / inmigración y Control aduana / SAG (desde oct-2025)
+      passport_outbound_t1: { name: "Hora inicio medición", occ: 4 },
+      passport_outbound_t2: { name: "Hora fin medición", occ: 4 },
+      passport_inbound_t1: { name: "Hora inicio medición", occ: 5 },
+      passport_inbound_t2: { name: "Hora fin medición", occ: 5 },
+      border_protection_t1: { name: "Hora inicio medición", occ: 6 },
+      border_protection_t2: { name: "Hora fin medición", occ: 6 },
       // General
       obs: { name: "Observaciones del día" },
     },
@@ -98,7 +108,11 @@ export function normalizeProcess(raw) {
   if (s.includes("check")) return "Check in";
   if (s.includes("avsec")) return "AVSEC";
   if (s.includes("retiro") || s.includes("equipaj")) return "Retiro de equipajes";
-  return null; // "Reporte Diario" y cualquier otro -> fuera de alcance
+  if (s.includes("pasaporte") && s.includes("emigr")) return "Pasaporte emigración";
+  if (s.includes("pasaporte") && s.includes("inmigr")) return "Pasaporte inmigración";
+  if (s.includes("sag")) return "Control aduana / SAG";
+  // "Reporte Diario", "Aduana Sanitaria" (PMC 2021, control sanitario) y cualquier otro -> fuera
+  return null;
 }
 
 // Opciones de aerolínea de la app (cuestionario "Mediciones de tiempos"):
